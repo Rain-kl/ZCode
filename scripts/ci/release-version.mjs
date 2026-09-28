@@ -24,7 +24,7 @@
 
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -145,9 +145,59 @@ function loadAsar() {
   }
 }
 
+/**
+ * 把 asar 内的条目名归一化成 `a/b/c` 形式，用于跨平台比对。
+ *
+ * Windows 上条目名用反斜杠（`listFiles` 走 path.join，`bundle.mjs` 解析 `asar list` 时
+ * 已经踩过同一个坑），因此比对前必须统一分隔符。
+ */
+export function normalizeAsarEntryPath(entryPath) {
+  return String(entryPath).replaceAll("\\", "/").replace(/^\/+/, "");
+}
+
+/**
+ * 构造 extractFile 要用的查找路径。
+ *
+ * `Filesystem.getFile` 内部按**宿主平台**的 path.sep 切分（node_modules/@electron/asar/lib/filesystem.js:60），
+ * 而不是按归档条目名的分隔符。所以 Windows job 上传正斜杠会直接报 “was not found in this archive”，
+ * 在校验阶段把正常产物误判成缺文件；这里统一按宿主分隔符拼接。
+ */
+export function resolveAsarLookupPath(fileName) {
+  return String(fileName)
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .join(sep);
+}
+
+/** 在条目列表里找出目标文件；找不到返回 null。 */
+export function findAsarEntryName(entryNames, targetPath) {
+  const normalizedTarget = normalizeAsarEntryPath(targetPath);
+  return (
+    entryNames.find((entryName) => normalizeAsarEntryPath(entryName) === normalizedTarget) ?? null
+  );
+}
+
 function extractAsarFile(asar, asarPath, fileName) {
+  let entryNames;
   try {
-    return asar.extractFile(asarPath, fileName);
+    entryNames = asar.listPackage(asarPath);
+  } catch (error) {
+    fail(`读取 ${asarPath} 的条目列表失败: ${error.message}`);
+  }
+
+  if (!findAsarEntryName(entryNames, fileName)) {
+    const targetBasename = normalizeAsarEntryPath(fileName).split("/").pop();
+    const sameBasename = entryNames.filter(
+      (entry) => normalizeAsarEntryPath(entry).split("/").pop() === targetBasename,
+    );
+    fail(
+      `产物内缺少 ${fileName} (${asarPath})；归档条目数 ${entryNames.length}` +
+        (sameBasename.length > 0 ? `，同名条目: ${sameBasename.join(", ")}` : ""),
+    );
+  }
+
+  try {
+    return asar.extractFile(asarPath, resolveAsarLookupPath(fileName));
   } catch (error) {
     fail(`读取 ${asarPath} 内的 ${fileName} 失败: ${error.message}`);
   }
@@ -196,15 +246,21 @@ function verifyArtifact(options) {
   process.stdout.write(`verified=${packagedVersion}\n`);
 }
 
-const options = parseArgs(process.argv.slice(2));
+// 与仓库其它脚本同一约定：仅直接执行时跑 CLI，被 import 时只暴露辅助函数（便于单测）。
+const entryFilePath = process.argv[1] ? resolve(process.argv[1]) : null;
+const currentFilePath = fileURLToPath(import.meta.url);
 
-switch (options.command) {
-  case "apply":
-    applyVersion(options);
-    break;
-  case "verify":
-    verifyArtifact(options);
-    break;
-  default:
-    fail("用法: release-version.mjs <apply|verify> [options]");
+if (entryFilePath === currentFilePath) {
+  const options = parseArgs(process.argv.slice(2));
+
+  switch (options.command) {
+    case "apply":
+      applyVersion(options);
+      break;
+    case "verify":
+      verifyArtifact(options);
+      break;
+    default:
+      fail("用法: release-version.mjs <apply|verify> [options]");
+  }
 }
