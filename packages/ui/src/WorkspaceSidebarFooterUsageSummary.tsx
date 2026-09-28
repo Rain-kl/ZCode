@@ -16,6 +16,7 @@ import {
 } from "@/CodingPlanUsageRemainingPanel.js";
 import { useProviderSettingsView } from "@/hooks/useProviderSettingsView.js";
 import { useUsageEntitlement } from "@/hooks/useUsageEntitlement.js";
+import { isCloudAccountSurfaceEnabled } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import {
@@ -451,32 +452,35 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
         {intl.formatMessage({ id: "sidebar.usage.plan.openStats" })}
       </DropdownMenuItem>
       {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
-      <DropdownMenuItem
-        data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
-        disabled={entryGate.status === "loading"}
-        aria-busy={entryGate.status === "loading"}
-        onSelect={() => {
-          if (entryGate.status !== "ready") {
-            entryGate.retry?.();
-            return;
-          }
-          onUpgradeClick?.(
-            upgradeTargetProviderId,
-            createCodingPlanFunnelContext({
-              providerId: upgradeTargetProviderId,
-              upgradeSource: "profile_menu",
-              eventRegion: "app.profile",
-              eventText: intl.formatMessage({ id: upgradeActionLabelId }),
-              entryPlanState: resolveCodingPlanEntryPlanState({
-                snapshot: upgradeProviderSnapshot,
+      {/* FORK(local-mode): 本地模式隐藏「升级/续期」入口；见 FEATURES.md 的 local-mode 条目 */}
+      {isCloudAccountSurfaceEnabled() ? (
+        <DropdownMenuItem
+          data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
+          disabled={entryGate.status === "loading"}
+          aria-busy={entryGate.status === "loading"}
+          onSelect={() => {
+            if (entryGate.status !== "ready") {
+              entryGate.retry?.();
+              return;
+            }
+            onUpgradeClick?.(
+              upgradeTargetProviderId,
+              createCodingPlanFunnelContext({
+                providerId: upgradeTargetProviderId,
+                upgradeSource: "profile_menu",
+                eventRegion: "app.profile",
+                eventText: intl.formatMessage({ id: upgradeActionLabelId }),
+                entryPlanState: resolveCodingPlanEntryPlanState({
+                  snapshot: upgradeProviderSnapshot,
+                }),
               }),
-            }),
-          );
-        }}
-      >
-        <RocketIcon className="size-4" />
-        {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
-      </DropdownMenuItem>
+            );
+          }}
+        >
+          <RocketIcon className="size-4" />
+          {entryGate.label ?? intl.formatMessage({ id: upgradeActionLabelId })}
+        </DropdownMenuItem>
+      ) : null}
     </>
   );
 }

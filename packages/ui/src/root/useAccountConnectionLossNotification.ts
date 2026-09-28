@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isCloudAccountBackgroundEnabled } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { toast, dismissToast } from "@/components/ui/toast.js";
@@ -29,6 +30,10 @@ export function useAccountConnectionLossNotification(
     noticeRef.current = null;
   }, [intentKey]);
   useEffect(() => {
+    // FORK(local-mode): 本地模式不观察云账号连接状态；见 FEATURES.md 的 local-mode 条目
+    if (!isCloudAccountBackgroundEnabled()) {
+      return;
+    }
     const observer = createAccountConnectionRefreshObserver(async (event) => {
       let suggestion: Awaited<ReturnType<typeof prepareAccountConnectionSwitch>> = null;
       try {

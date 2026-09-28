@@ -8,6 +8,8 @@ import {
   BIGMODEL_PROVIDER_ID,
   BUILTIN_MODEL_PROVIDER_IDS,
   DesktopCommandIds,
+  // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
+  isForkHiddenCodingPlanProviderId,
   isStartPlanModelProviderId,
   type BuiltinModelProviderId,
   type ModelConnectivityResult,
@@ -110,7 +112,11 @@ function shouldRetryUnchangedCodingPlanProviderSync({
 function resolveCodingPlanIntentProviderId(
   target: SettingsModelProviderTarget | undefined,
 ): BuiltinModelProviderId | null {
-  switch (target?.providerId) {
+  // FORK(local-mode): 本地模式没有套餐页，忽略套餐深链意图；见 FEATURES.md 的 local-mode 条目
+  if (!target?.providerId || isForkHiddenCodingPlanProviderId(target.providerId)) {
+    return null;
+  }
+  switch (target.providerId) {
     case BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan:
     case BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan:
     case BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan:

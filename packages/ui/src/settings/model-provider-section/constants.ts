@@ -12,6 +12,10 @@ import {
   type UsageEntitlementSubscriptionDetail,
   type UsageEntitlementSnapshot,
 } from "@zcode/shared";
+import {
+  filterCodingPlanProviderSpecs,
+  filterPresetProviderSpecs,
+} from "@zcode/shared";
 import type { ProviderSettingsFormProvider } from "@/lib/providerSettingsFormTypes.js";
 import { getProviderFormLabel } from "@/lib/providerSettingsFormTypes.js";
 
@@ -31,7 +35,7 @@ export interface PresetProviderSpec {
   oauthProviderId?: OAuthProviderId;
 }
 
-export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
+const ALL_PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
   {
     id: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
     displayName: "Z.ai",
@@ -43,6 +47,11 @@ export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
     oauthProviderId: BIGMODEL_PROVIDER_ID,
   },
 ];
+
+// FORK(local-mode): 本地模式隐藏智谱预置卡片；见 FEATURES.md 的 local-mode 条目
+export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = filterPresetProviderSpecs(
+  ALL_PRESET_PROVIDER_SPECS,
+);
 
 export const PRESET_PROVIDER_SPEC_BY_ID = new Map<BuiltinModelProviderId, PresetProviderSpec>(
   PRESET_PROVIDER_SPECS.map((item) => [item.id, item]),
@@ -74,7 +83,7 @@ interface CodingPlanProviderSpec {
   purchaseUrl?: string;
 }
 
-export const CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = [
+const ALL_CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = [
   {
     id: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
     oauthProviderId: ZAI_PROVIDER_ID,
@@ -104,6 +113,11 @@ export const CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = [
     purchaseUrl: BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL,
   },
 ];
+
+// FORK(local-mode): 本地模式隐藏 Coding Plan 套餐行；见 FEATURES.md 的 local-mode 条目
+export const CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = filterCodingPlanProviderSpecs(
+  ALL_CODING_PLAN_PROVIDER_SPECS,
+);
 
 export interface CodingPlanEntitlementState {
   snapshot: UsageEntitlementSnapshot | null;

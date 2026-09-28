@@ -87,5 +87,7 @@ export interface IServiceAccessor {
   readonly memoryService: IMemoryService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
+  /** FORK(local-mode): WebDAV 备份恢复；host 未提供时（web/远端）为 undefined。 */
+  readonly forkWebdavService?: import("./fork/webdav.js").IForkWebdavService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 }

@@ -8,6 +8,8 @@ import type {
 } from "@zcode/shared";
 import {
   DesktopCommandIds,
+  // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
+  isCloudAccountBackgroundEnabled,
   resolveProviderFamilyDomainFromOAuthProvider,
   ZCODE_JWT_INVALID_BROADCAST_CHANNEL,
 } from "@zcode/shared";
@@ -128,6 +130,11 @@ export function useRootOAuthEffects({
   useEffect(() => {
     let disposed = false;
     async function restoreOAuthSessionInBackground() {
+      // FORK(local-mode): 本地模式不做云账号会话恢复，也不请求远端校验
+      if (!isCloudAccountBackgroundEnabled()) {
+        setIsRestoringOAuthSession(false);
+        return;
+      }
       logger.info("[Root] 后台启动 OAuth 本地会话恢复");
       let hasRestoredUser = false;
       try {
@@ -201,6 +208,10 @@ export function useRootOAuthEffects({
   ]);
 
   useEffect(() => {
+    // FORK(local-mode): 本地模式不处理云账号 JWT 失效广播
+    if (!isCloudAccountBackgroundEnabled()) {
+      return;
+    }
     let disposed = false;
     const disposable = services.broadcastService.onMessage((message) => {
       if (message.channel !== ZCODE_JWT_INVALID_BROADCAST_CHANNEL || disposed) {

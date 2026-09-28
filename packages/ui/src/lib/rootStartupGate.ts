@@ -1,3 +1,5 @@
+import { isCloudAccountSurfaceEnabled } from "@zcode/shared";
+
 interface RootStartupGateState {
   isResolvingStartupAuthState: boolean;
   isResolvingProviderStartupState: boolean;
@@ -41,7 +43,8 @@ export function shouldShowRootStartupLoading(state: RootStartupLoadingVisibility
 }
 
 export function shouldEnableProviderAvailabilityLoginEntryGuard(): boolean {
-  return true;
+  // FORK(local-mode): 本地模式不引导云账号登录；见 FEATURES.md 的 local-mode 条目
+  return isCloudAccountSurfaceEnabled();
 }
 
 export function shouldResolveProviderStartupState(state: ProviderStartupResolutionState): boolean {

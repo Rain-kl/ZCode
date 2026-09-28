@@ -19,7 +19,9 @@ export type SettingsSectionId =
   | "workspaceFileSearch"
   | "computerUse"
   | "automations"
-  | "shortcuts";
+  | "shortcuts"
+  // FORK(local-mode): 设置 → 基础设置 → 同步；见 FEATURES.md 的 local-mode 条目
+  | "configSync";
 
 type SettingsUsageTabTarget = "app" | "codingPlan";
 type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";

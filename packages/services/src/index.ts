@@ -25,6 +25,9 @@ export {
 
 // Accessor
 export type { IServiceAccessor } from "./accessor.js";
+// FORK(local-mode): WebDAV 备份恢复服务面；见 FEATURES.md 的 local-mode 条目
+export { IForkWebdavService } from "./fork/webdav.js";
+export type { IForkWebdavService as IForkWebdavServiceType } from "./fork/webdav.js";
 export {
   ConversationShareServiceError,
   createUnsupportedConversationShareService,

@@ -1,5 +1,7 @@
 import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceCatalogRequest.js";
 import {
+  // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
+  isCloudAccountBackgroundEnabled,
   localTtftFactsSchema,
   sessionDebugSnapshotSchema,
   type LocalTtftFacts,
@@ -1382,6 +1384,10 @@ export function createZCodeAgentService(
     client: ZCodeProtocolClient;
     reason: string;
   }): Promise<void> {
+    // FORK(local-mode): 本地模式不下发云账号 provider 配置；见 FEATURES.md 的 local-mode 条目
+    if (!isCloudAccountBackgroundEnabled()) {
+      return;
+    }
     if (!accountProviderConfigSource) return;
     const previous = accountConfigSyncByClient.get(params.client) ?? Promise.resolve();
     const current = previous

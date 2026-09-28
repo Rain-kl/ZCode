@@ -538,22 +538,29 @@ export class ModelSelectionFacade {
             resolveLegacyReasoningLevel,
           }).effectiveSelection ?? undefined)
         : configuredDefault;
+    // FORK(local-mode): 本地模式不接入云账号，因此把「需要智谱账号」的 provider（六种 Coding/Start Plan）
+    // 从模型选择视图移除——聊天选择器与设置页共用该视图；初始选择与生效选择也基于过滤后的注册表，
+    // 否则默认模型仍可能落到这些不可用的套餐上。要恢复账号体系时删掉本段即可。
+    const visibleRegistry: ProviderRegistryView = {
+      ...registry,
+      providers: registry.providers.filter(
+        (provider) =>
+          provider.config.visibility !== "hidden" &&
+          (provider.config.access as { type?: string } | undefined)?.type !== "zhipu-account",
+      ),
+    };
     const initial = resolveInitialModelSelection({
-      registry,
+      registry: visibleRegistry,
       configuredDefault: normalizedDefault,
     });
     return Object.freeze({
       revision: revision ?? registry.revision,
-      providers: Object.freeze(
-        registry.providers
-          .filter((provider) => provider.config.visibility !== "hidden")
-          .map(projectModelSelectionProviderView),
-      ),
+      providers: Object.freeze(visibleRegistry.providers.map(projectModelSelectionProviderView)),
       ...(initial.source === "none" ? {} : { preferredSelection: initial.selection }),
       ...(input
         ? resolveEffectiveModelSelection({
             selection: input.selection,
-            registry,
+            registry: visibleRegistry,
             accountStates: snapshot?.account.states,
             classifyProvider: this.#classifyProvider,
             resolveLegacyReasoningLevel,

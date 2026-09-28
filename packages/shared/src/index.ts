@@ -240,6 +240,9 @@ export * from "./zcode-agent-model-state.js";
 export * from "./task-realtime.js";
 export { formatTimestamp, formatLogPrefix } from "./log-format.js";
 export * from "./model-provider-types.js";
+// FORK(local-mode): 本地模式开关与判定；见 FEATURES.md 的 local-mode 条目
+export * from "./fork/flags.js";
+export * from "./fork/webdav-contract.js";
 export * from "./model-provider-family.js";
 export * from "./provider-family-connection-selection.js";
 export * from "./provider-provisioning.js";

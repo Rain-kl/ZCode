@@ -7,6 +7,8 @@ import {
   TID_LOGIN_TRIGGER,
   TID_LOGOUT_BUTTON,
   TID_TASK_SETTINGS_BUTTON,
+  // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
+  isCloudAccountSurfaceEnabled,
 } from "@zcode/shared";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar.js";
@@ -45,6 +47,8 @@ import { useZCodeStore } from "@/store/StoreProvider.js";
 import { normalizeInterfaceMode } from "@/lib/interfaceMode.js";
 import type { Theme } from "@/useTheme.js";
 import { WorkspaceWebRemoteControlTrigger } from "@/WorkspaceWebRemoteControlTrigger.js";
+// FORK(local-mode): WebDAV 状态项；见 FEATURES.md 的 local-mode 条目
+import { ForkWebdavStatusMenuItem } from "@/fork/local-mode/ForkWebdavStatusMenuItem.js";
 import {
   WorkspaceSidebarFooterPlanBadge,
   WorkspaceSidebarFooterUsageSummaryContent,
@@ -131,11 +135,16 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
   const isRestoringOAuthSession = useZCodeStore((state) => state.isRestoringOAuthSession);
-  const profileBadge = getSidebarProfileBadge(user, intl.formatMessage);
+  // FORK(local-mode): 本地模式不展示云账号语义（未登录时不再显示「连接使用」引导）
+  const cloudAccountSurfaceEnabled = isCloudAccountSurfaceEnabled();
+  const profileBadge = cloudAccountSurfaceEnabled
+    ? getSidebarProfileBadge(user, intl.formatMessage)
+    : getSidebarProfileName(user);
   const avatarFallbackText = getAvatarFallbackText(user);
   const avatarKey = user?.avatarUrl ?? user?.id ?? "guest";
   const showAuthRestoreLoading = !user && isRestoringOAuthSession;
   const usageSummaryState = useWorkspaceSidebarFooterUsageSummaryState({
+    // FORK(local-mode): 「使用统计」保留（用户要求恢复）；账号相关入口仍隐藏
     enabled: true,
     workspaceIdentity,
     workspacePath,
@@ -165,7 +174,9 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           <span className="min-w-0 truncate text-ui-base font-semibold text-foreground">
             {profileBadge}
           </span>
-          {user ? <WorkspaceSidebarFooterPlanBadge state={usageSummaryState} /> : null}
+          {cloudAccountSurfaceEnabled && user ? (
+            <WorkspaceSidebarFooterPlanBadge state={usageSummaryState} />
+          ) : null}
         </div>
       </div>
     </>
@@ -344,12 +355,15 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               </DropdownMenuSub>
             ) : null}
             {/* 升级入口状态不再以菜单开关为生命周期边界。*/}
+            {/* FORK(local-mode): 保留「使用统计」，升级项在该组件内按开关隐藏 */}
             <WorkspaceSidebarFooterUsageSummaryContent
               state={usageSummaryState}
               onUsageClick={usageButtonClick}
               onUpgradeClick={onUpgradeClick}
             />
-            {onLogin && !user ? (
+            {/* FORK(local-mode): 左下角 WebDAV 状态项（连接/同步/冲突/错误 + 快捷入口） */}
+            <ForkWebdavStatusMenuItem onOpenSettings={onSettingsButtonClick} />
+            {cloudAccountSurfaceEnabled && onLogin && !user ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogin} data-testid={TID_LOGIN_MENU_ITEM}>
@@ -358,7 +372,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuItem>
               </>
             ) : null}
-            {onLogout ? (
+            {cloudAccountSurfaceEnabled && onLogout ? (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onSelect={onLogout} data-testid={TID_LOGOUT_BUTTON}>

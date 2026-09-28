@@ -5,8 +5,16 @@ import {
   APP_RUNTIME_PREFERENCES_CHANGED_BROADCAST_CHANNEL,
   DesktopCommandIds,
   appRuntimePreferencesChangedBroadcastPayloadSchema,
+  // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
+  isCloudAccountSurfaceEnabled,
   type RemoteTarget,
 } from "@zcode/shared";
+// FORK(local-mode): 首屏 WebDAV 引导与冲突弹窗
+import {
+  FirstRunWebdavScreen,
+  useForkWebdavFirstRunGate,
+} from "@/fork/local-mode/FirstRunWebdavScreen.js";
+import { ForkWebdavConflictDialog } from "@/fork/local-mode/ForkWebdavConflictDialog.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { Button } from "@/components/ui/button.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
@@ -204,7 +212,10 @@ function RootInner({
   } = useSettings();
   const [welcomeScreenOpenReason, setWelcomeScreenOpenReason] =
     useState<WelcomeScreenOpenReason | null>(() =>
-      consumeZcodeJwtInvalidRestartMarker() ? "session-expired" : null,
+      // FORK(local-mode): 本地模式不消费云账号会话过期标记
+      isCloudAccountSurfaceEnabled() && consumeZcodeJwtInvalidRestartMarker()
+        ? "session-expired"
+        : null,
     );
   const [providerFamilyDomainMigrationComplete, setProviderFamilyDomainMigrationComplete] =
     useState(false);
@@ -867,7 +878,14 @@ function RootInner({
     setWelcomeScreenOpenReason("provider-request");
   }, [loginEntryRequest]);
 
+  // FORK(local-mode): 未配置 WebDAV 且未跳过时，首屏显示 WebDAV 引导
+  const forkFirstRunGate = useForkWebdavFirstRunGate();
+
   const handleOpenLoginEntry = () => {
+    // FORK(local-mode): 本地模式没有云账号登录入口
+    if (!isCloudAccountSurfaceEnabled()) {
+      return;
+    }
     setWelcomeScreenOpenReason("manual-login");
   };
   const handleWelcomeScreenComplete = useCallback(
@@ -959,7 +977,7 @@ function RootInner({
     onCreateTask: handleCreateTask,
     onOpenWorkspace: handleOpenWorkspace,
     allowOpenWorkspace,
-    onLogin: !user ? handleOpenLoginEntry : undefined,
+    onLogin: isCloudAccountSurfaceEnabled() && !user ? handleOpenLoginEntry : undefined,
     onLogout: user ? handleLogout : undefined,
     user,
   };
@@ -979,7 +997,18 @@ function RootInner({
     );
   }
 
-  if (welcomeScreenOpenReason) {
+  // FORK(local-mode): 本地模式首屏显示 WebDAV 引导（可跳过）
+  if (forkFirstRunGate.visible) {
+    return (
+      <RootShell>
+        {rootModelSelectionErrorNode}
+        <FirstRunWebdavScreen onDone={forkFirstRunGate.dismiss} />
+      </RootShell>
+    );
+  }
+
+  // FORK(local-mode): 本地模式不渲染云账号登录页
+  if (welcomeScreenOpenReason && isCloudAccountSurfaceEnabled()) {
     return (
       <RootShell>
         {rootModelSelectionErrorNode}
@@ -1012,6 +1041,8 @@ function RootInner({
       {rootModelSelectionErrorNode}
       {remoteConnectionDialog}
       {directoryBrowserDialog}
+      {/* FORK(local-mode): WebDAV 冲突弹窗（双侧都有改动时弹出） */}
+      <ForkWebdavConflictDialog />
       <OccupationOnboarding
         showWindowControls={Boolean(isWindowsDesktop || (isDesktop && !isMacDesktop))}
         showChildrenWhileLoading={!workspaceShellPath && isSettingsTabActive}
@@ -1057,7 +1088,7 @@ function RootInner({
             allowRemoteWorkspace={allowRemoteWorkspace}
             handleBackFromSettings={handleBackFromSettings}
             handleLogout={user ? handleLogout : undefined}
-            onLogin={!user ? handleOpenLoginEntry : undefined}
+            onLogin={isCloudAccountSurfaceEnabled() && !user ? handleOpenLoginEntry : undefined}
             user={user}
             reconnectingRemoteWorkspaceKeys={reconnectingRemoteWorkspaceKeys}
             remoteWorkspaceErrorByWorkspaceKey={remoteWorkspaceErrorByWorkspaceKey}

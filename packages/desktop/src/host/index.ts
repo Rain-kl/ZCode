@@ -44,6 +44,9 @@ import {
   IZCodeTaskService,
   IZCodeSessionService,
   ICuaPipSessionService,
+  // FORK(local-mode): WebDAV 备份恢复服务；见 FEATURES.md 的 local-mode 条目
+  ICredentialService,
+  IForkWebdavService,
   createZCodeAgentConnectionScope,
   type ZCodeAgentV4ClientMode,
   collectServiceMemoryDiagnostics,
@@ -60,11 +63,15 @@ import {
   buildTaskChangeSummary,
   createHostApiNetworkTransport,
   createSettingServiceWithMigrations,
+  // FORK(local-mode): fork WebDAV 状态文件与 provider 配置同处 configDir
+  getAppConfigDir,
   OffPeakModelUnavailableError,
   OffPeakPermanentDispatchError,
   type HostApiNetworkTransport,
   type OffPeakRequestAuthBuilder,
 } from "@zcode/services/node";
+import { join } from "node:path";
+import { createForkWebdavService } from "./fork/webdav/index.js";
 import { createHostResourceUsageResponder } from "./hostResourceUsage.js";
 import {
   assertBoundSessionDispatchable,
@@ -2884,6 +2891,24 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             return initializedServices;
           },
         });
+        // FORK(local-mode): 注册 WebDAV 备份恢复服务（桌面专属；未注册时渲染层拿不到该服务）
+        const forkCredentialService = services.getOptional(ICredentialService);
+        if (forkCredentialService) {
+          const forkAppConfigDir = getAppConfigDir();
+          const forkWebdavService = createForkWebdavService({
+            settingService,
+            credentialStore: forkCredentialService,
+            providerConfigPath: join(forkAppConfigDir, "provider_config.json"),
+            stateFilePath: join(forkAppConfigDir, "fork-webdav.json"),
+            lockFilePath: join(forkAppConfigDir, "fork-webdav.lock"),
+            appVersion: ZCODE_VERSION,
+            fetchImpl: hostApiNetworkTransport.fetch,
+            log: (message, detail) => logger.info(message, detail),
+          });
+          services.register(IForkWebdavService, forkWebdavService);
+          forkWebdavService.start();
+        }
+
         const zcodeTaskService = services.getOptional(IZCodeTaskService);
         if (zcodeTaskService) {
           const reportingZCodeTaskService = createReportingRemoteZCodeTaskService(

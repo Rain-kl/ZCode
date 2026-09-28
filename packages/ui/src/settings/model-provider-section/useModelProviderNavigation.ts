@@ -223,7 +223,8 @@ export function useModelProviderNavigation({
       },
     ];
 
-    return groups;
+    // FORK(local-mode): 本地模式过滤掉智谱预置行后，空分组标题（「智谱」）不应继续显示
+    return groups.filter((group) => group.items.length > 0);
   }, [
     customProviders,
     codingPlanItems,

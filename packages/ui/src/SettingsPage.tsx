@@ -69,6 +69,8 @@ import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
 import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
+// FORK(local-mode): 设置 → 基础设置 → 同步；见 FEATURES.md 的 local-mode 条目
+import { ConfigSyncPanel } from "@/fork/local-mode/ConfigSyncPanel.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
@@ -1923,6 +1925,8 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                           />
+                        ) : activeSection === "configSync" ? (
+                          <ConfigSyncPanel />
                         ) : activeSection === "browser" ? (
                           <BrowserSettingsSection
                             isDesktop={Boolean(isDesktop)}

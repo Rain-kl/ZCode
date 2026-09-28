@@ -18,6 +18,7 @@ import {
   WandSparkles,
   Keyboard,
   FileSearch,
+  Cloud,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -71,6 +72,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "modelProvider",
     icon: Package,
     titleId: "settings.modelProviderTitle",
+    groupId: "basics",
+  },
+  // FORK(local-mode): 本地模式新增「同步」栏目（WebDAV 备份恢复）
+  {
+    id: "configSync",
+    icon: Cloud,
+    titleId: "settings.configSync.title",
     groupId: "basics",
   },
   {
