@@ -19,6 +19,8 @@ import {
   Keyboard,
   FileSearch,
   Cloud,
+  // FORK(identity-preset): 系统指令栏目图标
+  ScrollText,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -80,6 +82,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: Cloud,
     titleId: "settings.configSync.title",
     groupId: "basics",
+  },
+  // FORK(identity-preset): 系统指令栏目；见 FEATURES.md 的 identity-preset 条目
+  {
+    id: "systemInstructions",
+    icon: ScrollText,
+    titleId: "settings.systemInstructions.title",
+    groupId: "agentCapabilities",
   },
   {
     id: "memory",

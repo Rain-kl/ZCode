@@ -1566,14 +1566,6 @@ const enUS: Record<string, string> = {
   "update.toast.ready": "v{version} downloaded, restart to install",
   "update.toast.devSkipped": "Updates are disabled in dev builds",
   "update.toast.error": "Update check failed: {error}",
-  "forceUpdate.title": "Update ZCode to continue",
-  "forceUpdate.description":
-    "Your current version v{currentVersion} is below the minimum supported version v{minimalVersion}. Update first before continuing with this client.",
-  "forceUpdate.currentVersion": "Current version",
-  "forceUpdate.minimalVersion": "Minimum version",
-  "forceUpdate.action.check": "Check and download update",
-  "forceUpdate.action.restart": "Restart to install update",
-  "forceUpdate.action.reload": "Reload page",
   "desktopMenu.help.checkingForUpdates": "Checking for updates...",
   "desktopMenu.help.updateAvailableVersion": "Update available {version}",
   "desktopMenu.help.downloadingUpdateVersion": "Downloading update {version}...",
@@ -2124,6 +2116,31 @@ const enUS: Record<string, string> = {
   "settings.systemTitle": "General",
   // FORK(local-mode): Settings -> Basics -> Sync (WebDAV backup and restore)
   "settings.configSync.title": "Sync",
+  // FORK(identity-preset): Settings → Agent capabilities → System instructions
+  "settings.systemInstructions.title": "System instructions",
+  "settings.systemInstructions.enable": "Use custom system instructions",
+  "settings.systemInstructions.enableHint": "Off keeps the ZCode default prompt",
+  "settings.systemInstructions.takesEffectOnNewSession":
+    "Saving and activating apply to new sessions; running sessions are unaffected.",
+  "settings.systemInstructions.profiles": "Presets",
+  "settings.systemInstructions.empty": "No presets yet — create one to start editing.",
+  "settings.systemInstructions.activeBadge": "Active",
+  "settings.systemInstructions.activate": "Activate",
+  "settings.systemInstructions.create": "New preset",
+  "settings.systemInstructions.createAction": "Create",
+  "settings.systemInstructions.namePlaceholder": "Preset name",
+  "settings.systemInstructions.template.default": "Default (current prompt)",
+  "settings.systemInstructions.template.skeleton": "Basic framework",
+  "settings.systemInstructions.editor": "Edit prompt",
+  "settings.systemInstructions.save": "Save",
+  "settings.systemInstructions.cancel": "Cancel",
+  "settings.systemInstructions.delete.title": "Delete preset",
+  "settings.systemInstructions.delete.body": "Delete “{name}”? This cannot be undone.",
+  "settings.systemInstructions.delete.confirm": "Delete",
+  "settings.systemInstructions.unavailable":
+    "System instructions are not available in this environment.",
+  "settings.systemInstructions.activeMissing":
+    "The active preset is missing or empty; ZCode is using its default prompt.",
   "settings.configSync.description":
     "Back up your interface settings and custom model providers to your own WebDAV, and restore any snapshot on another machine.",
   "settings.configSync.unavailable": "WebDAV backup is only available in the desktop app.",

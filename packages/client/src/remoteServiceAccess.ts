@@ -1,6 +1,6 @@
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 // FORK(local-mode): WebDAV 服务通道名
-import { FORK_WEBDAV_CHANNEL } from "@zcode/shared";
+import { FORK_IDENTITY_PRESET_CHANNEL, FORK_WEBDAV_CHANNEL } from "@zcode/shared";
 import {
   IFileService,
   IMediaPreviewService,
@@ -44,6 +44,8 @@ import {
   IWindowControllerService,
   // FORK(local-mode): WebDAV 备份恢复服务面；见 FEATURES.md 的 local-mode 条目
   IForkWebdavService,
+  // FORK(identity-preset): 系统指令配置服务面
+  IForkIdentityPresetService,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -96,6 +98,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly settingsSyncService: ISettingsSyncService;
   /** FORK(local-mode): WebDAV 备份恢复（host 未注册时为 undefined）。 */
   readonly forkWebdavService?: IForkWebdavService;
+  /** FORK(identity-preset): 系统指令配置（host 未注册时为 undefined）。 */
+  readonly forkIdentityPresetService?: IForkIdentityPresetService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 
@@ -219,6 +223,10 @@ export class RemoteServiceAccess implements IServiceAccessor {
     // FORK(local-mode): WebDAV 备份恢复服务
     this.forkWebdavService = ProxyChannel.toService<IForkWebdavService>(
       channelClient.getChannel(FORK_WEBDAV_CHANNEL),
+    );
+    // FORK(identity-preset): 系统指令配置服务
+    this.forkIdentityPresetService = ProxyChannel.toService<IForkIdentityPresetService>(
+      channelClient.getChannel(FORK_IDENTITY_PRESET_CHANNEL),
     );
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(
       channelClient.getChannel(ISettingsSyncService.channelName),

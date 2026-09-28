@@ -27,6 +27,8 @@ import {
   buildOutputStyleSection,
   buildSessionGuidanceSection,
 } from "./dynamic-sections.js";
+// FORK(identity-preset): 用户自定义身份段
+import { buildIdentityPresetSection } from "../fork/identity-preset/identityManager.js";
 
 // -----------------------------------------------
 // Context Builder
@@ -96,11 +98,23 @@ export class ContextBuilder {
       );
     }
     const isWorkflowActor = workflowActor !== undefined;
+    // FORK-BEGIN(identity-preset)
+    // 工作流子代理的身份由契约提供；customSystemPrompt 是宿主程序化注入，优先级高于用户配置。
+    // 两者在场时都必须让 customIdentity 保持 undefined，否则「忽略自定义身份」会通过
+    // 「少了 cli_prefix」这一处泄漏出来（design.md 6.2）。
+    // 空白正文同样按未启用处理：放行它会把 cli_prefix 与身份段一起换掉，agent 一个身份都不剩。
+    // 端口路径已由 resolveActiveIdentityPreset 守住这条不变量，但 ContextBuilderConfig 是公开
+    // API，直接调用方绕过端口，所以在这里再守一道。
+    const candidateIdentity =
+      isWorkflowActor || hasCustomSystemPrompt ? undefined : this.config.identityPreset;
+    const customIdentity = candidateIdentity?.content.trim() ? candidateIdentity : undefined;
+    // FORK-END(identity-preset)
 
     // 1. CLI / product prefix. Keep this as the short leading identity block.
     // 「You are ZCode, an interactive coding agent」对一个
     // 只对脚本说话、可能连读文件工具都没有的子代理是错的身份，且走在正确身份段前面。
-    if (!isWorkflowActor) {
+    // FORK(identity-preset): 用户自定义身份段生效时连这一段一起换掉——用户要的是「身份完全由我决定」
+    if (!isWorkflowActor && !customIdentity) {
       sections.push(buildCliPrefixSection());
     }
 
@@ -115,6 +129,9 @@ export class ContextBuilder {
           content: customSystemPrompt ? `\n${customSystemPrompt}` : "",
         }),
       );
+    } else if (customIdentity) {
+      // FORK(identity-preset): 用户自定义身份段；见 FEATURES.md 的 identity-preset 条目
+      sections.push(buildIdentityPresetSection(customIdentity));
     } else if (workflowActor !== undefined) {
       sections.push(buildWorkflowActorIdentitySection(workflowActor));
     } else {

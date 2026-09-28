@@ -10,8 +10,6 @@ import {
 interface SecondInstanceWorkspaceDeps {
   additionalData: unknown;
   argv: readonly string[];
-  forceUpdateBlocked: boolean;
-  focusForceUpdateGateWindow: () => void;
   handleDeepLink: (
     url: string,
     options: {
@@ -42,14 +40,11 @@ export function handleSecondInstanceWorkspaceRequest(deps: SecondInstanceWorkspa
   if (
     url &&
     deps.handleDeepLink(url, {
-      canOpenWorkspace: () => !deps.forceUpdateBlocked,
+      canOpenWorkspace: () => true,
       confirmationCopy: deps.workspaceConfirmationCopy,
       resolveApplicationWindow: deps.resolveApplicationWindow,
       onWorkspaceOpenBlocked: () => {
-        deps.logger.warn(
-          "[force-update] 已忽略强制升级期间的 second-instance workspace deep link 请求",
-        );
-        deps.focusForceUpdateGateWindow();
+        deps.logger.warn("[desktop] second-instance workspace deep link 请求被拒绝");
       },
     })
   ) {
@@ -59,11 +54,6 @@ export function handleSecondInstanceWorkspaceRequest(deps: SecondInstanceWorkspa
   const openWorkspacePath =
     extractOpenWorkspacePathFromSingleInstanceData(deps.additionalData) ??
     extractOpenWorkspacePathFromArgs(deps.argv);
-  if (openWorkspacePath && deps.forceUpdateBlocked) {
-    deps.logger.warn("[force-update] 已忽略强制升级期间的 second-instance workspace 请求");
-    deps.focusForceUpdateGateWindow();
-    return true;
-  }
   return Boolean(
     openWorkspacePath &&
     deps.handleOpenWorkspacePath(openWorkspacePath, {

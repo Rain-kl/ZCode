@@ -56,6 +56,8 @@ import type { AgentRuntimeHookMethods } from "./internal-hook-methods.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
+// FORK(identity-preset): 自定义身份段端口；与 contextSourcePort 同款 deps 注入字段
+import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
@@ -94,6 +96,8 @@ export interface AgentRuntimeInternal
   memoryIndexContent?: string;
   memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   contextSourcePort?: ContextSourcePort;
+  // FORK(identity-preset): 端口只能走 deps（config 会被子运行时 spread），故按同区惯例镜像成字段
+  identityPresetPort?: IdentityPresetPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

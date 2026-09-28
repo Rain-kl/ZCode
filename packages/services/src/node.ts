@@ -2808,3 +2808,7 @@ export async function disposeServiceResourcesAndWait(services: ServiceCollection
     ?.disposeAndWait()
     .catch(() => {});
 }
+
+// FORK(identity-preset): 宿主解析 presets/ 根目录要用与 agent 侧同一规则（storage root，不是 cliStorageRoot）。
+// 只从 node-only 入口导出：放 ./index.ts 会把 node:fs/promises 带进渲染层，导致整页白屏。
+export { resolveZCodeStorageRoot } from "./subagents/subagentStorage.js";

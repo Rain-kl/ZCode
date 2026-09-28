@@ -28,6 +28,9 @@ export type { IServiceAccessor } from "./accessor.js";
 // FORK(local-mode): WebDAV 备份恢复服务面；见 FEATURES.md 的 local-mode 条目
 export { IForkWebdavService } from "./fork/webdav.js";
 export type { IForkWebdavService as IForkWebdavServiceType } from "./fork/webdav.js";
+// FORK(identity-preset): 系统指令服务面；见 FEATURES.md 的 identity-preset 条目
+export { IForkIdentityPresetService } from "./fork/identityPreset.js";
+export type { IForkIdentityPresetService as IForkIdentityPresetServiceType } from "./fork/identityPreset.js";
 export {
   ConversationShareServiceError,
   createUnsupportedConversationShareService,

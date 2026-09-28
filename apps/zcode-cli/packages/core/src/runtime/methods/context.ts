@@ -65,6 +65,24 @@ export async function ensureContextInitialized(
   this.skillLoadOutcome = await this.discoverSkillsForContext(traceContext);
   this.memoryRoot = await this.loadProjectMemoryRoot(traceContext);
   this.memoryIndexContent = await loadProjectMemoryIndexContent(this, this.memoryRoot);
+  // FORK-BEGIN(identity-preset)
+  // 结果冻结进 config，会话中途换提示词会改变 provider 的 prompt cache 前缀，破坏
+  // 「前缀在会话内不可变」的既定不变量（design.md 6.3）。读取失败一律回退系统默认。
+  // 并发首次进入（首轮与 getSkillCatalog 同时）可能各读一次，结果相同、最坏多一条告警；
+  // 真正的保证是「同一 App 内有效值只有一份」，不是「IO 恰好一次」。
+  if (this.identityPresetPort) {
+    const outcome = await this.identityPresetPort.loadActive();
+    if (outcome.diagnostic) {
+      this.logger?.warn("Identity preset load failed", {
+        ...traceContextToLogContext(traceContext),
+        event: "identity_preset.load.failed",
+        module: "core.runtime",
+        reason: outcome.diagnostic,
+      });
+    }
+    this.config.identityPreset = outcome.preset;
+  }
+  // FORK-END(identity-preset)
   this.contextBuilder = this.createContextBuilderFromSnapshot(snapshot, this.memoryRoot, {
     memoryIndexContent: this.memoryIndexContent,
     model,
@@ -134,6 +152,8 @@ export function createContextBuilderFromSnapshot(
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),
     skillMetadataBudget: this.config.skillMetadataBudget,
     customSystemPrompt: this.config.systemPrompt,
+    // FORK(identity-preset): 自定义身份段随每个 model step 的 context 重建一起投影
+    identityPreset: this.config.identityPreset,
     workflowActor: this.config.workflowActor,
     language: this.config.language,
     outputStyle: this.config.outputStyle,

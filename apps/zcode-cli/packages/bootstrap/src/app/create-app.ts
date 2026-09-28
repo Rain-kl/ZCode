@@ -21,6 +21,8 @@ import {
   AgentRuntime,
   PermissionService,
   buildPluginReferenceCatalog,
+  // FORK(identity-preset): 自定义身份段的只读文件端口；见 FEATURES.md 的 identity-preset 条目
+  createFileIdentityPresetPort,
   type AmendWorkflowRunSettingsInput,
   type ResumeSessionResult,
 } from "@zcode/core";
@@ -35,6 +37,8 @@ import {
   type MessageId,
 } from "@zcode/contracts";
 import { isRemoteWorkspaceIdentity, resolveZCodeRuntimeEnv } from "@zcode/shared";
+// FORK(identity-preset): presets 目录名取自共享契约——宿主写入方与 agent 读取方各写一份字面量，漂移的症状是「UI 看得见、agent 读不到」
+import { FORK_IDENTITY_PRESET_ROOT_NAME } from "@zcode/shared";
 import {
   ZCODE_ATTACHMENT_FAULT_CODES,
   ZCodeAttachmentFaultError,
@@ -742,6 +746,15 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       artifactStore,
       contextSourcePort:
         options.contextSourcePort ?? createNodeContextSourceAdapter({ env: options.env }),
+      // FORK-BEGIN(identity-preset)
+      // 目录与 `agents/`、`skills/`、`commands/` 同级（storage root，默认 ~/.zcode），
+      // 不是 cliStorageRoot；宿主侧服务写同一路径，两侧漂移的症状是「UI 看得见、agent 读不到」。
+      identityPresetPort:
+        options.identityPresetPort ??
+        createFileIdentityPresetPort({
+          root: join(storageRoot, FORK_IDENTITY_PRESET_ROOT_NAME),
+        }),
+      // FORK-END(identity-preset)
       skillPort:
         configResult.config.features.skill && configResult.config.skills.enabled
           ? (options.skillPort ??

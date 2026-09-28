@@ -127,6 +127,8 @@ import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
 import { cloneModelSelection } from "./model-selection.js";
+// FORK(identity-preset): 自定义身份段端口；与 contextSourcePort 同款私有字段
+import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
 export class AgentRuntime {
@@ -166,6 +168,8 @@ export class AgentRuntime {
   private memoryIndexContent?: string;
   private memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   private contextSourcePort?: ContextSourcePort;
+  // FORK(identity-preset): 端口在 deps，故与 contextSourcePort 同处声明
+  private identityPresetPort?: IdentityPresetPort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
   private mcpStartupPromise?: Promise<McpConnectionSnapshot>;
@@ -279,6 +283,8 @@ export class AgentRuntime {
     this.runtimeCommandQueue = createRuntimeCommandQueue();
     this.workingDirectory = config.workingDirectory ?? ".";
     this.contextSourcePort = deps.contextSourcePort;
+    // FORK(identity-preset): 与同区端口一样只做一次性转存；唯一的消费点是 ensureContextInitialized
+    this.identityPresetPort = deps.identityPresetPort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();

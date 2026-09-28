@@ -110,6 +110,9 @@ import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
 import type { PresentationSurface } from "../context/types.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
+// FORK(identity-preset): 自定义身份段的端口与结果类型
+import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
+import type { ResolvedIdentityPreset } from "../fork/identity-preset/identityManager.js";
 
 // -----------------------------------------------
 // Agent Runtime
@@ -220,6 +223,12 @@ export interface AgentRuntimeConfig {
    * `systemPrompt` 整段替换。与 `systemPrompt` 互斥（builder 抛错）。
    */
   workflowActor?: { name?: string; persona?: string };
+  // FORK-BEGIN(identity-preset)
+  // 解析结果（纯数据）随 config 冻结；产生它的端口不放这里——config 会被
+  // 子运行时整体 spread，端口属于 deps（design.md 7 的 port 定义区）
+  /** 初始化时解析出的有效自定义身份段，App 级冻结；见 docs/features/identity-preset/design.md 第 6.3 节 */
+  identityPreset?: ResolvedIdentityPreset;
+  // FORK-END(identity-preset)
   /**
    * Selects the subagent-specific context builder for child runtimes. The
    * builder still receives env/date/model data through the normal runtime
@@ -368,6 +377,10 @@ export interface AgentRuntimeDeps {
   automationPort?: AutomationPort;
   offPeakPort?: OffPeakPort;
   contextSourcePort?: ContextSourcePort;
+  // FORK-BEGIN(identity-preset)
+  // 用户自定义身份段端口；缺席即不启用（系统默认提示词）。同一 App 内有效值只有一份；并发首次进入可能各读一次、结果相同（见 methods/context.ts）
+  identityPresetPort?: IdentityPresetPort;
+  // FORK-END(identity-preset)
   eventSink?: SessionEventSink;
   logger?: Logger;
   traceContext?: TraceContext;

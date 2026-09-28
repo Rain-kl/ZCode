@@ -47,6 +47,8 @@ import {
   // FORK(local-mode): WebDAV 备份恢复服务；见 FEATURES.md 的 local-mode 条目
   ICredentialService,
   IForkWebdavService,
+  // FORK(identity-preset): 系统指令配置服务面
+  IForkIdentityPresetService,
   createZCodeAgentConnectionScope,
   type ZCodeAgentV4ClientMode,
   collectServiceMemoryDiagnostics,
@@ -69,9 +71,12 @@ import {
   OffPeakPermanentDispatchError,
   type HostApiNetworkTransport,
   type OffPeakRequestAuthBuilder,
+  // FORK(identity-preset): 解析 presets/ 根目录（storage root，与 agent 侧同规则）；只从 node 入口取
+  resolveZCodeStorageRoot,
 } from "@zcode/services/node";
 import { join } from "node:path";
 import { createForkWebdavService } from "./fork/webdav/index.js";
+import { createForkIdentityPresetService } from "./fork/identity-preset/index.js";
 import { createHostResourceUsageResponder } from "./hostResourceUsage.js";
 import {
   assertBoundSessionDispatchable,
@@ -117,6 +122,8 @@ import type {
   RemoteAssetNetworkPort,
   RemoteConnection,
 } from "@zcode/server/remote";
+// FORK(identity-preset): presets/ 目录名与 agent 侧共用同一常量，避免两侧字面量漂移
+import { FORK_IDENTITY_PRESET_ROOT_NAME } from "@zcode/shared";
 import type { RemoteTarget } from "@zcode/shared";
 import { wrapElectronPort } from "./electronPort.js";
 import { createTaskRealtimeBridgeForHostInit } from "./taskRealtimeBridge.js";
@@ -2907,6 +2914,15 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           });
           services.register(IForkWebdavService, forkWebdavService);
           forkWebdavService.start();
+        }
+        // FORK(identity-preset): 注册系统指令配置服务（桌面专属；未注册时渲染层拿不到该服务）
+        // 根目录必须是 storage root（默认 ~/.zcode），与 bootstrap 装配 agent 侧端口的规则一致：
+        // 两侧漂移的症状是「UI 看得见、agent 读不到」。
+        {
+          const forkIdentityPresetService = createForkIdentityPresetService({
+            root: join(await resolveZCodeStorageRoot(), FORK_IDENTITY_PRESET_ROOT_NAME),
+          });
+          services.register(IForkIdentityPresetService, forkIdentityPresetService);
         }
 
         const zcodeTaskService = services.getOptional(IZCodeTaskService);

@@ -755,15 +755,22 @@ export default {
     uninstallerIcon: "build/icon_installer.ico",
     installerHeaderIcon: "build/icon_installer.ico",
   },
-  detectUpdateChannel: false,
+  // FORK(github-update): 打开通道检测，让更新元数据文件名跟随版本的 prerelease 段；
+  // 见 FEATURES.md 的 github-update 条目。
+  // 稳定版 `3.14.3` 产出 `latest.yml` / `latest-mac.yml`，dev 版 `3.14.3-dev.<sha>` 产出
+  // `dev.yml` / `dev-mac.yml`。不打开时两种版本都写 `latest*.yml`，dev 包会覆盖稳定通道的
+  // 更新元数据，稳定用户可能被推到集成构建。
+  detectUpdateChannel: true,
   publish: {
     provider: "generic",
     // 当前 OSS/CDN 对多 Range 请求返回 206，但 Content-Type 仍是 application/x-msdownload，
     // electron-updater 会因缺少 multipart/byteranges 直接回退整包下载。关闭 multiple range 后仍走差分，
     // 只是按单 Range 顺序拉取差异块，避免 Windows 用户更新时从约 15MB 退化成 300MB+ 全量包。
     useMultipleRangeRequest: false,
-    // 新客户端运行时使用服务端 manifest provider；这里仅保留 electron-builder 必需的
-    // generic publish 占位，避免打包产物继续携带可配置的旧 stable feed。
+    // FORK(github-update): 这里的 publish 只用于「让 electron-builder 产出更新元数据」
+    // （PublishManager 在 publishConfigs 非空时才写 update info 文件），运行时 feed 由
+    // packages/desktop/src/fork/github-update/feed.ts 用 setFeedURL 覆盖。
+    // 保留 localhost 占位，避免打包产物携带会被误用的真实地址。
     url: "http://localhost:8081",
   },
 };

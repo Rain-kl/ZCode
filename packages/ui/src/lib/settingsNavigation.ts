@@ -21,7 +21,9 @@ export type SettingsSectionId =
   | "automations"
   | "shortcuts"
   // FORK(local-mode): 设置 → 基础设置 → 同步；见 FEATURES.md 的 local-mode 条目
-  | "configSync";
+  | "configSync"
+  // FORK(identity-preset): 设置 → Agent 能力 → 系统指令；见 FEATURES.md 的 identity-preset 条目
+  | "systemInstructions";
 
 type SettingsUsageTabTarget = "app" | "codingPlan";
 type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";
@@ -79,7 +81,11 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "workspaceFileSearch" ||
     value === "computerUse" ||
     value === "automations" ||
-    value === "shortcuts"
+    value === "shortcuts" ||
+    // FORK(local-mode): configSync 此前漏进 guard，导致「上次所在栏目」无法恢复
+    value === "configSync" ||
+    // FORK(identity-preset): 同上，新增栏目必须一并入 guard
+    value === "systemInstructions"
   );
 }
 

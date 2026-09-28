@@ -22,6 +22,13 @@ name: Release Desktop
 # - macOS 只出 arm64 包（发布范围决定）。如需 Intel 包，必须加 Intel runner 上的构建条目：
 #   node-pty 在非 Windows 宿主按宿主架构 electron-rebuild，且运行时优先加载
 #   build/Release/pty.node，在 arm64 宿主上打 x64 包会把 arm64 原生模块混进产物。
+#
+# FORK(github-update) 更新通道（见 docs/features/github-update/design.md）
+# 客户端不再查上游 zcode.z.ai 的服务端 manifest，改为查本仓库的 GitHub Release：
+# - stable 通道：`releases/latest/download`（GitHub 定义的「最新非 prerelease」），读 latest.yml / latest-mac.yml；
+# - preview 通道：固定 tag `canary-build` 的指针 Release（只覆盖资产、不移动 tag），读 dev.yml / dev-mac.yml。
+# 因此本流水线必须上传更新元数据与差分块；只发安装包会让客户端报「找不到 channel 文件」。
+# 元数据文件名由 packages/desktop/electron-builder.config.js 的 detectUpdateChannel 决定。
 
 on:
   push:
@@ -124,6 +131,15 @@ jobs:
 
       - name: Architecture check
         run: pnpm architecture:check
+
+      # 二开移除不变量：同步上游后若被移除的强更 gate / 服务端更新源又回来了，在发布前拦住。
+      # 规则表与说明见 scripts/check-fork-removals.mjs。
+      - name: Fork removal invariants
+        run: pnpm fork:check-removals
+
+      # 依赖契约与功能单测：上游 API 形状/默认值/语义变更的第一信号，见 AGENTS.md「依赖契约测试」。
+      - name: Unit tests
+        run: pnpm test:unit
 
       # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
       # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
@@ -235,6 +251,11 @@ jobs:
           path: |
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-mac-${{ matrix.arch }}.dmg
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-mac-${{ matrix.arch }}.zip
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-mac-${{ matrix.arch }}.zip.blockmap
+            # FORK(github-update): 更新元数据随包发布。stable 与 dev 只会命中其中一个，
+            # 因此逐个列出（if-no-files-found 只在「全都没命中」时报错）。
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/latest-mac.yml
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/dev-mac.yml
 
   build-windows:
     name: Build Windows (x64)
@@ -297,7 +318,12 @@ jobs:
           name: win-x64
           if-no-files-found: error
           retention-days: ${{ needs.resolve.outputs.prerelease == 'true' && 14 || 90 }}
-          path: packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-win-x64.exe
+          path: |
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-win-x64.exe
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-win-x64.exe.blockmap
+            # FORK(github-update): 更新元数据随包发布（stable 与 dev 只会命中其中一个）。
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/latest.yml
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/dev.yml
 
   publish:
     name: Publish GitHub Release
@@ -376,3 +402,28 @@ jobs:
             retry gh release create "${RELEASE_TAG}" "${create_args[@]}"
           fi
           retry gh release upload "${RELEASE_TAG}" release-assets/* --clobber
+
+          # FORK-BEGIN(github-update)
+          # dev 通道还需要一份「固定地址」：客户端不知道下一次集成的提交号，无法按 tag 查询。
+          # 这里把同一批资产镜像到固定 tag 的指针 Release，只覆盖资产、不移动 tag，
+          # 因此不需要 force push。客户端读 .../releases/download/canary-build/dev.yml。
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            pointer_tag="canary-build"
+            pointer_title="Dev channel (latest canary)"
+            pointer_notes=$(printf '%s\n' \
+              "dev 通道指针发布：始终指向最新的 canary 集成构建。" \
+              "" \
+              "当前版本：${VERSION}" \
+              "提交：${COMMIT}" \
+              "构建流水线：${RUN_URL}")
+            pointer_args=(--title "${pointer_title}" --notes "${pointer_notes}" --prerelease --latest=false)
+
+            if ! retry gh release edit "${pointer_tag}" "${pointer_args[@]}"; then
+              # 指针 tag 通常已存在（只有资产在更新），用 --verify-tag 复用；不存在则按本次提交新建。
+              if ! retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag; then
+                retry gh release create "${pointer_tag}" "${pointer_args[@]}" --target "${COMMIT}"
+              fi
+            fi
+            retry gh release upload "${pointer_tag}" release-assets/* --clobber
+          fi
+          # FORK-END(github-update)

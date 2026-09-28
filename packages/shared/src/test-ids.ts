@@ -722,6 +722,15 @@ export const TID_OFFPEAK_CREATE_OPEN = "offpeak-create-open";
 export const TID_CONFIRM_DIALOG_CONFIRM = "confirm-dialog-confirm";
 
 /** 为动态元素生成带后缀的 testid，如 file-tree-item-/home/user */
+// FORK(identity-preset): 设置 → Agent 能力 → 系统指令
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH = "settings-system-instructions-switch";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE = "settings-system-instructions-create";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_TEMPLATE = "settings-system-instructions-template";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE = "settings-system-instructions-save";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT = "settings-system-instructions-edit";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DELETE = "settings-system-instructions-delete";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_ACTIVATE = "settings-system-instructions-activate";
+
 export function testId(base: string, suffix: string): string {
   return `${base}-${suffix}`;
 }

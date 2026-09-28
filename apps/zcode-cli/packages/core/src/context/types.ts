@@ -13,6 +13,8 @@ import type {
 } from "@zcode/contracts";
 import type { AutoCompactPolicyConfig } from "../compact/index.js";
 import type { AgentProfile } from "../subagent/profile.js";
+// FORK(identity-preset): 自定义身份段的类型与构造在同包的 fork 目录，避免把契约塞进 contracts
+import type { ResolvedIdentityPreset } from "../fork/identity-preset/identityManager.js";
 
 export type {
   EnvInfo,
@@ -115,6 +117,11 @@ export interface ContextBuilderConfig {
   embeddedSearchEnabled?: boolean;
   skillMetadataBudget?: number;
   customSystemPrompt?: string;
+  // FORK-BEGIN(identity-preset)
+  // 用户自定义身份段；在场时替换 cli_prefix + identity 两段，
+  // 动态段（环境/git/上下文管理/桌面契约）不受影响；customSystemPrompt 在场时让位
+  identityPreset?: ResolvedIdentityPreset;
+  // FORK-END(identity-preset)
   /**
    * 动态工作流子代理（workflow child）的身份输入。在场即走 builder 的第三条路径：
    * 基座段（CLI prefix、安全行、Harness、memory）+ 工作流子代理契约 + persona 叠加，

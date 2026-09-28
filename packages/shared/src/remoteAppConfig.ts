@@ -5,7 +5,6 @@ interface RemoteAppConfigLike {
   feedback_api_base?: unknown;
   feedback_use_external_form?: unknown;
   community_urls?: unknown;
-  forceUpdate?: unknown;
 }
 
 type LocaleUrlMap = Partial<Record<Locale, string>>;
@@ -75,20 +74,4 @@ export function getCommunityUrlFromConfigs(
   // 社群渠道具有语言边界。只允许远端覆盖同语言的内置入口，
   // 对应语言缺失时保持隐藏，避免中文和英文用户被导向错误渠道。
   return remoteUrls[locale] ?? localUrls[locale];
-}
-
-export function getForceUpdateMinimalVersionFromConfig(config: unknown): string | undefined {
-  if (!isRecord(config)) {
-    return undefined;
-  }
-
-  const forceUpdate = (config as RemoteAppConfigLike).forceUpdate;
-  if (!isRecord(forceUpdate)) {
-    return undefined;
-  }
-
-  const minimalVersion = forceUpdate.minimalVersion;
-  return typeof minimalVersion === "string" && minimalVersion.trim() !== ""
-    ? minimalVersion.trim()
-    : undefined;
 }

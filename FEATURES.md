@@ -33,3 +33,41 @@
 - **实现文档**：`docs/features/local-mode/implementation.md`（文件清单、上游接线 20 个文件/42 处标记、验证证据、与设计的偏差）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录**：暂无。
+
+## 系统指令：用户自定义提示词 (identity-preset)
+
+- **状态**：第 1、2 期完成（2026-09-29）；第 3 期（WebDAV 同步）待实施
+- **需求背景**：上游的系统提示词是代码里的固定文本，用户无法调整模型的回答风格；core 虽有 `customSystemPrompt`，但它是「整段替换」语义且没有任何生产写入方，不适合直接暴露给用户。需要一条用户可管理的自定义提示词通道：多组命名配置 + 总开关 + 本地文件存储（与 `~/.zcode/agents` 同级，全机一份），并纳入既有 WebDAV 同步；启用后只替换**身份段**，运行时事实段（环境信息 / gitStatus / 上下文管理 / 桌面契约）保持不变。
+- **修改内容**：
+  1. 第 1 期（内核）已完成：共享契约与模板常量（`presets/` 目录名、id 规则、`active.json` 形态、`default` / `skeleton` 模板）；agent 侧只读文件端口（读盘失败一律回退系统默认，绝不抛出、不写盘）；身份段构造与激活项解析；`builder.ts` 接线——启用后 `cli_prefix` 不再发出、身份段换成用户配置正文，system 消息由 3 条变 2 条，动态段与缓存语义不变，`workflowActor` / `customSystemPrompt` / 内置子代理三条路径让位；bootstrap 端口装配（`<storageRoot>/presets`，可用 `ZCodeAppOptions.identityPresetPort` 覆盖）。同一 App 内有效值只有一份（并发首次进入可能各读一次、结果相同）、只对新建会话生效，配置目录不存在时行为与改动前一致。
+  2. 第 2 期（服务与设置页）已完成：宿主文件层（原子写、空闲 id 分配、名称归一化、正文长度上限、Windows 保留设备名避让、删除激活项同时清空 activeId）；fork 服务面与宿主实现（写操作后广播状态，含 activeMissing 供 UI 提示）；访问层四处接线；设置页「系统指令」栏目（总开关、配置列表与激活标记、按模板新建、编辑器、删除确认，并明示「对新会话生效」）；i18n 与 test-ids。写入方绝不覆盖已有配置——id 派生会撞名（`"a b"` 与 `"a-b"` 都得 `a-b`），冲突时退让成 `-2`、`-3`。
+  3. 第 3 期（同步，待实施）：`presets/` 纳入 WebDAV 备份包。
+- **修改文件**：
+  - 已实现（第 1 期）新增：`packages/shared/src/fork/identity-preset-contract.ts`、`packages/shared/test/forkIdentityPresetContract.test.ts`、`apps/zcode-cli/packages/core/src/fork/identity-preset/{profile-file,identityManager,file-port,index}.ts`、`apps/zcode-cli/packages/core/test/forkIdentityPreset{,Context}.test.ts`、`docs/features/identity-preset/**`。
+  - 已实现（第 2 期）新增：`packages/services/src/fork/identityPreset.ts`、`packages/desktop/src/host/fork/identity-preset/{profile-store,service,index}.ts`、`packages/desktop/test/forkIdentityPresetStore.test.ts`、`packages/ui/src/fork/identity-preset/{useForkIdentityPreset.ts,SystemInstructionsSection.tsx,index.ts}`；上游接线 `packages/services/src/index.ts`、`packages/services/src/accessor.ts`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/shared/src/test-ids.ts`。
+  - 待实现（第 3 期）：`presets/` 纳入 WebDAV 备份包（fork 内部既有文件：`packages/shared/src/fork/webdav-contract.ts`、`packages/desktop/src/host/fork/webdav/{backup-archive,local-snapshot,sync-engine,service}.ts`）。
+- **上游改动标记**：第 1、2 期共 20 个上游文件、41 行标记。
+  - 第 1 期（10 文件 / 30 行，16 单行 + 7 对）：`packages/shared/src/index.ts`、`apps/zcode-cli/packages/core/src/{index.ts,context/types.ts,context/builder.ts,runtime/types.ts,runtime/internal.ts,runtime/agent-runtime.ts,runtime/methods/context.ts}`、`apps/zcode-cli/packages/bootstrap/src/app/{types.ts,create-app.ts}`。
+  - 第 2 期（10 文件 / 11 行）：`packages/services/src/{index.ts,accessor.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/shared/src/test-ids.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+- **设计文档**：`docs/features/identity-preset/design.md`
+- **实现文档**：`docs/features/identity-preset/implementation.md`（第 1 期：落地位置、关键改动、上游接线、验证证据、与设计的偏差）与 `implementation-plan-2.md`（第 2 期计划与硬性要求）
+- **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；`writing-plans` 产出第 1 期计划，逐任务实现并评审后由 `verification-before-completion` 收口）。
+- **上游同步记录**：暂无。
+
+## GitHub 更新通道 (github-update)
+
+- **状态**：已实现（2026-09-28），未打包验收（见实现文档 §4）
+- **需求背景**：本项目只把产物发布到自己的 GitHub Release，不部署上游 `zcode.z.ai` 的服务端更新接口。线上包因此有两个问题：桌面自动更新查的是上游地址，永远拿不到本 fork 的版本；启动前还会向上游 `/api/v1/client/configs` 请求 `forceUpdate.minimalVersion`，一旦上游把最低版本抬高，二开版本会被拦在启动页（强更 gate）。
+- **修改内容**：
+  1. 桌面端自动更新改为查本仓库的 GitHub Release，不再请求上游服务端 manifest。stable 通道用 GitHub 的 `releases/latest/download` 别名（GitHub 定义为「最新非 prerelease」），preview 通道用固定 tag `canary-build` 的指针 Release；通道仍由设置里的「接收 preview 版本」决定，切换时 feed 基址与 channel 文件名同步切换。
+  2. 移除启动强更 gate：不再请求 `/api/v1/client/configs` 的 `forceUpdate`，不再因远端配置阻止主窗口创建或退出应用；同时清掉 `requestForceAutoUpdate`、`ForceUpdateConfig`、`getForceUpdateConfig()` 服务方法、`packages/shared/src/forceUpdate.ts` 与两个语言文件里的 `forceUpdate.*` 文案（移除前已无 UI 引用）。
+  3. 发布流水线产出并上传 electron-updater 需要的更新元数据：`detectUpdateChannel` 打开（稳定版写 `latest*.yml`，dev 版写 `dev*.yml`），artifact 增加 `*.blockmap` 与两个候选 yml，dev 构建额外把资产覆盖到 `canary-build` 指针 Release。
+- **修改文件**：
+  - 新增 `packages/desktop/src/main/fork/github-update/feed.ts`、`packages/desktop/test/forkGithubUpdateFeed.test.ts`、`docs/features/github-update/**`。
+  - 删除 `packages/desktop/src/main/manifestUpdateProvider.ts`、`forceUpdateGuard.ts`、`forceUpdatePrompt.ts`、`packages/shared/src/forceUpdate.ts`。
+  - 上游接线：`packages/desktop/src/main/{autoUpdater.ts,index.ts,desktopSecondInstanceDeepLink.ts}`、`packages/desktop/electron-builder.config.js`、`.github/workflows/release.yml`、`packages/shared/src/{index.ts,remoteAppConfig.ts,coding-plan-subscription.ts}`、`packages/services/src/coding-plan-subscription/*`（3 个）、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+- **上游改动标记**：3 个上游文件、7 个单点 `FORK(github-update)` + 3 对 `FORK-BEGIN/END`（`autoUpdater.ts`、`electron-builder.config.js`、`release.yml`）；其余为新增文件或纯删除。
+- **设计文档**：`docs/features/github-update/design.md`
+- **实现文档**：`docs/features/github-update/implementation.md`（落地位置、标记清单、验证证据、未执行项、与设计的偏差）
+- **已知边界**：macOS 自更新要求签名（未配置签名 secret 时 macOS 端自动更新不可用）；更新元数据本身无签名，信任根转移到 GitHub 仓库写权限；更新弹窗的 release notes 会退化为空（generic provider 不带 `releaseNotesByLocale`）；移除强更 gate 后没有强制下线能力。
+- **上游同步记录**：暂无。

@@ -114,10 +114,6 @@ export interface StartPlanPreviewConfig {
   entitlements: StartPlanPreviewEntitlement[];
 }
 
-export interface ForceUpdateConfig {
-  minimalVersion: string;
-}
-
 /**
  * 闲时任务客户端配置：client/configs 只下发入口曝光开关；模型展示来自 Built-in
  * offpeak Provider。准入/低峰判断仍以服务端为准（3006 兜底）。

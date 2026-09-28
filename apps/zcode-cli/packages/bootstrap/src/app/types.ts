@@ -3,6 +3,8 @@ import type { AiSdkModelAdapter } from "@zcode/adapters/model";
 import type {
   AgentRuntime,
   AgentRuntimeConfig,
+  // FORK(identity-preset): 自定义身份段端口类型；见 FEATURES.md 的 identity-preset 条目
+  IdentityPresetPort,
   ExecuteTurnOptions,
   ExpertWorkflowCommandResult,
   ProviderRuntimeHeadersPort,
@@ -165,6 +167,8 @@ export interface ZCodeAppOptions {
   pdfDocumentPort?: PdfDocumentPort;
   artifactStore?: ToolArtifactStorePort;
   contextSourcePort?: ContextSourcePort;
+  // FORK(identity-preset): 端口覆盖点，与 contextSourcePort 同区；测试与同进程嵌入宿主靠它替换文件读取
+  identityPresetPort?: IdentityPresetPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   /** 由宿主提供 per-app lease；产出的端口归 app 所有。 */
