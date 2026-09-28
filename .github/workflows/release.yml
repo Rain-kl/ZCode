@@ -1,0 +1,376 @@
+name: Release Desktop
+
+# 桌面端发布流水线：macOS（arm64 + x64）与 Windows（x64）。
+#
+# 触发与产物（规则、验收场景与缺口清单见 docs/specs/desktop-release.md）
+# - 推送 `v*.*.*` tag：稳定发布。打包前用 tag 版本改写根 package.json，使程序内版本
+#   （app.getVersion()、About、遥测）、产物文件名与 Release tag 三者一致。
+# - 推送到 canary 分支：集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，发布为 `dev-<sha8>` 预发布。
+# - workflow_dispatch：手动按 dev 通道跑一次；stable 通道必须在 vX.Y.Z tag 上触发。
+#
+# 仓库既有约定（改这条流水线前先读对应实现）
+# - `ZCODE_ENV=production`：builtin provider 配置与产品身份都按 production 解析；缺失时
+#   desktop-product-identity.mjs 会回落到 Preview 身份，产物变成 “ZCode Preview” 并带 `_TEST` 后缀。
+# - Windows job 带 `ZCODE_SKIP_REMOTE_ASSETS=1`：Windows 桌面安装包不依赖 mock-cdn remote 资产
+#   （packages/desktop/scripts/prepare-runtime-assets.mjs:56），跳过可显著缩短作业时间。
+# - macOS 签名默认关闭（packages/desktop/electron-builder.config.js 要求 ZCODE_ENABLE_MAC_SIGN=1
+#   且存在证书身份）；配置 MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / MAC_SIGNING_IDENTITY 三个 secret
+#   后本流水线自动开启签名。注意两点边界（见 electron-builder.config.js:667-691 的说明）：
+#   1) 仓库刻意关闭 electron-builder 内置公证（notarize: false），公证是独立阶段，本流水线不做；
+#   2) 嵌套运行时（Contents/Resources/glm、tools 及 CUA Helper）在原流水线里由独立 job 预签名并 staple，
+#      这里被 signIgnore 跳过，因此仅打开签名开关只覆盖主 app，不构成可公证的完整签名链。
+# - mac x64 必须跑在 Intel runner 上：node-pty 在非 Windows 宿主按宿主架构 electron-rebuild，
+#   且运行时优先加载 build/Release/pty.node（node_modules/node-pty/lib/utils.js:19），
+#   在 arm64 宿主上打 x64 包会把 arm64 原生模块混进产物。
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+    branches:
+      - canary
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "发布通道：dev 为集成构建（预发布）；stable 只能在 vX.Y.Z tag 上触发"
+        type: choice
+        options:
+          - dev
+          - stable
+        default: dev
+
+# 同一 ref 的发布串行执行且不取消进行中的构建，避免 Release 收到半套产物。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ZCODE_ENV: production
+  # GitHub 托管 runner 直连 GitHub 的 release CDN；仓库默认镜像面向国内网络（bundle.mjs:124-155）。
+  ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+  # 把 Electron / electron-builder 缓存固定在工作区内，让 actions/cache 的路径在各 runner 上一致。
+  ELECTRON_CACHE: ${{ github.workspace }}/.electron-cache
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.electron-builder-cache
+
+jobs:
+  resolve:
+    name: Resolve version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      channel: ${{ steps.version.outputs.channel }}
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      # 版本解析只用 Node 内置能力（scripts/ci/release-version.mjs），因此这里不需要安装依赖。
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            node scripts/ci/release-version.mjs apply --tag "${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "${{ inputs.channel }}" == "stable" ]]; then
+              echo "::error::稳定发布必须由 vX.Y.Z tag 触发，当前 ref=${GITHUB_REF_NAME}"
+              exit 1
+            fi
+            node scripts/ci/release-version.mjs apply --dev-commit "${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=dev-${GITHUB_SHA:0:8}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify workspace gates
+    needs: [resolve]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # 这里只跑静态检查，不需要原生模块和 Electron 运行时，跳过安装脚本可省掉一次 Electron 下载。
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Architecture check
+        run: pnpm architecture:check
+
+      # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
+      # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
+      # 打包链路本身不校验清单新鲜度（scripts/third-party-notices.mjs:9-12），不影响产物。
+      - name: Third-party inventory check (advisory)
+        continue-on-error: true
+        run: node scripts/licenses.mjs check --strict
+
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    needs: [resolve, verify]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 两个架构都必须跑在对应架构的 runner 上，原因见文件头 mac x64 说明。
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      ZCODE_DESKTOP_DIST_DIR: dist-mac-${{ matrix.arch }}
+      MAC_SIGN_READY: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' && secrets.MAC_SIGNING_IDENTITY != '' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # actions/cache 要求路径在恢复阶段就存在，先建目录再走缓存。
+      # 用相对路径（步骤 cwd 即 github.workspace）避免 Windows 上反斜杠绝对路径进 bash。
+      - name: Prepare cache directories
+        shell: bash
+        run: mkdir -p .electron-cache .electron-builder-cache packages/desktop/mock-cdn
+
+      - name: Cache Electron and electron-builder artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            .electron-cache
+            .electron-builder-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/desktop/package.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+
+      # mock-cdn 存放跨平台远程运行时资产，按版本分目录；restore-keys 让新版本复用旧目录里已有的组件。
+      - name: Cache remote runtime assets
+        uses: actions/cache@v6
+        with:
+          path: packages/desktop/mock-cdn
+          key: mock-cdn-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'scripts/prepare-prebuilds.mjs') }}
+          restore-keys: |
+            mock-cdn-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply release version
+        run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Enable macOS code signing
+        if: env.MAC_SIGN_READY == 'true'
+        shell: bash
+        env:
+          CSC_LINK_INPUT: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD_INPUT: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_INPUT: ${{ secrets.MAC_SIGNING_IDENTITY }}
+        run: |
+          {
+            echo "CSC_LINK=${CSC_LINK_INPUT}"
+            echo "CSC_KEY_PASSWORD=${CSC_KEY_PASSWORD_INPUT}"
+            echo "APPLE_SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY_INPUT}"
+            echo "ZCODE_ENABLE_MAC_SIGN=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Bundle desktop app
+        run: pnpm bundle:desktop -- --os mac --arch ${{ matrix.arch }}
+
+      # 验收 tag 版本确实进了程序：比对 app.asar 内 package.json 与 build-meta.json。
+      - name: Verify packaged version
+        shell: bash
+        env:
+          BUNDLE_DIR: packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}
+        run: |
+          set -euo pipefail
+          app_dir=$([[ "${{ matrix.arch }}" == "arm64" ]] && echo mac-arm64 || echo mac)
+          node scripts/ci/release-version.mjs verify \
+            --expect "${{ needs.resolve.outputs.version }}" \
+            --expect-commit "${{ needs.resolve.outputs.commit }}" \
+            --asar "${BUNDLE_DIR}/${app_dir}/ZCode.app/Contents/Resources/app.asar"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: ${{ needs.resolve.outputs.prerelease == 'true' && 14 || 90 }}
+          path: |
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-mac-${{ matrix.arch }}.dmg
+            packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-mac-${{ matrix.arch }}.zip
+
+  build-windows:
+    name: Build Windows (x64)
+    needs: [resolve, verify]
+    runs-on: windows-2025
+    timeout-minutes: 150
+    env:
+      ZCODE_DESKTOP_DIST_DIR: dist-win-x64
+      ZCODE_SKIP_REMOTE_ASSETS: "1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Prepare cache directories
+        shell: bash
+        run: mkdir -p .electron-cache .electron-builder-cache
+
+      - name: Cache Electron and electron-builder artifacts
+        uses: actions/cache@v6
+        with:
+          path: |
+            .electron-cache
+            .electron-builder-cache
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/desktop/package.json') }}
+          restore-keys: |
+            electron-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply release version
+        run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Bundle desktop app
+        run: pnpm bundle:desktop -- --os win --arch x64
+
+      - name: Verify packaged version
+        shell: bash
+        env:
+          BUNDLE_DIR: packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/release-version.mjs verify \
+            --expect "${{ needs.resolve.outputs.version }}" \
+            --expect-commit "${{ needs.resolve.outputs.commit }}" \
+            --asar "${BUNDLE_DIR}/win-unpacked/resources/app.asar"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: win-x64
+          if-no-files-found: error
+          retention-days: ${{ needs.resolve.outputs.prerelease == 'true' && 14 || 90 }}
+          path: packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/ZCode-${{ needs.resolve.outputs.version }}-win-x64.exe
+
+  publish:
+    name: Publish GitHub Release
+    needs: [resolve, build-macos, build-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          ls -lh
+          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' \) -print0 \
+            | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 该 job 不 checkout，gh 需要显式仓库上下文才能操作 Release。
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          retry() {
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "attempt ${attempt} failed: $*" >&2
+              sleep $((attempt * 5))
+            done
+            return 1
+          }
+
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            title="Dev build ${COMMIT:0:8}"
+            summary="canary 通道自动集成构建，非稳定版本。"
+          else
+            title="ZCode ${VERSION}"
+            summary="稳定发布。"
+          fi
+
+          notes=$(printf '%s\n' \
+            "${summary}" \
+            "" \
+            "版本：${VERSION}" \
+            "提交：${COMMIT}" \
+            "构建流水线：${RUN_URL}" \
+            "" \
+            "macOS 安装包未公证，首次打开需右键“打开”，或在“系统设置 → 隐私与安全性”中放行；" \
+            "产物校验见 SHA256SUMS.txt。")
+
+          create_args=(--title "${title}" --notes "${notes}")
+          edit_args=(--title "${title}" --notes "${notes}")
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            # dev 标签随提交创建；--latest=false 保证 releases/latest 仍指向稳定版本。
+            create_args+=(--prerelease --latest=false --target "${COMMIT}")
+            edit_args+=(--prerelease --latest=false)
+          else
+            create_args+=(--verify-tag)
+          fi
+
+          # 先 edit 再回退 create：避免一次存在性探测失败（503）把已有 Release 误路由成 create(422)。
+          if ! retry gh release edit "${RELEASE_TAG}" "${edit_args[@]}"; then
+            retry gh release create "${RELEASE_TAG}" "${create_args[@]}"
+          fi
+          retry gh release upload "${RELEASE_TAG}" release-assets/* --clobber
