@@ -1,6 +1,6 @@
 name: Release Desktop
 
-# 桌面端发布流水线：macOS（arm64 + x64）与 Windows（x64）。
+# 桌面端发布流水线：macOS（arm64）与 Windows（x64）。
 #
 # 触发与产物（规则、验收场景与缺口清单见 docs/specs/desktop-release.md）
 # - 推送 `v*.*.*` tag：稳定发布。打包前用 tag 版本改写根 package.json，使程序内版本
@@ -19,9 +19,9 @@ name: Release Desktop
 #   1) 仓库刻意关闭 electron-builder 内置公证（notarize: false），公证是独立阶段，本流水线不做；
 #   2) 嵌套运行时（Contents/Resources/glm、tools 及 CUA Helper）在原流水线里由独立 job 预签名并 staple，
 #      这里被 signIgnore 跳过，因此仅打开签名开关只覆盖主 app，不构成可公证的完整签名链。
-# - mac x64 必须跑在 Intel runner 上：node-pty 在非 Windows 宿主按宿主架构 electron-rebuild，
-#   且运行时优先加载 build/Release/pty.node（node_modules/node-pty/lib/utils.js:19），
-#   在 arm64 宿主上打 x64 包会把 arm64 原生模块混进产物。
+# - macOS 只出 arm64 包（发布范围决定）。如需 Intel 包，必须加 Intel runner 上的构建条目：
+#   node-pty 在非 Windows 宿主按宿主架构 electron-rebuild，且运行时优先加载
+#   build/Release/pty.node，在 arm64 宿主上打 x64 包会把 arm64 原生模块混进产物。
 
 on:
   push:
@@ -137,13 +137,15 @@ jobs:
     needs: [resolve, verify]
     strategy:
       fail-fast: false
+      # 只发布 Apple Silicon 包。若将来要出 Intel 包，必须在 Intel runner 上构建：
+      # node-pty 在非 Windows 宿主按宿主架构 electron-rebuild，且运行时优先加载
+      # build/Release/pty.node（node_modules/node-pty/lib/utils.js:19），
+      # 在 arm64 宿主上打 x64 包会把 arm64 原生模块混进产物。
+      # 届时在此加回 { arch: x64, runner: macos-15-intel }。
       matrix:
         include:
-          # 两个架构都必须跑在对应架构的 runner 上，原因见文件头 mac x64 说明。
           - arch: arm64
             runner: macos-15
-          - arch: x64
-            runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
