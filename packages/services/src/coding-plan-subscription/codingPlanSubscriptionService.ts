@@ -60,8 +60,12 @@ export function createCodingPlanSubscriptionService(
     checkPaypalSupport: (request) => bigmodelProvider.checkPaypalSupport(request),
     createPaypalSetupToken: (request) => bigmodelProvider.createPaypalSetupToken(request),
     subscribePaypal: (request) => bigmodelProvider.subscribePaypal(request),
-    getEnterprisePricing: (request) =>
-      resolveEnterprisePricingProvider(request?.family).getEnterprisePricing(request),
+    // FORK(local-mode): 企业套餐定价是云账号读路径，且被常驻的侧栏 footer
+    // （useEnterpriseCodingPlanProducts）在启动时就调用。这里不再转发到 provider，
+    // 使其落到 provider 的调用成为死代码，不再向 api.z.ai / bigmodel.cn 出网。
+    // 返回空 productList 与 provider 自身的失败回退形态一致，调用方按「无企业套餐」处理。
+    // 见 FEATURES.md 的 local-mode 条目。
+    getEnterprisePricing: () => Promise.resolve({ productList: [] }),
     getEnterpriseBalance: () => bigmodelProvider.getEnterpriseBalance(),
     calculateEnterpriseOrder: (request) => bigmodelProvider.calculateEnterpriseOrder(request),
     createEnterpriseOrder: (request) => bigmodelProvider.createEnterpriseOrder(request),

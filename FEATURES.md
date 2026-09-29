@@ -46,6 +46,19 @@
 - **影响的上游标记**：无新增上游文件——改的是 fork 自有文件（`packages/shared/src/fork/webdav-contract.ts`、`packages/desktop/src/host/fork/webdav/{backup-archive,local-snapshot,sync-engine,service}.ts`）与一处宿主装配（`packages/desktop/src/host/index.ts` 的 `FORK(identity-preset)` 标记）。
 - **验收**：`packages/desktop/test/forkWebdavPresets.test.ts`（7 个用例：往返、旧包不产生字段、哈希敏感、越界条目名被拒、本地只收合法 id、恢复旧包不动本地、整目录覆盖）。
 
+### 云账号额度链路下线：删除调用点而非加开关（2026-09-29）
+
+- **需求背景**：第①期的「入口屏蔽」只覆盖界面门面（首屏登录、侧栏登录/登出、升级入口）与部分后台通知（会话恢复、断连提醒、provider 下发），但**账号 provider 可用性查询**与**额度查询**这两条云链路完全没有判定。实测启动日志仍出现 `[server] [coding-plan-availability] billing/balance 请求完成` 与 `[server] [usage-stats] billing/balance 请求完成`，请求 `https://zcode.z.ai/api/v1/zcode-plan/billing/balance?app_version=3.14.3`，并因磁盘上残留的 `zcodejwttoken` 拿回了真实账号套餐（`ZCode Start Plan`）与额度（GLM-5.3 / GLM-5.3-Flash）。用户要求「不要用开关的方式，直接删掉其相关的调用，让其成为死代码」。
+- **修改内容**：删除调用点，不新增 `FORK_LOCAL_MODE` 判定分支。
+  1. `packages/services/src/node.ts`：`accountProviderConfigSource` 不再装配 `createCodingPlanFamilyAvailabilityResolver`（该链会经 `validateZai/BigModelAccountProviderAvailability` → `validateStartPlanAvailability` → `GET /zcode-plan/billing/balance`），改为本地实现：`loadCodingPlanApiKey` 直接返回 `null`、`resolveFamilyAvailability` 对所有 provider 返回 `coding_plan_not_connected`。返回「未连接」而非空对象，是因为空对象会退化成 `status:"unknown"`，且 Start Plan 的 `current` 只看登录身份，会在无权益时仍被标成当前套餐。
+  2. `packages/services/src/usage-stats/usageStatsService.ts`：不再构造 `BigModelUsageQuotaProvider`，整条云端额度实现（含 `/billing/balance`）成为死代码。`getEntitlementSnapshot` 返回 fail-closed 的 `not_configured` 快照（UI 已是一等状态，`hasActiveCodingPlanSnapshot` 会因此判为无有效套餐）；`getCodingPlanUsageSnapshot` / `getCodingPlanResetStatus` / `requestCodingPlanResetOpportunity` / `useCodingPlanReset` / `markCodingPlanResetHistoryRead` / `getSnapshot` 改为携带方法名与原因的显式报错，不静默返回空数据。
+  3. `packages/services/src/coding-plan-subscription/codingPlanSubscriptionService.ts`：`getEnterprisePricing` 不再转发到 provider（该方法是云账号读路径，且被常驻侧栏 footer 在启动时调用），返回空 `productList`。
+  4. 保留 `getAppUsageSnapshot`——它读取 agent 数据库本地统计，是用户要求保留的「使用统计」，与云账号无关。
+- **修改文件**：`packages/services/src/{node.ts,usage-stats/usageStatsService.ts,coding-plan-subscription/codingPlanSubscriptionService.ts}`；新增 `packages/services/test/forkLocalModeCloudUsageRemoval.test.ts`（3 个用例）。
+- **上游改动标记**：3 个上游文件、4 处 `FORK(local-mode)`（含 1 处注释说明被停用的导入）。
+- **验收**：契约测试断言三条不变量——本地统计仍走 agent 数据库；`getEntitlementSnapshot` 返回 `not_configured` 且不触达网络/凭据（传入的 `apiClient` 与 `credentialService` 桩一旦被调用即抛错）；云额度方法显式报错且错误信息含方法名与移除原因。整仓 `pnpm typecheck` 0 错误、`pnpm lint` 0 error。
+- **已知边界**：本次按「删调用」处理，`BigModelUsageQuotaProvider`、`codingPlanProviderAvailability.ts`、`createCodingPlanFamilyAvailabilityResolver` 等实现文件保留为死代码（未删除源文件）。磁盘上残留的 `zcodejwttoken` 与按 endpoint/版本隔离的 `zcode-builtin.json` 未清理（调用点已无，不会再生效）。UI 层 `useUsageEntitlement` 的调用点保留：服务层已 fail-closed，它们拿不到有效套餐、不会触达云端。
+
 ## 移除闲时任务入口 (offpeak-removal)
 
 - **状态**：已实现（2026-09-29）：工具面与创建路径两处入口撤掉，其余实现保留为死代码。

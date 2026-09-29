@@ -364,8 +364,9 @@ import { createAccountProviderCredentialStore } from "./model-provider/accountPr
 import { createAccountProviderCredentialService } from "./model-provider/accountProviderCredentialService.js";
 import { createAccountProviderRequestAuthService } from "./model-provider/accountProviderRequestAuthService.js";
 import {
+  // FORK(local-mode): createCodingPlanFamilyAvailabilityResolver 已停止装配（云可用性查询下线）；
+  // 见 FEATURES.md 的 local-mode 条目
   createAccountProviderConfigSource,
-  createCodingPlanFamilyAvailabilityResolver,
   resolveCurrentAccountAccess,
 } from "./model-provider/accountProviderConnectionResolver.js";
 import { bindAccountProviderInvalidation } from "./model-provider/accountProviderInvalidation.js";
@@ -502,7 +503,6 @@ import {
   ZCODE_JWT_INVALID_BROADCAST_CHANNEL,
   formatLogPrefix,
   isCredentialDecryptError,
-  isStartPlanModelProviderId,
   OFF_PEAK_PROVIDER_IDS,
   BIGMODEL_PROVIDER_ID,
   type ProviderFamilyDomain,
@@ -1559,23 +1559,28 @@ export function createLocalServices(options: {
     // Repository 仅在新 Personal 配置不存在时导入，并保留旧文件以便回滚。
     readLegacyProviders: () => readLegacyZCodeConfigProviders(),
   });
+  // FORK(local-mode): 云账号可用性查询整体下线——不再装载真实可用性 resolver，也不读取
+  // Coding Plan 凭据。原实现在这里装配 createCodingPlanFamilyAvailabilityResolver，由它调用
+  // validateZai/BigModelAccountProviderAvailability → validateStartPlanAvailability →
+  // GET /zcode-plan/billing/balance。改为纯本地实现后，该链路成为死代码：不再出网、
+  // 不再读残留的 zcodejwttoken。
+  // 返回「未连接」而不是空对象：空对象会退化成 status:"unknown"，且 Start Plan 的
+  // current 只看登录身份，会在无权益时仍被标成当前套餐；本地模式下正确语义是没有云账号连接。
+  // 见 FEATURES.md 的 local-mode 条目。
   const accountProviderConfigSource = createAccountProviderConfigSource({
     configSource: providerConfigRuntime.configService,
     readSettings: readAccountProviderSettings,
-    async loadCodingPlanApiKey(providerId, family, accountIdentity, forceRefresh) {
-      if (isStartPlanModelProviderId(providerId)) return null;
-      return accountProviderCredentialService.loadCodingPlanApiKey({
-        providerId,
-        family,
-        accountIdentity,
-        forceRefresh,
-      });
+    async loadCodingPlanApiKey() {
+      return null;
     },
     loadAccountIdentity,
-    resolveFamilyAvailability: createCodingPlanFamilyAvailabilityResolver({
-      apiClient,
-      credentialService,
-    }),
+    resolveFamilyAvailability: async ({ providers }) =>
+      Object.fromEntries(
+        providers.map((provider) => [
+          provider.providerId,
+          { kind: "unavailable" as const, reason: "coding_plan_not_connected" as const },
+        ]),
+      ),
   });
   const accountProviderRuntimeLog = createServiceLogger("account-provider-runtime");
   const modelSelectionConfiguredDefaultSource = new NodeModelSelectionConfigRepository({
