@@ -2,7 +2,11 @@ import { Event, ProxyChannel, type IChannel, type IChannelClient } from "@zcode/
 import type { IChannelAvailability } from "@zcode/services";
 import { isChannelAvailable } from "./channelManifest.js";
 // FORK(local-mode): WebDAV 服务通道名
-import { FORK_IDENTITY_PRESET_CHANNEL, FORK_WEBDAV_CHANNEL } from "@zcode/shared";
+import {
+  FORK_IDENTITY_PRESET_CHANNEL,
+  FORK_TOOL_MODE_CHANNEL,
+  FORK_WEBDAV_CHANNEL,
+} from "@zcode/shared";
 // FORK(search-providers): 网络搜索渠道服务通道名；见 FEATURES.md 的 search-providers 条目
 import { FORK_SEARCH_PROVIDERS_CHANNEL } from "@zcode/shared";
 import {
@@ -50,6 +54,8 @@ import {
   IForkWebdavService,
   // FORK(identity-preset): 系统指令配置服务面
   IForkIdentityPresetService,
+  // FORK(tool-modes): 功能组服务面
+  IForkToolModeService,
   // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
   IForkSearchProvidersService,
   type IServiceAccessor,
@@ -63,6 +69,8 @@ type ManifestGatedServiceKey =
   | "cuaPermissionService"
   | "forkWebdavService"
   | "forkIdentityPresetService"
+  // FORK(tool-modes): 功能组（工具模式）
+  | "forkToolModeService"
   | "forkSearchProvidersService";
 
 /**
@@ -124,6 +132,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly forkWebdavService?: IForkWebdavService;
   /** FORK(identity-preset): 系统指令配置（host 未注册时为 undefined）。 */
   readonly forkIdentityPresetService?: IForkIdentityPresetService;
+  /** FORK(tool-modes): 功能组（工具模式）。 */
+  readonly forkToolModeService?: IForkToolModeService;
   /** FORK(search-providers): 网络搜索渠道（host 未注册时为 undefined）。 */
   readonly forkSearchProvidersService?: IForkSearchProvidersService;
   readonly feedbackService: IFeedbackService;
@@ -255,6 +265,8 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.defineManifestGatedService("forkWebdavService", FORK_WEBDAV_CHANNEL);
     // FORK(identity-preset): 系统指令配置服务（同上）
     this.defineManifestGatedService("forkIdentityPresetService", FORK_IDENTITY_PRESET_CHANNEL);
+    // FORK(tool-modes): 功能组（工具模式）服务（同上）
+    this.defineManifestGatedService("forkToolModeService", FORK_TOOL_MODE_CHANNEL);
     // FORK(search-providers): 网络搜索渠道管理服务；见 FEATURES.md 的 search-providers 条目
     this.defineManifestGatedService("forkSearchProvidersService", FORK_SEARCH_PROVIDERS_CHANNEL);
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(

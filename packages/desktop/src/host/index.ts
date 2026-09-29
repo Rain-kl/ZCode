@@ -49,6 +49,8 @@ import {
   IForkWebdavService,
   // FORK(identity-preset): 系统指令配置服务面
   IForkIdentityPresetService,
+  // FORK(tool-modes): 功能组（工具模式）服务面
+  IForkToolModeService,
   // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
   IForkSearchProvidersService,
   createZCodeAgentConnectionScope,
@@ -79,6 +81,8 @@ import {
 import { join } from "node:path";
 import { createForkWebdavService } from "./fork/webdav/index.js";
 import { createForkIdentityPresetService } from "./fork/identity-preset/index.js";
+// FORK(tool-modes): 功能组（工具模式）服务工厂；见 FEATURES.md 的 tool-modes 条目
+import { createForkToolModeService } from "./fork/tool-modes/index.js";
 // FORK(search-providers): 网络搜索渠道服务工厂；见 FEATURES.md 的 search-providers 条目
 import { createForkSearchProvidersService } from "./fork/search-providers/index.js";
 // FORK(search-providers): 渠道文件在 CLI 配置目录，同步解析依赖 homedir 与运行时常量；见 FEATURES.md 的 search-providers 条目
@@ -136,7 +140,7 @@ import type {
   RemoteConnection,
 } from "@zcode/server/remote";
 // FORK(identity-preset): presets/ 目录名与 agent 侧共用同一常量，避免两侧字面量漂移
-import { FORK_IDENTITY_PRESET_ROOT_NAME } from "@zcode/shared";
+import { FORK_IDENTITY_PRESET_ROOT_NAME, FORK_TOOL_MODE_STATE_FILENAME } from "@zcode/shared";
 import type { RemoteTarget } from "@zcode/shared";
 import { wrapElectronPort } from "./electronPort.js";
 import { createTaskRealtimeBridgeForHostInit } from "./taskRealtimeBridge.js";
@@ -2948,6 +2952,13 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             root: join(await resolveZCodeStorageRoot(), FORK_IDENTITY_PRESET_ROOT_NAME),
           });
           services.register(IForkIdentityPresetService, forkIdentityPresetService);
+        }
+        // FORK(tool-modes): 注册功能组（工具模式）服务；状态文件与身份配置同级（storage root）
+        {
+          const forkToolModeService = createForkToolModeService({
+            path: join(await resolveZCodeStorageRoot(), FORK_TOOL_MODE_STATE_FILENAME),
+          });
+          services.register(IForkToolModeService, forkToolModeService);
         }
         // FORK(search-providers): 注册网络搜索渠道服务（桌面专属；未注册时渲染层拿不到该服务；见 FEATURES.md 的 search-providers 条目）
         {

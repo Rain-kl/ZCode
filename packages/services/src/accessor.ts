@@ -91,6 +91,8 @@ export interface IServiceAccessor {
   readonly forkWebdavService?: import("./fork/webdav.js").IForkWebdavService;
   /** FORK(identity-preset): 系统指令配置；host 未提供时（web/远端）为 undefined。 */
   readonly forkIdentityPresetService?: import("./fork/identityPreset.js").IForkIdentityPresetService;
+  /** FORK(tool-modes): 功能组（工具模式）；host 未提供时（web/远端）为 undefined。 */
+  readonly forkToolModeService?: import("./fork/toolModes.js").IForkToolModeService;
   /** FORK(search-providers): 网络搜索渠道；host 未提供时（web/远端）为 undefined；见 FEATURES.md 的 search-providers 条目。 */
   readonly forkSearchProvidersService?: import("./fork/search-providers.js").IForkSearchProvidersService;
   /** FORK(rpc-channel-manifest): 对端通道可用性；非 RPC 装配（测试替身）可不提供，见 FEATURES.md 的 rpc-channel-manifest 条目。 */

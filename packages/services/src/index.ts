@@ -31,6 +31,9 @@ export type { IForkWebdavService as IForkWebdavServiceType } from "./fork/webdav
 // FORK(identity-preset): 系统指令服务面；见 FEATURES.md 的 identity-preset 条目
 export { IForkIdentityPresetService } from "./fork/identityPreset.js";
 export type { IForkIdentityPresetService as IForkIdentityPresetServiceType } from "./fork/identityPreset.js";
+// FORK(tool-modes): 功能组服务面；见 FEATURES.md 的 tool-modes 条目
+export { IForkToolModeService } from "./fork/toolModes.js";
+export type { IForkToolModeService as IForkToolModeServiceType } from "./fork/toolModes.js";
 // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
 export { IForkSearchProvidersService } from "./fork/search-providers.js";
 export type { IForkSearchProvidersService as IForkSearchProvidersServiceType } from "./fork/search-providers.js";
