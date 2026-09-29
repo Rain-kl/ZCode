@@ -53,7 +53,8 @@
 2. **dev 通道不污染稳定通道**：`dev-<sha8>` 以 `--prerelease --latest=false` 发布，`releases/latest` 仍指向稳定版本。
 3. **半套产物不发布**：`publish` 的显式条件要求两个平台构建都 `success`，任一平台失败则整体不创建 Release；tag 渠道下 `verify` 失败会先让两个构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
-5. **dev 通道只保留最新一份**：发布 `dev-<sha8>` 成功后，publish 步骤删除其它 `dev-*` 发布并连同 tag 清理（`gh release delete --cleanup-tag`）；清理是 best-effort，失败不影响本次发布，下一轮再试。`canary-build` 指针发布与 stable 发布不在此列，始终保留。
+5. **dev 通道只保留最新一份**：发布 `dev-<sha8>` 成功后，publish 步骤删除其它 `dev-*` 发布并连同 tag 清理（`gh release delete --cleanup-tag`）；清理是 best-effort，失败不影响本次发布，下一轮再试。
+   - **清理范围必须限定在 `dev-*`**：`canary-build` 是 preview 更新通道的固定 tag 入口（客户端读它资产里的 `dev.yml` / `dev-mac.yml`，见「更新通道」），stable tag 发布是正式版本——放宽成「所有 prerelease」会让预览通道的更新检查直接失效。
 
 ## 边界与已知缺口
 

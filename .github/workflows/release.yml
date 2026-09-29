@@ -446,6 +446,9 @@ jobs:
 
             # dev 通道只保留最新一份：每次推送都会产生一个 dev-<sha>，历史包没有保留价值，
             # 留着只会让 Releases 变成流水账。best-effort——清理失败不影响本次发布，下一轮再试。
+            # 只匹配 ^dev-：canary-build 是 preview 更新通道的固定 tag 入口（客户端读它资产里的
+            # dev.yml / dev-mac.yml），stable 是正式发布——两者都不在「旧 prerelease」范围内，
+            # 把这里放宽成「所有 prerelease」会直接断掉预览通道的更新检查。
             old_dev_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
               | grep -E '^dev-' | grep -v -x "${RELEASE_TAG}" || true)
             for old_dev_tag in ${old_dev_tags}; do
