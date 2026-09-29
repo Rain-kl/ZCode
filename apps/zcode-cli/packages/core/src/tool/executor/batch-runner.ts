@@ -45,6 +45,8 @@ export async function executeToolBatch(
           traceContext: options?.traceContext,
           subagentModelOverride: options?.subagentModelOverride,
           model: options?.model,
+          // FORK(webfetch-direct-passthrough): 这里是白名单式重建，漏一行就静默丢字段（工具侧只会「悄悄变回总结」）；见 FEATURES.md 的对应条目
+          remainingContextTokens: options?.remainingContextTokens,
         }),
       ),
     );
@@ -83,6 +85,8 @@ export async function* executeToolSchedule(
       traceContext: options?.traceContext,
       subagentModelOverride: options?.subagentModelOverride,
       model: options?.model,
+      // FORK(webfetch-direct-passthrough): 同上，白名单重建必须带上预算字段；见 FEATURES.md 的对应条目
+      remainingContextTokens: options?.remainingContextTokens,
       maxConcurrency,
     });
     allResults.push(...groupResults);

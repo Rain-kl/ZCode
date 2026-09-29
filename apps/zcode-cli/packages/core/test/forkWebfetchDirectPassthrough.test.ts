@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { SessionId, ToolCallId, TraceId } from "@zcode/contracts";
@@ -232,4 +233,24 @@ test("预批文档站的 markdown 短路不受影响", async () => {
 
   assert.equal(result.result, fetched.content);
   assert.equal(result.truncated, false);
+});
+
+// -----------------------------------------------
+// 接线不变量：白名单式重建必须带上预算字段
+// -----------------------------------------------
+
+test("批量/调度层每处转发 model 的地方都必须转发剩余预算", () => {
+  // 这一层不是 object spread，而是逐个字段重建 options：漏一个字段不报错、不影响类型检查，
+  // 只在运行期表现为「WebFetch 又悄悄变回总结」。第一版实现正是断在这里，所以断言「配对」
+  // 而不是「存在」——上游将来新增一处重建点时这条也会红。
+  const source = readFileSync(
+    new URL("../src/tool/executor/batch-runner.ts", import.meta.url),
+    "utf8",
+  );
+  const modelForwards = source.match(/model:\s*options\?\.model,/g) ?? [];
+  const budgetForwards =
+    source.match(/remainingContextTokens:\s*options\?\.remainingContextTokens,/g) ?? [];
+
+  assert.ok(modelForwards.length >= 2, `期望至少 2 处 options 重建，实际 ${modelForwards.length}`);
+  assert.equal(budgetForwards.length, modelForwards.length);
 });

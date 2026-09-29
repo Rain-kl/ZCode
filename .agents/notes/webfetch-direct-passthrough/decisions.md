@@ -30,13 +30,18 @@
   3. _不做预算判断，只看长度_——丢掉用户明确给出的第二个条件。**否**。
 - 结论：显式快照 > 活的 getter；单一写者（turn step）> 多处读。
 
-### 2.2 为什么预算要穿过 8 个上游文件
+### 2.2 为什么预算要穿过 9 个上游文件
 
 `turn model step → ExecuteToolsOptions → ToolExecuteOptions → ToolExecutionContext` 这条链每一层都是上游的
 显式字段（`model` 就是同款走法的先例），加一个字段就是每层 1 行。尝试压缩后只剩下「读活的运行时状态」这条
-被否掉的路。代价是 8 个上游文件各 1 行、共 12 处标记，因此额外在 `scripts/check-fork-removals.mjs` 里把每一层
+被否掉的路。代价是 9 个上游文件各 1~2 行、共 14 处标记，因此额外在 `scripts/check-fork-removals.mjs` 里把每一层
 都钉成 `requiredPatterns`：哪一层被上游版本覆盖，透传就断了，产品表现只是「又变回总结」——不报错、不影响类型
-检查，属最典型的静默失效，必须由守卫兜住（已用「注释掉调用行/透传行」实测两处都会红）。
+检查，属最典型的静默失效，必须由守卫兜住（已用「注释掉调用行/透传行」实测多处都会红）。
+
+**踩坑（第一版实现真的断了）**：`tool/executor/batch-runner.ts` 不是 object spread，而是**逐个字段重建** options
+（分片执行 + 按并行组调度两个重建点），漏写就静默丢字段。第一版只改了 `call-runner.ts`，字段到不了 handler，
+而单测（直接调 `processFetchedContent`）与类型检查都发现不了。补上后除 guard 规则外，还加了一条「配对断言」：
+每处 `model: options?.model,` 旁必须有一处 `remainingContextTokens`——上游新增重建点同样会红。
 
 ### 2.3 字数口径（`\p{P}`、码点、空白与符号计入）
 
@@ -61,7 +66,7 @@
 
 ## 3. 验证
 
-- 单测 14 例（口径 3 / 判定边界 5 / 预算投影 2 / 处理器接线 4），`pnpm test:unit` 通过。
+- 单测 15 例（口径 3 / 判定边界 5 / 预算投影 2 / 处理器接线 4 / 接线配对 1），`pnpm test:unit` 通过。
   接线用例用「不带 `model` 的工具上下文」把「是否调了加工模型」变成可断言事实：直通则正常返回正文，
   未直通则抛 `Model is not configured for WebFetch prompt processing`。
 - `pnpm --dir apps/zcode-cli typecheck` 27/27 通过；`pnpm lint` 0 error；`pnpm fork:check-removals` 通过

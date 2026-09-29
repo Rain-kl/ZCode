@@ -125,8 +125,8 @@
   - 剩余预算口径与 `resolveModelStepMaxOutputTokens` 的 `estimatedCurrentUsage` 同源同值，不引入第二套估算。
 - **修改文件**：
   - 新增 `apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/{policy.ts,remaining-tokens.ts}`、`apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts`（14 例）、`docs/features/webfetch-direct-passthrough/**`。
-  - 上游接线：`tool/handlers/webfetch-processing.ts`（判定调用），`tool/types.ts` + `tool/executor/types.ts` + `tool/executor/call-runner.ts` + `runtime/types.ts` + `runtime/methods/{tools.ts,turn-tools.ts,turn-model-step.ts}`（剩余预算透传）。
-- **上游改动标记**：8 个上游文件、12 处 `FORK(webfetch-direct-passthrough)`（含 2 对 `FORK-BEGIN/END`）。
+  - 上游接线：`tool/handlers/webfetch-processing.ts`（判定调用），`tool/types.ts` + `tool/executor/{types.ts,call-runner.ts,batch-runner.ts}` + `runtime/types.ts` + `runtime/methods/{tools.ts,turn-tools.ts,turn-model-step.ts}`（剩余预算透传）。
+- **上游改动标记**：9 个上游文件、14 处 `FORK(webfetch-direct-passthrough)`（含 2 对 `FORK-BEGIN/END`）。
 - **设计文档**：`docs/features/webfetch-direct-passthrough/design.md`
 - **实现文档**：`docs/features/webfetch-direct-passthrough/implementation.md`
 - **已知边界**：直通时不再执行加工分支的「引用合规指令」（125 字符引用上限等），正文原文进上下文——这是直通的定义使然，已明确接受；流失败恢复路径（`streaming-tool-coordinator.recoverFromModelFailure`）不带预算，回落总结；WebFetch 描述未改（仍是 "answers `prompt` against it using a small fast model"，对大多数调用成立）。

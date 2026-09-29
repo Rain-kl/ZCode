@@ -203,6 +203,12 @@ const REGISTRY = [
         reason: "执行参数必须落进 ToolExecutionContext",
       },
       {
+        path: "apps/zcode-cli/packages/core/src/tool/executor/batch-runner.ts",
+        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
+        reason:
+          "批量/调度层是白名单式重建 options，漏一行就静默丢字段（第一版实现正是在这里断的）；见同目录测试里的接线不变量用例",
+      },
+      {
         path: "apps/zcode-cli/packages/core/src/tool/types.ts",
         pattern: /remainingContextTokens\?: number;/,
         reason: "handler 唯一的预算输入通道",
