@@ -63,4 +63,5 @@
 - **嵌套运行时未预签名**：`Contents/Resources/glm`、`tools` 与 CUA Helper 在原流水线中由独立 job 完成 Developer ID 签名与 staple，本流水线不涉及。因此仅打开签名开关只覆盖主 app，不构成可公证的完整签名链。
 - **发布架构范围**：macOS 仅 arm64，Windows 仅 x64（未发布 win32-arm64、mac x64）。
 - **第三方清单**：`third-party/inventory.json` 记录的 `package.json` 哈希与当前文件不一致（需执行 `node scripts/licenses.mjs notices` 重新生成），因此 `licenses.mjs check --strict` 在流水线中仅作提示（`continue-on-error: true`），不阻塞发布；打包链路本身不校验清单新鲜度。
+- **清理流水线不得触碰 dev 通道**：`.github/workflows/cleanup-prerelease-tags.yml`（每日 03:00 + 手动）只清理 `v*` 系列的预发布与悬空项。它的悬空判定是「发布 tag 不在 `git tag --list 'v*'` 结果里」，而 dev 通道的 tag 按构造永远不在其中——所以必须靠 `is_dev_channel_tag`（`canary-build` 与 `dev-*`）先跳过，否则会把预览通道的指针发布和 dev 下载页一起删掉。
 - **已跳过作业的流水线「成功」具有误导性**：`publish` 被跳过时整个 run 仍显示 success（被跳过的作业不算失败）。发布是否真的发生，要看 run 里 `publish` 的结论，不能只看 run 的总体状态。
