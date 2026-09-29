@@ -25,6 +25,8 @@ import {
   normalizeReadFileStateMtimeMs,
 } from "../read-file-state.js";
 import { createReadFileStateMetadataFromEntry } from "../read-file-state-metadata.js";
+// FORK(edit-stale-guard): 内容哈希判据；见 FEATURES.md 的 edit-stale-guard 条目
+import { resolveStalenessByContentHash } from "../../fork/edit-stale-guard/hash-staleness.js";
 import type { ReadFileStateEntry, ReadFileStateMap, ToolExecutionContext } from "../types.js";
 import {
   attachToolExecutionTelemetry,
@@ -291,6 +293,25 @@ function assertWritableExistingFileIsFresh(
     });
   }
 
+  // FORK-BEGIN(edit-stale-guard)
+  // 有内容哈希就以字节为准：相同即未变（去掉时间戳误报），不同即已变（堵住保留时间戳的漏报）；
+  // 缺哈希才回落到上游 mtime/size。见 FEATURES.md 的 edit-stale-guard 条目
+  const hashVerdict = resolveStalenessByContentHash({
+    recordedHash: lastRead.contentHash,
+    currentHash: currentRead.revision?.hash,
+  });
+  if (hashVerdict === "fresh") return;
+  if (hashVerdict === "stale") {
+    throw createCoreError(CoreErrorType.ToolExecutionFailed, WRITE_STALE_MESSAGE, {
+      context: {
+        code: "write_file_stale",
+        filePath,
+      },
+      recoverable: true,
+    });
+  }
+  // FORK-END(edit-stale-guard)
+
   if (!hasReadStateChanged(lastRead, currentRead)) return;
   if (isStrictFullRead(lastRead) && lastRead.content === currentRead.content) return;
 
@@ -354,6 +375,8 @@ function updateReadFileStateAfterWrite(
     revisionId: revision?.id,
     mtimeMs: normalizeReadFileStateMtimeMs(revision?.mtimeMs),
     sizeBytes: revision?.sizeBytes ?? Buffer.byteLength(content, "utf8"),
+    // FORK(edit-stale-guard): 写回结果自带磁盘字节的 hash，与读路径同算法，作为下一次写入的比对基准；见 FEATURES.md 的 edit-stale-guard 条目
+    contentHash: revision?.hash,
   };
   readFileState.set(createReadFileStateKey(filePath, 1, undefined), entry);
   return entry;
