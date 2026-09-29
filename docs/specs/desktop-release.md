@@ -24,6 +24,21 @@
 - `apply --tag <vX.Y.Z> | --dev-commit <sha> | --version <x.y.z[-pre]>`：改写根 `package.json`，stdout 输出 `version=<v>` 与 `channel=stable|dev`，人类可读日志走 stderr；非法 semver（含 `+`）或非法 SHA 直接非零退出。
 - `verify --expect <v> --asar <app.asar> [--expect-commit <full-sha>]`：校验产物内 `package.json#version`、`out/metadata/build-meta.json#appVersion`，以及短 SHA `buildCommitId` 与期望提交的前缀一致。
 
+## 作业门禁与跳过语义
+
+- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / 单测）**只在非 dev 渠道运行**：dev 由推送 `canary` 触发，直接进集成以缩短 CI；tag 发布仍走完整门禁。
+- **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
+- 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
+
+| 渠道               | `verify` | `build-macos` / `build-windows` | `publish`                                |
+| ------------------ | -------- | ------------------------------- | ---------------------------------------- |
+| dev（推送 canary） | skipped  | 运行（条件容忍 `skipped`）      | 运行（只要求三个直接依赖 `success`）     |
+| tag 且门禁通过     | success  | 运行                            | 运行                                     |
+| tag 且门禁失败     | failure  | 跳过（条件不满足）              | 跳过（构建非 `success`）→ 不创建 Release |
+
+- 新增作业时照抄这条规则：**只要它 `needs` 的链上可能有 skipped 作业，就必须写显式条件**（用 `!cancelled()` 而非 `always()`，后者在被取消时也会继续跑）。
+- `verify` 里在单测前会按依赖链构建 CLI 包（`pnpm -r --filter "@zcode/core..."`）：`apps/zcode-cli/packages/core/test` 的测试 import 上游 tool 入口，而这些包的 `exports` 指向 `dist`，verify 只 install 不 build 会 `ERR_MODULE_NOT_FOUND` 让整组失败。
+
 ## 构建环境契约
 
 - `ZCODE_ENV=production`：builtin provider 配置与产品身份都按 production 解析。缺失或为 `test` 时 `desktop-product-identity.mjs` 会回落到 Preview 身份，产物变成 “ZCode Preview” 且文件名带 `_TEST` 后缀。
@@ -36,7 +51,7 @@
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
 2. **dev 通道不污染稳定通道**：`dev-<sha8>` 以 `--prerelease --latest=false` 发布，`releases/latest` 仍指向稳定版本。
-3. **半套产物不发布**：`publish` 依赖两个平台构建 job 全部成功（默认 `needs` 语义），任一平台失败则整体不创建 Release。
+3. **半套产物不发布**：`publish` 的显式条件要求两个平台构建都 `success`，任一平台失败则整体不创建 Release；tag 渠道下 `verify` 失败会先让两个构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
 
 ## 边界与已知缺口
@@ -45,4 +60,4 @@
 - **嵌套运行时未预签名**：`Contents/Resources/glm`、`tools` 与 CUA Helper 在原流水线中由独立 job 完成 Developer ID 签名与 staple，本流水线不涉及。因此仅打开签名开关只覆盖主 app，不构成可公证的完整签名链。
 - **发布架构范围**：macOS 仅 arm64，Windows 仅 x64（未发布 win32-arm64、mac x64）。
 - **第三方清单**：`third-party/inventory.json` 记录的 `package.json` 哈希与当前文件不一致（需执行 `node scripts/licenses.mjs notices` 重新生成），因此 `licenses.mjs check --strict` 在流水线中仅作提示（`continue-on-error: true`），不阻塞发布；打包链路本身不校验清单新鲜度。
-- **canary 分支需要存在于 origin**：当前远端只有 `main`，分支推送触发在 `canary` 建立后才生效。
+- **已跳过作业的流水线「成功」具有误导性**：`publish` 被跳过时整个 run 仍显示 success（被跳过的作业不算失败）。发布是否真的发生，要看 run 里 `publish` 的结论，不能只看 run 的总体状态。

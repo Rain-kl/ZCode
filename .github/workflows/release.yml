@@ -341,6 +341,11 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [resolve, build-macos, build-windows]
+    # 必须显式写条件：无 if 的作业隐式条件是 success()，而它要求依赖图上**所有祖先**作业成功，
+    # 被跳过的 verify 是 publish 的传递祖先，会把 publish 一起判掉（dev 渠道实测踩到）。
+    # 这里只要求三个直接依赖成功，因此 dev 渠道（verify skipped）能发布，
+    # 而 tag 渠道 verify 失败时两个构建会被上面的条件挡掉、publish 随之不成立。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
