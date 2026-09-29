@@ -137,6 +137,12 @@ jobs:
       - name: Fork removal invariants
         run: pnpm fork:check-removals
 
+      # apps/zcode-cli/packages/core/test 的单测会 import 上游 CLI 包（tool 入口等），
+      # 而这些包的 exports 指向 dist：verify 只 install 不 build，缺 dist 会 ERR_MODULE_NOT_FOUND
+      # 让整组失败。这里按依赖链构建 core（约 4 个包），其余组只 import 源码，不需要构建。
+      - name: Build CLI packages used by unit tests
+        run: pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." run build
+
       # 依赖契约与功能单测：上游 API 形状/默认值/语义变更的第一信号，见 AGENTS.md「依赖契约测试」。
       - name: Unit tests
         run: pnpm test:unit
