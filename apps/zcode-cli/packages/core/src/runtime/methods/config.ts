@@ -36,6 +36,9 @@ import {
   initializeSessionShellEnvironmentIfNeeded as initializeSessionShellEnvironment,
   type SessionShellEnvironmentCandidate,
 } from "./session-shell-environment.js";
+// FORK(search-providers): 暴露门按可用渠道数判定，见 FEATURES.md 的 search-providers 条目
+import { countAvailableSearchChannels } from "../../fork/search-providers/channels.js";
+
 
 export async function setExecutionState(
   this: AgentRuntimeInternal,
@@ -265,10 +268,17 @@ function filterRuntimeVisibleTools(
   return orderProviderVisibleToolContracts(visibleTools);
 }
 
-function shouldExposeWebSearch(this: AgentRuntimeInternal, model?: Model): boolean {
-  // 无 Model 的调用只枚举完整注册表，供持久化和 UI 元数据使用；真实执行始终传入
-  // 当前 Active Model，并只读取其冻结的完整能力事实。
+// FORK(search-providers): 暴露门从「模型是否支持服务端搜索」改为「渠道数 > 0」；
+// 导出该函数只为可测（原本是模块私有），判定语义的改动见下一行标记；
+// 见 FEATURES.md 的 search-providers 条目与 docs/features/search-providers/design.md §5.2
+export function shouldExposeWebSearch(
+  this: { homeDir?: string; sessionId?: unknown },
+  model?: Model,
+  // FORK-BEGIN(search-providers)
+): boolean {
+  // 无 Model 的调用只枚举完整注册表，供持久化和 UI 元数据使用；真实执行始终传入活动模型。
   if (!model) return true;
-  return model.properties.supportsNativeWebSearch;
+  return countAvailableSearchChannels({ model, ...(this.homeDir ? { homeDir: this.homeDir } : {}) }) > 0;
+  // FORK-END(search-providers)
 }
 import { resolveExecutionState } from "@zcode/shared";
