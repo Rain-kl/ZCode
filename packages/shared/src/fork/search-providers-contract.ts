@@ -22,13 +22,17 @@ export interface ForkSearchProviderChannel {
 }
 
 export interface ForkSearchProvidersFile {
-  version: number;
+  version: unknown;
   channels: ForkSearchProviderChannel[];
 }
 
+/**
+ * 缺省空文件单例。深冻结以防止调用方读写污染；
+ * parseForkSearchProvidersFile 的降级路径则始终返回全新数组实例。
+ */
 export const EMPTY_FORK_SEARCH_PROVIDERS_FILE: ForkSearchProvidersFile = Object.freeze({
   version: FORK_SEARCH_PROVIDERS_FILE_VERSION,
-  channels: [],
+  channels: Object.freeze([]) as unknown as ForkSearchProviderChannel[],
 });
 
 /**
@@ -50,16 +54,21 @@ export function parseForkSearchProvidersFile(raw: unknown): {
   problems: string[];
 } {
   if (!isRecord(raw)) {
-    return { file: { ...EMPTY_FORK_SEARCH_PROVIDERS_FILE }, problems: ["配置不是 JSON 对象"] };
-  }
-
-  const version = typeof raw.version === "number" ? raw.version : FORK_SEARCH_PROVIDERS_FILE_VERSION;
-  if (version !== FORK_SEARCH_PROVIDERS_FILE_VERSION) {
     return {
-      file: { version, channels: [] },
-      problems: [`不支持的配置版本 ${version}，已按无渠道处理`],
+      file: { version: FORK_SEARCH_PROVIDERS_FILE_VERSION, channels: [] },
+      problems: ["配置不是 JSON 对象"],
     };
   }
+
+  // 允许手写 JSON 缺失 version（默认当前版本）；非当前版本的其它值一律拒绝并原样留痕
+  if (raw.version !== undefined && raw.version !== FORK_SEARCH_PROVIDERS_FILE_VERSION) {
+    return {
+      file: { version: raw.version, channels: [] },
+      problems: [`不支持的配置版本 ${String(raw.version)}，已按无渠道处理`],
+    };
+  }
+
+  const version = FORK_SEARCH_PROVIDERS_FILE_VERSION;
 
   if (!Array.isArray(raw.channels)) {
     return { file: { version, channels: [] }, problems: ["channels 不是数组"] };

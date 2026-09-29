@@ -41,6 +41,50 @@ test("未知版本按 0 条处理，且版本被单独回报", () => {
   assert.match(problems.join("\n"), /99/);
 });
 
+test("非数字版本按 0 条处理并留痕，原样回报该版本值", () => {
+  const { file, problems } = parseForkSearchProvidersFile({
+    version: "99",
+    channels: good.channels,
+  });
+  assert.deepEqual(file.channels, []);
+  assert.equal(file.version, "99");
+  assert.ok(problems.length > 0);
+  assert.match(problems.join("\n"), /99/);
+});
+
+test("version 缺失或为 undefined 时视为当前版本正常解析", () => {
+  const { file: file1, problems: problems1 } = parseForkSearchProvidersFile({
+    version: undefined,
+    channels: good.channels,
+  });
+  assert.deepEqual(problems1, []);
+  assert.equal(file1.version, FORK_SEARCH_PROVIDERS_FILE_VERSION);
+  assert.deepEqual(file1.channels, good.channels);
+
+  const { file: file2, problems: problems2 } = parseForkSearchProvidersFile({
+    channels: good.channels,
+  });
+  assert.deepEqual(problems2, []);
+  assert.equal(file2.version, FORK_SEARCH_PROVIDERS_FILE_VERSION);
+  assert.deepEqual(file2.channels, good.channels);
+});
+
+test("EMPTY_FORK_SEARCH_PROVIDERS_FILE 内层数组已冻结且降级路径返回全新数组", () => {
+  assert.ok(Object.isFrozen(EMPTY_FORK_SEARCH_PROVIDERS_FILE));
+  assert.ok(Object.isFrozen(EMPTY_FORK_SEARCH_PROVIDERS_FILE.channels));
+
+  const { file } = parseForkSearchProvidersFile(null);
+  assert.notEqual(file.channels, EMPTY_FORK_SEARCH_PROVIDERS_FILE.channels);
+  file.channels.push({
+    id: "fresh",
+    kind: "tavily",
+    label: "",
+    enabled: true,
+    apiKey: "k",
+  });
+  assert.equal(EMPTY_FORK_SEARCH_PROVIDERS_FILE.channels.length, 0);
+});
+
 test("坏条目被丢弃，好条目保留", () => {
   const { file, problems } = parseForkSearchProvidersFile({
     version: 1,
@@ -55,13 +99,16 @@ test("坏条目被丢弃，好条目保留", () => {
   assert.equal(problems.length, 3);
 });
 
-test("问题列表绝不包含 apiKey（避免密钥进日志）", () => {
+test("问题列表绝不包含 apiKey 或 label（避免敏感信息进日志）", () => {
   const { problems } = parseForkSearchProvidersFile({
     version: 1,
-    channels: [{ id: "y", kind: "brave", apiKey: "tvly-do-not-leak" }],
+    channels: [
+      { id: "y", kind: "brave", label: "confidential-label", apiKey: "tvly-do-not-leak" },
+    ],
   });
   assert.ok(problems.length > 0);
   assert.ok(!problems.join("\n").includes("tvly-do-not-leak"));
+  assert.ok(!problems.join("\n").includes("confidential-label"));
 });
 
 test("保留空 key 渠道：清空 key 是用户的合法状态，不是坏条目", () => {
