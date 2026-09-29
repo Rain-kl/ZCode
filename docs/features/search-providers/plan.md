@@ -553,6 +553,12 @@ import {
   mapTavilyResponse,
 } from "../src/fork/search-providers/tavily.js";
 
+/** HttpClientRequest.body 是 Uint8Array，断言前必须解码——直接 deepEqual 一个对象必然失败。 */
+function decodeBody(body: Uint8Array | undefined): unknown {
+  assert.ok(body, "请求体必须存在");
+  return JSON.parse(new TextDecoder().decode(body)) as unknown;
+}
+
 test("请求形状：端点、方法、Bearer 鉴权与 JSON 体", () => {
   const request = buildTavilySearchRequest({ query: "hello", apiKey: "tvly-k" });
   assert.equal(request.url, TAVILY_SEARCH_ENDPOINT);
@@ -560,7 +566,7 @@ test("请求形状：端点、方法、Bearer 鉴权与 JSON 体", () => {
   assert.equal(request.method, "POST");
   assert.equal(request.headers?.Authorization, "Bearer tvly-k");
   assert.equal(request.headers?.["Content-Type"], "application/json");
-  assert.deepEqual(request.body, { query: "hello" });
+  assert.deepEqual(decodeBody(request.body), { query: "hello" });
 });
 
 test("可选参数只在有值时出现，且不再发送 maxUses", () => {
@@ -572,13 +578,13 @@ test("可选参数只在有值时出现，且不再发送 maxUses", () => {
     maxResults: 3,
     maxUses: 8,
   });
-  assert.deepEqual(request.body, {
+  assert.deepEqual(decodeBody(request.body), {
     query: "q",
     max_results: 3,
     include_domains: ["a.com"],
   });
-  assert.ok(!("maxUses" in (request.body as Record<string, unknown>)));
-  assert.ok(!("exclude_domains" in (request.body as Record<string, unknown>)));
+  assert.ok(!("maxUses" in (decodeBody(request.body) as Record<string, unknown>)));
+  assert.ok(!("exclude_domains" in (decodeBody(request.body) as Record<string, unknown>)));
 });
 
 test("域名列表被截断到厂商上限（include 300 / exclude 150）", () => {
@@ -589,7 +595,7 @@ test("域名列表被截断到厂商上限（include 300 / exclude 150）", () =
     allowedDomains: many(305),
     blockedDomains: many(160),
   });
-  const body = request.body as { include_domains: string[]; exclude_domains: string[] };
+  const body = decodeBody(request.body) as { include_domains: string[]; exclude_domains: string[] };
   assert.equal(body.include_domains.length, 300);
   assert.equal(body.exclude_domains.length, 150);
 });
@@ -678,13 +684,13 @@ test("渠道：HTTP 错误转成带状态码的失败，超时转成超时失败
 });
 
 test("渠道：成功响应产出中立结果，且不发 egressPolicy（代理用户不被拦）", async () => {
-  let seen: Record<string, unknown> | undefined;
+  let seen: { egressPolicy?: unknown } | undefined;
   const channel = createTavilyChannel({
     label: "工作用",
     apiKey: "tvly-k",
     httpClientPort: {
       async request(request) {
-        seen = request as unknown as Record<string, unknown>;
+        seen = request;
         return {
           url: TAVILY_SEARCH_ENDPOINT,
           status: 200,
@@ -1262,13 +1268,8 @@ test("入参接受 max_results，且仍是 strict", () => {
 });
 
 test("输出接受可选 channel，且缺省时仍合法", () => {
-  const base = {
-    query: "q",
-    results: [],
-    sources: [],
-    durationMs: 1,
-    truncated: false,
-  };
+  // 注意：WebSearchOutputSchema 是 strict，且没有 truncated 字段（那是 WebFetchOutput 的）。
+  const base = { query: "q", results: [], sources: [], durationMs: 1 };
   assert.ok(WebSearchOutputSchema.safeParse(base).success);
   assert.ok(
     WebSearchOutputSchema.safeParse({ ...base, channel: { kind: "tavily", label: "工作用" } }).success,
@@ -1415,6 +1416,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ForkSearchProvidersFile } from "@zcode/shared";
 import { createForkSearchProvidersService } from "../src/host/fork/search-providers/service.js";
 import { createForkSearchProvidersFileStore } from "../src/host/fork/search-providers/file-store.js";
 
@@ -1423,43 +1425,55 @@ function serviceAt(file: string) {
 }
 const newFile = () => join(mkdtempSync(join(tmpdir(), "sp-")), "settings.json");
 
+/** 用 assert.ok 收窄，替代非空断言——非空断言会把「渠道没被写进去」这类真实缺陷静音。 */
+function channelIdAt(file: ForkSearchProvidersFile, index: number): string {
+  const channel = file.channels[index];
+  assert.ok(channel, `期望第 ${index + 1} 条渠道存在，实际只有 ${file.channels.length} 条`);
+  return channel.id;
+}
+function labelsOf(file: ForkSearchProvidersFile): string[] {
+  return file.channels.map((channel) => channel.label);
+}
+
 test("addChannel 生成 id 并落盘，list 读回同一份", async () => {
   const file = newFile();
   const service = serviceAt(file);
   await service.addChannel({ kind: "tavily", label: "工作用", apiKey: "tvly-1" });
-  const file2 = await service.list();
-  assert.equal(file2.channels.length, 1);
-  assert.equal(file2.channels[0]?.label, "工作用");
-  assert.ok((file2.channels[0]?.id ?? "").length > 0);
+  const listed = await service.list();
+  assert.equal(listed.channels.length, 1);
+  assert.equal(labelsOf(listed)[0], "工作用");
+  assert.ok(channelIdAt(listed, 0).length > 0);
   assert.match(readFileSync(file, "utf8"), /tvly-1/);
 });
 
 test("reorder 按给定 id 顺序重排，未知 id 被忽略", async () => {
   const file = newFile();
   const service = serviceAt(file);
-  const a = await service.addChannel({ kind: "tavily", label: "A", apiKey: "k" });
-  const b = await service.addChannel({ kind: "tavily", label: "B", apiKey: "k" });
-  const [first, second] = a.channels.map((c) => c.id);
-  const reordered = await service.reorder([b.channels[0]!.id, first!, "missing"]);
-  assert.deepEqual(reordered.channels.map((c) => c.label), ["B", "A"]);
-  assert.equal(second, a.channels[1]?.id);
+  const afterFirst = await service.addChannel({ kind: "tavily", label: "A", apiKey: "k" });
+  const afterSecond = await service.addChannel({ kind: "tavily", label: "B", apiKey: "k" });
+  const reordered = await service.reorder([
+    channelIdAt(afterSecond, 1),
+    channelIdAt(afterFirst, 0),
+    "missing",
+  ]);
+  assert.deepEqual(labelsOf(reordered), ["B", "A"]);
+  assert.equal(reordered.channels.length, 2, "未知 id 不得新增渠道");
 });
 
 test("updateChannel 能清空 key（用户合法状态），不删渠道", async () => {
   const file = newFile();
   const service = serviceAt(file);
   const added = await service.addChannel({ kind: "tavily", label: "A", apiKey: "k" });
-  const id = added.channels[0]!.id;
-  const updated = await service.updateChannel(id, { apiKey: "" });
-  assert.equal(updated.channels[0]?.apiKey, "");
+  const updated = await service.updateChannel(channelIdAt(added, 0), { apiKey: "" });
   assert.equal(updated.channels.length, 1);
+  assert.equal(updated.channels[0]?.apiKey, "");
 });
 
 test("removeChannel 移除目标；文件损坏时 list 返回 0 条而不抛错", async () => {
   const file = newFile();
   const service = serviceAt(file);
   const added = await service.addChannel({ kind: "tavily", label: "A", apiKey: "k" });
-  const emptied = await service.removeChannel(added.channels[0]!.id);
+  const emptied = await service.removeChannel(channelIdAt(added, 0));
   assert.deepEqual(emptied.channels, []);
 
   writeFileSync(file, "{ broken", "utf8");
@@ -1468,7 +1482,11 @@ test("removeChannel 移除目标；文件损坏时 list 返回 0 条而不抛错
 
 test("文件里保留未知版本时 list 不把旧渠道当作有效渠道", async () => {
   const file = newFile();
-  writeFileSync(file, JSON.stringify({ version: 99, channels: [{ id: "a", kind: "tavily", enabled: true, apiKey: "k" }] }), "utf8");
+  writeFileSync(
+    file,
+    JSON.stringify({ version: 99, channels: [{ id: "a", kind: "tavily", enabled: true, apiKey: "k" }] }),
+    "utf8",
+  );
   assert.deepEqual((await serviceAt(file).list()).channels, []);
 });
 ```
