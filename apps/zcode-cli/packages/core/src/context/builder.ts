@@ -236,7 +236,7 @@ export class ContextBuilder {
     const totalTokens = orderedSections.reduce((sum, s) => sum + s.tokens, 0);
 
     const systemMessages = this.assembleSystemMessages(orderedSections);
-    const metaUserAttachments = this.assembleMetaUserAttachments(orderedSections);
+    const metaUserAttachments = this.assembleMetaUserAttachments(orderedSections, injectDynamic);
 
     return {
       sections: orderedSections,
@@ -301,7 +301,10 @@ export class ContextBuilder {
     return messages;
   }
 
-  private assembleMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
+  private assembleMetaUserAttachments(
+    sections: ContextSection[],
+    includeScaffold: boolean,
+  ): ContextMetaUserAttachment[] {
     const attachments: ContextMetaUserAttachment[] = [];
 
     const skillsContent = buildSkillsMetaUserBody(
@@ -320,6 +323,7 @@ export class ContextBuilder {
       sections.filter(
         (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
       ),
+      { includeScaffold },
     );
     if (contextContent) {
       attachments.push({
@@ -349,12 +353,21 @@ function orderSectionsForInjection(sections: ContextSection[]): ContextSection[]
   ];
 }
 
-export function buildContextMetaUserBody(sections: ContextSection[]): string | null {
+export function buildContextMetaUserBody(
+  sections: ContextSection[],
+  options: { includeScaffold?: boolean } = {},
+): string | null {
   if (sections.length === 0) return null;
 
+  const content = buildSectionContent(sections);
+  if (options.includeScaffold === false) {
+    // 关闭动态段后块里只剩 AGENTS.md 这类必须遵守的指令，ZCode 的头/尾说明不再合适：
+    // 尾句「may or may not be relevant… don't respond to it」与「这些指令覆盖默认行为」相悖。
+    return content;
+  }
   return [
     "As you answer the user's questions, you can use the following context:",
-    buildSectionContent(sections),
+    content,
     "",
     "      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
   ].join("\n");

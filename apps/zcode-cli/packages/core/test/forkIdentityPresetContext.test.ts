@@ -167,3 +167,38 @@ test("关闭动态段注入后，当前日期也不再注入（AGENTS.md 照旧�
   assert.match(body, /项目规则/);
   assert.doesNotMatch(body, /# currentDate/);
 });
+
+test("关闭动态段后，AGENTS.md 块不再套 ZCode 的头/尾说明", () => {
+  const instructions = {
+    filePath: "/tmp/ws/AGENTS.md",
+    fileName: "AGENTS.md",
+    content: "项目规则",
+    bytesRead: 12,
+    sizeBytes: 12,
+    truncated: false,
+  };
+  const preset = {
+    id: "a",
+    name: "A",
+    content: "你是我的私人助理。",
+    injectSkills: true,
+  };
+
+  const off = build({
+    identityPreset: { ...preset, injectDynamic: false },
+    userInstructions: instructions,
+  });
+  const offBody = off.metaUserAttachments[0]?.content ?? "";
+  assert.match(offBody, /项目规则/);
+  assert.doesNotMatch(offBody, /As you answer the user's questions/);
+  assert.doesNotMatch(offBody, /this context may or may not be relevant/);
+
+  // 开启动态段时保持上游行为：头/尾说明仍在。
+  const on = build({
+    identityPreset: { ...preset, injectDynamic: true },
+    userInstructions: instructions,
+  });
+  const onBody = on.metaUserAttachments[0]?.content ?? "";
+  assert.match(onBody, /As you answer the user's questions/);
+  assert.match(onBody, /this context may or may not be relevant/);
+});

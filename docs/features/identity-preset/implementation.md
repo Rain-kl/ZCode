@@ -311,3 +311,11 @@ messageCount: 5，role=system 2 条
 实现：`build()` 里 `buildCurrentDateSection` 的结果受 `injectDynamic` 门控（`injectDynamic ? build… : null`）。
 
 边界（有意为之）：`# currentDate` 与 `# agentsMd`（工作区指令 / memory 索引）同处 `context_prefix` 这一条 meta-user 消息中，但**只有日期**跟随该开关——AGENTS.md 是项目配置，关掉它等于让 agent 忽略仓库里的规则。若日后要连 AGENTS.md 一起停，需要第三个开关（或在 `injectDynamic` 上加档位），不要偷偷塞进现有开关。
+
+### 8.3 附：`context_prefix` 的头/尾说明归入动态开关
+
+同一条反馈的延伸：那句 `IMPORTANT: this context may or may not be relevant…` 也属 ZCode 的内置脚手架，关闭动态段后不应出现。
+
+实现：`buildContextMetaUserBody(sections, { includeScaffold })`——主 agent 传 `injectDynamic`，子代理路径沿用默认（始终套用）。`includeScaffold: false` 时只返回段内容本身。
+
+边界：块里只剩 `# agentsMd` 时不再套头/尾。这同时修掉一处语义矛盾——尾句「可能不相关、不要回应它」与 AGENTS.md 自己的「这些指令覆盖默认行为」相悖。

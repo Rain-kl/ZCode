@@ -37,7 +37,7 @@
 ### 功能增强：是否注入动态提示词 / skills 清单（2026-09-29）
 
 - **增强点**：系统指令栏目新增「注入动态提示词」开关。关闭后新会话的系统提示词第③条（`# Environment`、gitStatus、`# Communicating with the user`、`# Session-specific guidance`、`# Context management` 等）整段不注入，只剩身份段与 Desktop Context——适合完全自己写提示词的用法。开关是功能级状态（`presets/active.json` 的 `injectDynamic`，缺省注入），不随预设切换而变；模型将不再知道 cwd、平台、是否 git 仓库与对话会被压缩。
-- **`injectDynamic` 同时管 `# currentDate`**：它和 `# agentsMd` 同在 `context_prefix` 那条 meta-user 消息里，关掉动态段后日期不再注入；AGENTS.md / memory 索引是项目配置，照旧注入（工作区没有指令时整条消息消失）。
+- **`injectDynamic` 同时管 `# currentDate` 与 `context_prefix` 的头/尾说明**：日期与那句 `IMPORTANT: this context may or may not be relevant…` 都属 ZCode 内置脚手架，关掉动态段后不再出现；AGENTS.md / memory 索引是项目配置，照旧注入但不再套头/尾（工作区没有指令时整条消息消失）。
 - **同一期还加了 skills 清单开关**：关闭后不再发出 `skills_listing` 那条 meta-user 消息（列出可用技能与路径）。模型将不知道有哪些技能，除非在提示词里自己列；`context_prefix`（`# agentsMd` + `# currentDate`）不受影响。两个开关都是功能级状态（`presets/active.json` 的 `injectDynamic` / `injectSkills`，缺省注入）。
 - **影响的上游标记**：`apps/zcode-cli/packages/core/src/context/builder.ts` 的第③条门控与 skills 段门控（该文件的 `FORK(identity-preset)` 标记已计入）。
 - **验收**：`forkIdentityPresetContext.test.ts`（关闭动态段后 system 消息只剩 1 条、无 AGENTS.md 时 `context_prefix` 消失、有 AGENTS.md 时保留但不含 `# currentDate`；关闭 skills 清单后 `metaUserAttachments` 不再有 `skills_listing`）；`forkIdentityPresetContract.test.ts` / `forkIdentityPresetStore.test.ts` 覆盖两个开关的缺省、显式关闭与非布尔回落。
