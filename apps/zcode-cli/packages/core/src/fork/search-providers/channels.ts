@@ -109,3 +109,17 @@ export function createServerSearchChannel(input: {
 }): SearchChannel {
   return { kind: "server", label: input.label, search: input.execute };
 }
+
+export function buildSearchChannelChain(input: {
+  homeDir?: string;
+  httpClientPort?: HttpClientPort;
+  serverChannel?: SearchChannel;
+}): SearchChannel[] {
+  const chain: SearchChannel[] = [];
+  if (input.serverChannel) chain.push(input.serverChannel);
+  if (input.httpClientPort) {
+    chain.push(...loadForkSearchChannels({ ...input, httpClientPort: input.httpClientPort }));
+  }
+  return chain;
+}
+

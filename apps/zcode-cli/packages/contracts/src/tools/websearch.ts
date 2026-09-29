@@ -20,6 +20,16 @@ const WebSearchProviderInputSchema = z
       .array(z.string())
       .optional()
       .describe("Never include search results from these domains"),
+    // FORK(search-providers): 渠道只取自己需要的参数：服务端渠道用 maxUses，Tavily 渠道用 max_results；见 docs/features/search-providers/design.md §8
+    max_results: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .optional()
+      // 20 是我们的产品钳制（取厂商文档值）。实测服务端并不强制该上限（25 会返回 25 条），
+      // 所以这里的目标是让模型有一个可预期的上界，而不是替厂商兜错。
+      .describe("Maximum number of results to return, for channels that support it"),
   })
   .strict();
 
@@ -106,6 +116,8 @@ export const WebSearchOutputSchema = z
     durationMs: z.number().nonnegative(),
     webSearchRequests: z.number().int().nonnegative().optional(),
     modelUsage: WebSearchModelUsageSchema.optional(),
+    // FORK(search-providers): 记录实际命中的渠道，供日志与诊断；不进模型可见文本
+    channel: z.object({ kind: z.string(), label: z.string() }).strict().optional(),
   })
   .strict();
 
