@@ -21,11 +21,12 @@ import {
   type WebSearchInput,
   type WebSearchOutput,
 } from "@zcode/contracts";
-import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
+import type { ToolEntry, ToolHandler } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 import { buildWebSearchOutput, formatWebSearchModelContent } from "./websearch-results.js";
 import { webSearchTraceFromContext } from "./websearch-support.js";
 // FORK-BEGIN(search-providers): 引入渠道链与路由，使 WebSearch 支持服务端与外部多渠道降级；见 FEATURES.md 的 search-providers 条目
+import type { ToolExecutionContext } from "../types.js";
 import type { SearchChannelRequest } from "../../fork/search-providers/channel.js";
 import {
   buildSearchChannelChain,

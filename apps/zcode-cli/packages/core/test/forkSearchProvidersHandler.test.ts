@@ -1,6 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { WebSearchInputSchema, WebSearchOutputSchema } from "@zcode/contracts";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  type HttpClientPort,
+  WebSearchInputSchema,
+  WebSearchOutputSchema,
+} from "@zcode/contracts";
+import type { SearchChannel } from "../src/fork/search-providers/channel.js";
+import {
+  buildSearchChannelChain,
+  resetSearchChannelCacheForTests,
+} from "../src/fork/search-providers/channels.js";
 import {
   WEBSEARCH_TOOL_NAME,
   buildWebSearchProviderDescription,
@@ -30,3 +42,53 @@ test("工具描述不再声称 US-only", () => {
 test("工具名未变（模型侧签名保持单一形状）", () => {
   assert.equal(WEBSEARCH_TOOL_NAME, "WebSearch");
 });
+
+const fakeHttpClientPort: HttpClientPort = {
+  async request() {
+    throw new Error("not used in chain ordering test");
+  },
+};
+
+const fakeServerChannel: SearchChannel = {
+  kind: "server",
+  label: "服务端搜索",
+  async search() {
+    throw new Error("not used in chain ordering test");
+  },
+};
+
+function writeChannelsFile(home: string, payload: unknown): string {
+  const dir = join(home, ".zcode", "cli", "fork");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "settings.json");
+  writeFileSync(file, JSON.stringify(payload), "utf8");
+  return file;
+}
+
+test("buildSearchChannelChain 保证服务端渠道在首位，后接按文件顺序的启用 Tavily 渠道", () => {
+  resetSearchChannelCacheForTests();
+  const home = mkdtempSync(join(tmpdir(), "sp-handler-"));
+  writeChannelsFile(home, {
+    version: 1,
+    channels: [
+      { id: "c1", kind: "tavily", label: "渠道一", enabled: true, apiKey: "k1" },
+      { id: "c2", kind: "tavily", label: "渠道二 (禁用)", enabled: false, apiKey: "k2" },
+      { id: "c3", kind: "tavily", label: "渠道三", enabled: true, apiKey: "k3" },
+    ],
+  });
+
+  const chain = buildSearchChannelChain({
+    homeDir: home,
+    httpClientPort: fakeHttpClientPort,
+    serverChannel: fakeServerChannel,
+  });
+
+  assert.equal(chain.length, 3);
+  assert.equal(chain[0]?.kind, "server");
+  assert.equal(chain[0]?.label, "服务端搜索");
+  assert.equal(chain[1]?.kind, "tavily");
+  assert.equal(chain[1]?.label, "渠道一");
+  assert.equal(chain[2]?.kind, "tavily");
+  assert.equal(chain[2]?.label, "渠道三");
+});
+
