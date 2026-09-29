@@ -401,8 +401,9 @@ jobs:
               "提交：${COMMIT}" \
               "构建流水线：${RUN_URL}" \
               "" \
-              "macOS 安装包未公证，首次打开需右键“打开”，或在“系统设置 → 隐私与安全性”中放行；" \
-              '若提示“已损坏”或仍无法打开，在终端执行 `xattr -cr /Applications/ZCode.app` 后再启动。' \
+              "macOS 安装包未签名、未公证，首次使用可能需要手动放行（按遇到的情况执行）：" \
+              '- 打不开（提示“已损坏”或无法验证开发者）：执行 `xattr -cr /Applications/ZCode.app` 后重新启动。' \
+              '- 能打开但连不上同一局域网内的主机（SSH 报 EHOSTUNREACH / No route to host）：执行 `codesign --force --deep --sign - /Applications/ZCode.app` 后重启应用。原因是 macOS 把“本地网络”权限记在应用的代码签名身份上，未签名的应用该授权不会生效。' \
               "产物校验见 SHA256SUMS.txt。")
 
             create_args=(--title "${title}" --notes "${notes}" --verify-tag)
@@ -431,7 +432,9 @@ jobs:
               "提交：${COMMIT}" \
               "构建流水线：${RUN_URL}" \
               "" \
-              'macOS 安装包未公证：若提示“已损坏”或无法打开，在终端执行 `xattr -cr /Applications/ZCode.app` 后再启动。')
+              "macOS 安装包未签名、未公证，首次使用可能需要手动放行（按遇到的情况执行）：" \
+              '- 打不开（提示“已损坏”或无法验证开发者）：执行 `xattr -cr /Applications/ZCode.app` 后重新启动。' \
+              '- 能打开但连不上同一局域网内的主机（SSH 报 EHOSTUNREACH / No route to host）：执行 `codesign --force --deep --sign - /Applications/ZCode.app` 后重启应用。原因是 macOS 把“本地网络”权限记在应用的代码签名身份上，未签名的应用该授权不会生效。')
             pointer_args=(--title "${pointer_title}" --notes "${pointer_notes}" --prerelease --latest=false)
 
             if ! retry gh release edit "${pointer_tag}" "${pointer_args[@]}"; then
