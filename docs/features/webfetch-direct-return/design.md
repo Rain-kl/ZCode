@@ -36,24 +36,27 @@
 2. **`prompt` 参数从工具输入契约中移除。** 它原本只是交给加工模型的提问；没有加工模型就没有接收方。
    从 `WebFetchInputSchema` 移除后，工具声明（JSON schema）里不再出现该属性，模型无从传入。
 3. **上下文封顶改由工具结果预算（`resultBudget`）承担**，与其它工具同一条路径：
-   正文不超过 `MAX_WEBFETCH_INLINE_BYTES`（32 KiB）时原样内联；超出时全文写入会话级 artifact，
-   模型只拿到一份预览 + artifact 路径（`strategy: "artifact"` 既有行为）。
+   正文不超过 **15000 字**时原样内联；超过时全文写入会话级 artifact，模型拿到
+   **10000 字预览** + artifact 路径（`strategy: "artifact"` 既有行为）。
 
-### 32 KiB 是「落盘触发线」，不是「预览大小」
-
-这两个数量必须分清，否则会高估上下文占用：
+### 两个口径：「字」按字符，预览单独放宽
 
 | 角色 | 由谁决定 | 值 |
 | --- | --- | --- |
-| 触发落盘的阈值 | `resultBudget.maxModelBytes`（本功能设的 `MAX_WEBFETCH_INLINE_BYTES`） | 32 KiB |
-| 落盘后模型可见的预览 | `PERSISTED_OUTPUT_PREVIEW_CHARS`（`tool/result-persistence-format.ts`，**全工具共享、与 resultBudget 无关**） | 2,000 **字符** |
+| 是否落盘的判据 | `entry.maxModelChars`（本功能设的 `MAX_WEBFETCH_PERSIST_CHARS`） | 15,000 **字符** |
+| 落盘后模型可见的预览 | `entry.formatPersistedModelContent`（本功能覆写） → `formatPersistedOutputEnvelope` 的 `previewChars` | 10,000 **字符** |
 
-因此超过 32 KiB 的页面，其上下文代价约 **2 KB**，而不是 32 KiB。实测（python.org/downloads，正文 64,858 字节）：
-模型收到 `<persisted-output>` 信封，内含 `Output too large (65 KB). Full output saved to: <path>` 与 2,000 字符预览；
-全文落在 artifact 里，模型需要时自行读取。
+三点必须说清，否则很容易搞错：
 
-32 KiB 取值的意义因此是**决定「多少页面需要多走一次读文件」**：常见文档页（3~15 KiB 正文）完整内联，
-不产生额外往返；更大的页面才落到「预览 + 按需读文件」。该值是单一常量，若发现落盘过频或内联过大，改一处即可。
+- **判据是字符，不是字节。** 用户口径的「字」是字符；且按字符判定对 CJK 页面才与直觉一致——
+  10000 个汉字在字节口径下是 30000，会让「15000 字以内不落盘」在中文页面上提前失效。
+  `resultBudget` 的字节字段保持上游值 100,000：15000 个 UTF-16 单元在 UTF-8 下最多 45000 字节，
+  撞不到它，因此字节规则被字符规则完全覆盖，实际判据只有一个。
+- **预览不是 `resultBudget.preview.maxBytes`。** 那个字段是 hook 追加内容时的裁剪界。
+  共享信封 `PERSISTED_OUTPUT_PREVIEW_CHARS` 默认 2,000 字符且**全工具生效**，
+  WebFetch 通过 `formatPersistedModelContent` 覆写为 10,000，其他工具不受影响。
+- 因此 15,000 字以内的页面完整内联；超出的页面上下文代价约 10 KB（10,000 字符预览），
+  全文在 artifact 里按需读取。
 
 ## 所有权与单一路径
 

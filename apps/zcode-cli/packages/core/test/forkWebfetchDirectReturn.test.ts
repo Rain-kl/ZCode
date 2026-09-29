@@ -11,9 +11,11 @@ import {
   type TraceId,
 } from "@zcode/contracts";
 
-import { MAX_WEBFETCH_INLINE_BYTES, MAX_MODEL_INPUT_CHARS } from "../src/tool/handlers/webfetch-constants.js";
+import {
+  MAX_WEBFETCH_PERSIST_CHARS,
+  MAX_WEBFETCH_PERSIST_PREVIEW_CHARS,
+} from "../src/tool/handlers/webfetch-constants.js";
 import { putWebFetchCache } from "../src/tool/handlers/webfetch-cache.js";
-import { formatGenericPersistedOutputContent } from "../src/tool/result-persistence-format.js";
 import { clearWebFetchCacheForTests, webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
 import type { CachedFetchContent } from "../src/tool/handlers/webfetch-types.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
@@ -116,51 +118,52 @@ test("摘要专属错误码不再出现在契约里", () => {
 // 上下文封顶：配置必须真的会触发
 // -----------------------------------------------
 
-test("结果预算按内联上限封顶，且该上限低于输入侧落盘阈值", () => {
+test("落盘判据是字符数 15000，字节预算不参与实际判定", () => {
   const budget = webFetchToolEntry.resultBudget;
   assert.ok(budget, "WebFetch 必须声明 resultBudget");
-  assert.equal(budget.maxModelBytes, MAX_WEBFETCH_INLINE_BYTES);
-  assert.equal(budget.maxInlineBytes, MAX_WEBFETCH_INLINE_BYTES);
   assert.equal(budget.strategy, "artifact");
-  assert.equal(budget.preview?.maxBytes, MAX_WEBFETCH_INLINE_BYTES);
+  assert.equal(webFetchToolEntry.maxModelChars, MAX_WEBFETCH_PERSIST_CHARS);
+  assert.equal(MAX_WEBFETCH_PERSIST_CHARS, 15_000);
 
-  // 不变量：内联上限必须小于输入侧 artifact 阈值，否则结果侧闸门永远轮不到触发，
-  // 「取消摘要」就会退化成「整页正文进上下文」。
+  // 不变量：字节预算必须大到「15000 个 UTF-16 单元」永远撞不到它，否则字节规则会先触发，
+  // 而字节计数对 CJK 页面是字符数的 3 倍，会让「15000 字以内不落盘」在中文页面上失效。
+  // 一个 UTF-16 单元在 UTF-8 下最多 3 字节，故 15000 单元 ≤ 45000 字节。
+  const worstCaseBytes = MAX_WEBFETCH_PERSIST_CHARS * 3;
   assert.ok(
-    MAX_WEBFETCH_INLINE_BYTES < MAX_MODEL_INPUT_CHARS,
-    `内联上限 ${MAX_WEBFETCH_INLINE_BYTES} 必须小于输入侧阈值 ${MAX_MODEL_INPUT_CHARS}`,
+    budget.maxModelBytes > worstCaseBytes,
+    `字节预算 ${budget.maxModelBytes} 必须大于最坏情况 ${worstCaseBytes}，否则字节规则会抢先触发`,
   );
 });
 
-test("落盘后的模型可见预览由共享信封决定，远小于落盘触发线", () => {
-  // MAX_WEBFETCH_INLINE_BYTES 只是「是否落盘」的触发线；一旦落盘，模型看到多少由
-  // result-persistence-format 的共享信封决定（与 resultBudget.preview 无关）。
-  // 这条差异直接决定「一次抓取真正占多少上下文」，所以要钉住，而不是只钉触发线。
+test("落盘预览按 WebFetch 自己的 10000 字符生成，而非共享信封的 2000", () => {
+  // 落盘后模型可见的预览由 entry.formatPersistedModelContent 决定；此前我误以为是
+  // resultBudget.preview.maxBytes（那只是 hook 追加时的裁剪界），实测已纠正。
+  const format = webFetchToolEntry.formatPersistedModelContent;
+  assert.ok(format, "WebFetch 必须覆写落盘预览格式");
+
   const content = "x".repeat(64_858);
-  const envelope = formatGenericPersistedOutputContent({
-    content,
-    originalBytes: Buffer.byteLength(content, "utf8"),
-    persistedPath: "/tmp/artifact.txt",
-  });
+  const originalBytes = Buffer.byteLength(content, "utf8");
+  const rendered = format({ content, originalBytes, output: {}, persistedPath: "/tmp/artifact.txt" });
+  assert.equal(typeof rendered, "string", "预览必须是纯文本");
+  const envelope = rendered as string;
 
   assert.match(envelope, /^<persisted-output>/);
   assert.match(envelope, /Full output saved to: \/tmp\/artifact\.txt/);
-  assert.match(envelope, /Output too large \(65 KB\)/);
+  assert.match(envelope, /Preview \(first 10 KB\)/);
 
-  // 只取预览正文：剔除信封的尾部标记行（`...` 与闭合标签），它们不属于预览内容。
-  const afterMarker = envelope.split("Preview (first 2 KB):\n")[1] ?? "";
+  // 剔除信封尾部标记行后统计预览正文长度。
+  const afterMarker = envelope.split("Preview (first 10 KB):\n")[1] ?? "";
   const preview = afterMarker
     .replace(/\n\.\.\.\n<\/persisted-output>$/, "")
     .replace(/\n<\/persisted-output>$/, "");
-  assert.ok(preview.length > 0, "预览必须存在");
+
+  assert.ok(preview.length > 2_000, `预览必须长于共享信封的 2000 字符，实际 ${preview.length}`);
   assert.ok(
-    preview.length <= 2_000,
-    `预览必须被共享信封限制在 2000 字符内，实际 ${preview.length}`,
+    preview.length <= MAX_WEBFETCH_PERSIST_PREVIEW_CHARS,
+    `预览不得超过 ${MAX_WEBFETCH_PERSIST_PREVIEW_CHARS} 字符，实际 ${preview.length}`,
   );
-  assert.ok(
-    envelope.length < MAX_WEBFETCH_INLINE_BYTES / 2,
-    `落盘后进上下文的信封应当远小于 ${MAX_WEBFETCH_INLINE_BYTES} 字节，实际 ${envelope.length}`,
-  );
+  // 长度不足 10000 时信封不该带省略号，说明它是被截断到上限的。
+  assert.ok(preview.length <= content.length);
 });
 
 // -----------------------------------------------

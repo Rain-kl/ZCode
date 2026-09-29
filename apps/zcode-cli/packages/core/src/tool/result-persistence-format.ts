@@ -12,17 +12,20 @@ interface PersistedOutputEnvelopeInput {
   previewChars: number;
 }
 
+// FORK(webfetch-direct-return): 默认预览 2,000 字符对抓取正文偏短（表格、版本列表会被截掉），
+// 故允许调用方覆写长度；其余工具不传即保持 2,000 不变。见 FEATURES.md 的 webfetch-direct-return 条目。
 export function formatGenericPersistedOutputContent(input: {
   content: string;
   originalBytes: number;
   persistedPath: string;
+  previewChars?: number;
 }): string {
   return formatPersistedOutputEnvelope({
     content: input.content,
     formatBytes: formatDecimalBytes,
     originalBytes: input.originalBytes,
     persistedPath: input.persistedPath,
-    previewChars: PERSISTED_OUTPUT_PREVIEW_CHARS,
+    previewChars: input.previewChars ?? PERSISTED_OUTPUT_PREVIEW_CHARS,
   });
 }
 

@@ -152,8 +152,9 @@
 - **修改内容**：
   1. **取消摘要阶段**：WebFetch 不再调用任何模型，工具直接返回抽取出的正文（HTML → markdown，其余为原文），调用方模型自行阅读正文并回答自己的问题。上游加工分支附带的版权合规指令（125 字符引用上限等）随之消失，已明确接受——预批文档站原本就直接返回 markdown，本功能把它从特例变成通则。
   2. **移除 `prompt` 参数**：从 `WebFetchInputSchema` 移除，工具声明的 JSON schema 里不再出现该属性，模型无从传入。该 schema 非 `.strict()`，历史会话回放传入的 `prompt` 会被静默丢弃而非报错，无回归。`webfetch_processing_failed` 不再可能产生，错误码与 `truncateContentForModel` 一并移除。
-  3. **上下文封顶改由 `resultBudget` 承担**（与其它工具同一条路径，不新增第二条封顶路径）：新增 `MAX_WEBFETCH_INLINE_BYTES = 32 * 1024` 作为**落盘触发线**，正文不超过它时原样内联，超出则全文写入会话级 artifact。此前该预算与 `MAX_WEBFETCH_MODEL_BYTES` 同为 100,000，而摘要输出恒 ≤4096 token，这道闸门**从未触发过**。
-     - **触发线 ≠ 预览大小**（实测更正）：落盘后模型可见的预览由 `tool/result-persistence-format.ts` 的共享信封决定（`PERSISTED_OUTPUT_PREVIEW_CHARS = 2,000` 字符），与 `resultBudget.preview` 无关。实测 64,858 字节的 python.org/downloads 页面：模型收到 2,000 字符预览 + artifact 路径，**单次抓取的上下文代价约 2 KB**，全文落在 artifact 里按需读取。32 KiB 的实际意义是决定「多少页面需要多走一次读文件」。
+  3. **上下文封顶改由工具结果预算承担**（与其它工具同一条路径，不新增第二条封顶路径）：正文不超过 **15000 字**时原样内联，超过则全文写入会话级 artifact，模型拿到 **10000 字预览** + artifact 路径。此前这道闸门与 `MAX_WEBFETCH_MODEL_BYTES` 同为 100,000 字节，而摘要输出恒 ≤4096 token，**从未触发过**。
+     - **判据是字符不是字节**：用 `entry.maxModelChars`（`MAX_WEBFETCH_PERSIST_CHARS = 15_000`），按字符判定才对 CJK 页面与直觉一致（10000 个汉字在字节口径下是 30000，会提前落盘）。`resultBudget` 的字节字段保持上游 100,000——15000 个 UTF-16 单元最多 45000 字节，撞不到它，故字节规则被完全覆盖。
+     - **预览单独放宽且只影响 WebFetch**：落盘预览由 `entry.formatPersistedModelContent` 覆写，走 `formatPersistedOutputEnvelope` 的 `previewChars`。共享信封 `PERSISTED_OUTPUT_PREVIEW_CHARS` 默认 2,000 字符且全工具生效，本次给它加了可选覆写入口（默认不变），WebFetch 传 10,000。注意 `resultBudget.preview.maxBytes` **不是**预览长度，它是 hook 追加时的裁剪界。
   4. **退役被取代的 `webfetch-direct-passthrough`**（按阈值决定跳过/不跳过摘要）：其判定、剩余上下文预算投影、单测与穿过 9 个上游文件的透传全部删除；runtime 不再为工具侧计算剩余预算。
 - **修改文件**：
   - 新增：`apps/zcode-cli/packages/core/test/forkWebfetchDirectReturn.test.ts`（11 例）、`docs/features/webfetch-direct-return/**`、`.agents/notes/webfetch-direct-return/decisions.md`。

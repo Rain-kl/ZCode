@@ -19,10 +19,12 @@ import {
 } from "./webfetch-cache.js";
 import {
   DEFAULT_WEBFETCH_TIMEOUT_MS,
-  MAX_WEBFETCH_INLINE_BYTES,
   MAX_WEBFETCH_MODEL_BYTES,
+  MAX_WEBFETCH_PERSIST_CHARS,
+  MAX_WEBFETCH_PERSIST_PREVIEW_CHARS,
   WEBFETCH_TOOL_NAME,
 } from "./webfetch-constants.js";
+import { formatGenericPersistedOutputContent } from "../result-persistence-format.js";
 import { fetchAndExtractContent } from "./webfetch-network.js";
 import type {
   FetchAndExtractContentResult,
@@ -195,15 +197,16 @@ export const webFetchToolEntry: ToolEntry = {
     alwaysAllowPatternSources: ["network"],
     denyPriority: "beforeAsk",
   },
-  // FORK(webfetch-direct-return): 正文直接进上下文，封顶只能靠这里。此前跟着加工模型的
-  // 4096 token 输出上限，这道闸门从未触发过；现在按内联上限落盘并只给头部预览。
-  // 见 FEATURES.md 的 webfetch-direct-return 条目。
+  // FORK(webfetch-direct-return): 正文直接进上下文，封顶只能靠这里——此前跟着加工模型的
+  // 4096 token 输出上限，这道闸门从未触发过。判据用**字符**（maxModelChars）而不是字节：
+  // 用户口径的「字」是字符，且按字符判定对 CJK 页面才与直觉一致（10000 个汉字在字节口径下
+  // 是 30000，会提前落盘）。见 FEATURES.md 的 webfetch-direct-return 条目。
   resultBudget: {
-    maxInlineBytes: MAX_WEBFETCH_INLINE_BYTES,
-    maxModelBytes: MAX_WEBFETCH_INLINE_BYTES,
+    maxInlineBytes: MAX_WEBFETCH_MODEL_BYTES,
+    maxModelBytes: MAX_WEBFETCH_MODEL_BYTES,
     strategy: "artifact",
     preview: {
-      maxBytes: MAX_WEBFETCH_INLINE_BYTES,
+      maxBytes: MAX_WEBFETCH_MODEL_BYTES,
       direction: "head",
     },
     artifact: {
@@ -211,6 +214,18 @@ export const webFetchToolEntry: ToolEntry = {
       retention: "session",
     },
   },
+  // 字符阈值：超过 15000 字符才落盘。字节预算保持上游值 100000——它只可能对
+  // 「字符 ≤ 15000 但字节 > 100000」的内容生效，而 15000 个 UTF-16 单元最多 45000 字节，
+  // 故字节规则被字符规则完全覆盖，实际判据只有一个。
+  maxModelChars: MAX_WEBFETCH_PERSIST_CHARS,
+  // 落盘后模型可见的预览：共享信封默认 2000 字符，对抓取正文太短（表格/版本列表会被截掉）。
+  formatPersistedModelContent: ({ content, originalBytes, persistedPath }) =>
+    formatGenericPersistedOutputContent({
+      content,
+      originalBytes,
+      persistedPath,
+      previewChars: MAX_WEBFETCH_PERSIST_PREVIEW_CHARS,
+    }),
   timeout: {
     defaultMs: DEFAULT_WEBFETCH_TIMEOUT_MS,
     maxMs: DEFAULT_WEBFETCH_TIMEOUT_MS,

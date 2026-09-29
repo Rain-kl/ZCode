@@ -8,7 +8,8 @@
 | 层 | 文件 | 改动 |
 | --- | --- | --- |
 | 契约 | `apps/zcode-cli/packages/contracts/src/tools/webfetch.ts` | 输入 schema 去掉 `prompt`；错误码去掉 `ProcessingFailed` |
-| 常量 | `apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts` | 新增 `MAX_WEBFETCH_INLINE_BYTES = 32 * 1024` |
+| 常量 | `apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts` | 新增 `MAX_WEBFETCH_PERSIST_CHARS = 15_000`（落盘判据）、`MAX_WEBFETCH_PERSIST_PREVIEW_CHARS = 10_000`（预览长度） |
+| 格式化 | `apps/zcode-cli/packages/core/src/tool/result-persistence-format.ts` | `formatGenericPersistedOutputContent` 增加可选 `previewChars`（默认仍 2,000，其它工具不受影响） |
 | 内容 | `apps/zcode-cli/packages/core/src/tool/handlers/webfetch-content.ts` | 删除 `truncateContentForModel` |
 | 处理 | `apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts` | **整文件删除**（加工阶段入口） |
 | 处理器 | `apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts` | 结果直取 `fetched.content`；结果预算改为内联上限；描述/能力文案/重定向文案更新 |
@@ -59,8 +60,10 @@
   - `contracts/.../webfetch.ts` 不得出现 `^\s*prompt:`。
 - `requiredPatterns`：
   - `webfetch.ts` 的 `result: fetched.content`（上游版本胜出会换成加工产物）；
-  - `webfetch.ts` 的 `maxModelBytes: MAX_WEBFETCH_INLINE_BYTES`（否则退化成整页正文进上下文）；
-  - `webfetch-constants.ts` 的 `MAX_WEBFETCH_INLINE_BYTES = 32 * 1024`；
+  - `webfetch.ts` 的 `maxModelChars: MAX_WEBFETCH_PERSIST_CHARS`（否则退化成整页正文进上下文）；
+  - `webfetch.ts` 的 `previewChars: MAX_WEBFETCH_PERSIST_PREVIEW_CHARS`（上游胜出会退回共享信封的 2000）；
+  - `webfetch-constants.ts` 的 `MAX_WEBFETCH_PERSIST_CHARS = 15_000` 与 `MAX_WEBFETCH_PERSIST_PREVIEW_CHARS = 10_000`；
+  - `result-persistence-format.ts` 的 `previewChars?: number` 覆写入口；
   - 三个改动文件里的 `FORK(webfetch-direct-return)` 标记在位。
 
 **为什么缺席规则按文件钉而不是全局**：新增单测里有意写着这些符号名（`assert.doesNotMatch(source, /processFetchedContent/)`），
@@ -70,7 +73,7 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| `pnpm exec tsx --test test/forkWebfetchDirectReturn.test.ts` | 11/11 通过（先红后绿：加测试时 `MAX_WEBFETCH_INLINE_BYTES` 尚不存在） |
+| `pnpm exec tsx --test test/forkWebfetchDirectReturn.test.ts` | 12/12 通过（先红后绿：加测试时新常量尚不存在） |
 | `pnpm test:unit` | 7 组测试全部通过 |
 | `pnpm typecheck` | 通过（root exit 0） |
 | `pnpm --dir apps/zcode-cli typecheck` | 27/27 successful |
@@ -85,7 +88,7 @@
 **已做的产物级核验**：`pnpm --filter @zcode/cli build` 重建 `packages/cli/dist/zcode.cjs`（20:15）后确认：
 
 - `processFetchedContent` 在 bundle 中出现 **0** 次（加工阶段入口确已消失）；
-- `MAX_WEBFETCH_INLINE_BYTES` 出现 5 次（封顶常量已进产物）；
+- `MAX_WEBFETCH_PERSIST_CHARS` / `MAX_WEBFETCH_PERSIST_PREVIEW_CHARS` 已进产物；
 - 新的工具描述（`Very large pages are truncated to a preview…`）在位；
 - `web_fetch_processing` 仍出现 2 次，逐处核对后确认**都在遥测枚举里**
   （`ModelApiOperation.WebFetch` 的 querySource 映射与 `agent-execution.ts` 的 vocabulary），
@@ -107,12 +110,11 @@
 **始终为 14**（与调用前基线一致），且该文件 mtime 停在 18:47——**加工调用一次都没有发生**，
 日志文件根本没被写入。同期唯一的新记录是本会话自己的 `main_turn`。
 
-**实测更正了一处文档判断**：落盘后模型可见的预览**不是** `resultBudget.preview.maxBytes`（我设的 32 KiB），
-而是 `tool/result-persistence-format.ts` 里独立于 resultBudget 的共享信封
-`PERSISTED_OUTPUT_PREVIEW_CHARS = 2,000` 字符（该文件注释明确写了这一点）。
-因此 `MAX_WEBFETCH_INLINE_BYTES` 的准确角色是**落盘触发线**，不是预览大小；
-超限页面的实际上下文代价约 2 KB。设计文档与 `FEATURES.md` 已按此更正，
-并新增单测 `落盘后的模型可见预览由共享信封决定，远小于落盘触发线` 钉住这条差异。
+**实测更正了一处文档判断**（两轮）：落盘后模型可见的预览**不是** `resultBudget.preview.maxBytes`,
+它是 hook 追加时的裁剪界；第一轮把预览误当成「与触发线同宽的 32 KiB」，
+第二轮又误当成「共享信封固定的 2,000 字符」。最终实现是**由 `entry.formatPersistedModelContent`
+按工具覆写**：共享信封仍默认 2,000（其它工具不变），WebFetch 传 10,000。
+设计文档与 `FEATURES.md` 已按最终口径更正，单测 `落盘预览按 WebFetch 自己的 10000 字符生成，而非共享信封的 2000` 钉住这条。
 
 python.org 的 artifact（64,858 字节 / 2,164 行）经核对是完整正文，内含 `Python 3.14.0`–`3.14.7` 全版本列表，
 即模型需要时可自行读取，不丢信息。

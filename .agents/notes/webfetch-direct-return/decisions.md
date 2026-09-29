@@ -38,13 +38,15 @@
 ### 2.2 上下文封顶交给已有的 `resultBudget`，不新造机制
 
 - **决策**：用工具执行器既有的 `resultBudget`（`strategy: "artifact"` + 头部预览 + 会话级落盘）封顶，
-  只新增一个阈值常量 `MAX_WEBFETCH_INLINE_BYTES = 32 * 1024`。
+  只新增两个阈值常量：`MAX_WEBFETCH_PERSIST_CHARS = 15_000`（落盘判据）与
+  `MAX_WEBFETCH_PERSIST_PREVIEW_CHARS = 10_000`（预览长度）。
 - **为什么这是最大的发现**：这套机制（等价于 opencode 的 `MAX_LINES`/`MAX_BYTES` + 落盘 + 预览）
   **ZCode 早就有了**，只是 WebFetch 的阈值与 `MAX_WEBFETCH_MODEL_BYTES` 同为 100,000，
   而摘要输出恒 ≤4096 token —— 这道闸门**从未触发过**，形同死代码。
   取消摘要后它才第一次真正承担职责。**没有创造第二个封顶路径**，所有权仍在 executor。
-- **32 KiB 的取法**：约 8k token，常见文档页（3~15 KiB 正文）完整内联、不产生额外「读文件」往返；
-  python.org/downloads 这类 64 KiB 页面被拦下，模型拿到头部预览与全文路径。取舍写进设计文档。
+- **两个数字的分工**：15,000 字符是**落盘判据**（按字符而非字节，CJK 页面才与直觉一致）；
+  10,000 字符是**落盘后模型可见的预览长度**。前者决定「多少页面需要多走一次读文件」，
+  后者决定一次超限抓取真正占多少上下文。取舍写进设计文档。
 
 ### 2.3 `prompt` 参数整体退场
 

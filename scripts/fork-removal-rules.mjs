@@ -155,13 +155,30 @@ export const REGISTRY = [
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
-        pattern: /maxModelBytes:\s*MAX_WEBFETCH_INLINE_BYTES/,
-        reason: "上下文封顶必须接在内联上限上，否则「取消摘要」会退化成整页正文进上下文",
+        pattern: /maxModelChars:\s*MAX_WEBFETCH_PERSIST_CHARS/,
+        reason:
+          "上下文封顶必须接在字符阈值上，否则「取消摘要」会退化成整页正文进上下文",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
+        pattern: /previewChars:\s*MAX_WEBFETCH_PERSIST_PREVIEW_CHARS/,
+        reason:
+          "落盘预览长度必须显式覆写为 10000 字符；上游版本胜出会退回共享信封的 2000，抓取正文被截得过短",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
-        pattern: /MAX_WEBFETCH_INLINE_BYTES\s*=\s*32\s*\*\s*1024/,
-        reason: "内联上限的定义点（改值属产品决策，须同步改本规则与设计文档）",
+        pattern: /MAX_WEBFETCH_PERSIST_CHARS\s*=\s*15_000/,
+        reason: "落盘字符阈值的定义点（改值属产品决策，须同步改本规则与设计文档）",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
+        pattern: /MAX_WEBFETCH_PERSIST_PREVIEW_CHARS\s*=\s*10_000/,
+        reason: "落盘预览长度的定义点（同上）",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/result-persistence-format.ts",
+        pattern: /previewChars\?: number/,
+        reason: "共享信封必须保留 previewChars 覆写入口，否则 WebFetch 无法单独放宽预览长度",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
