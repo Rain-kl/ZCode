@@ -3,11 +3,15 @@
  *
  * 只经 `IServiceAccessor.forkSearchProvidersService` 访问 host（web/远端环境没有该服务时为 undefined），
  * 错误统一落到 `error` 由面板展示。
+ *
+ * FORK(rpc-channel-manifest): 能力缺席表现为「成员为 undefined」而不是「一次超时错误」；
+ * 对端通道清单到达前不发任何探测调用，见 FEATURES.md 的 rpc-channel-manifest 条目。
  * 见 docs/features/search-providers/design.md §7 与 §10.3。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ForkSearchProviderChannel, ForkSearchProvidersFile } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
+import { useChannelServiceUsable } from "@/hooks/useChannelAvailabilityReady.js";
 
 export interface ForkSearchProvidersController {
   /** host 未提供该服务（web / 远端环境）时为 false。 */
@@ -34,6 +38,8 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
   const [channels, setChannels] = useState<ForkSearchProviderChannel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // FORK(rpc-channel-manifest): usable 门住所有调用（清单已到且含该通道）
+  const usable = useChannelServiceUsable(service);
 
   const run = useCallback(async (action: () => Promise<ForkSearchProvidersFile>) => {
     setBusy(true);
@@ -50,16 +56,16 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     await run(async () => {
       return await service.list();
     });
-  }, [run, service]);
+  }, [run, service, usable]);
 
   useEffect(() => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     let disposed = false;
@@ -78,17 +84,18 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
     return () => {
       disposed = true;
     };
-  }, [service]);
+  }, [service, usable]);
 
   return useMemo<ForkSearchProvidersController>(
     () => ({
+      // available 只描述「清单是否提供该通道」；发调用由 usable 另行门控。
       available: Boolean(service),
       channels,
       busy,
       error,
       refresh,
       async add(input) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -96,7 +103,7 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
         });
       },
       async update(id, patch) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -104,7 +111,7 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
         });
       },
       async remove(id) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -112,7 +119,7 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
         });
       },
       async reorder(ids) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -120,6 +127,6 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
         });
       },
     }),
-    [busy, channels, error, refresh, run, service],
+    [busy, channels, error, refresh, run, service, usable],
   );
 }

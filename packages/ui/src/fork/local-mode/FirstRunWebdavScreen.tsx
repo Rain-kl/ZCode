@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Cloud } from "lucide-react";
 import { useServices } from "@/hooks/useServices.js";
+import { useChannelServiceUsable } from "@/hooks/useChannelAvailabilityReady.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useForkWebdav } from "@/fork/local-mode/useForkWebdav.js";
 import { WebdavConnectionForm } from "@/fork/local-mode/WebdavConnectionForm.js";
@@ -70,9 +71,11 @@ export function useForkWebdavFirstRunGate(): { visible: boolean; dismiss: () => 
   const services = useServices();
   const service = services.forkWebdavService;
   const [visible, setVisible] = useState(false);
+  // FORK(rpc-channel-manifest): 清单到达前不探测（否则回不到「不支持」而是 1s 超时错误）；见 FEATURES.md 的 rpc-channel-manifest 条目
+  const usable = useChannelServiceUsable(service);
 
   useEffect(() => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     let disposed = false;
@@ -90,7 +93,7 @@ export function useForkWebdavFirstRunGate(): { visible: boolean; dismiss: () => 
       disposed = true;
       subscription.dispose();
     };
-  }, [service]);
+  }, [service, usable]);
 
   const dismiss = useCallback(() => setVisible(false), []);
   return { visible, dismiss };

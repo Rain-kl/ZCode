@@ -3,6 +3,9 @@
  *
  * 只经 `IServiceAccessor.forkWebdavService` 访问 host（web/远端环境没有该服务时为 undefined），
  * 订阅服务状态事件并向上暴露操作；错误统一落到 `error` 由面板展示。
+ *
+ * FORK(rpc-channel-manifest): 能力缺席表现为「成员为 undefined」而不是「一次超时错误」；
+ * 对端通道清单到达前不发任何探测调用，见 FEATURES.md 的 rpc-channel-manifest 条目。
  * 见 docs/features/local-mode/design.md 第 6.6 节。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,6 +18,7 @@ import type {
   ForkWebdavTestResult,
 } from "@zcode/shared";
 import { useServices } from "@/hooks/useServices.js";
+import { useChannelServiceUsable } from "@/hooks/useChannelAvailabilityReady.js";
 
 export interface ForkWebdavController {
   /** host 未提供该服务（web / 远端环境）时为 false。 */
@@ -47,6 +51,9 @@ export function useForkWebdav(): ForkWebdavController {
   const [backups, setBackups] = useState<ForkWebdavBackup[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // FORK(rpc-channel-manifest): usable 门住所有调用（清单已到且含该通道）；
+  // 清单缺席时 service 为 undefined，available 即「当前环境不支持」。
+  const usable = useChannelServiceUsable(service);
 
   const run = useCallback(async (action: () => Promise<void>) => {
     setBusy(true);
@@ -61,14 +68,14 @@ export function useForkWebdav(): ForkWebdavController {
   }, []);
 
   const refreshStatus = useCallback(async () => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     setStatus(await service.getStatus());
-  }, [service]);
+  }, [service, usable]);
 
   const refreshBackups = useCallback(async () => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     const current = await service.getStatus();
@@ -77,10 +84,10 @@ export function useForkWebdav(): ForkWebdavController {
       return;
     }
     setBackups(await service.listBackups());
-  }, [service]);
+  }, [service, usable]);
 
   useEffect(() => {
-    if (!service) {
+    if (!usable || !service) {
       return;
     }
     let disposed = false;
@@ -111,10 +118,11 @@ export function useForkWebdav(): ForkWebdavController {
       disposed = true;
       subscription.dispose();
     };
-  }, [service]);
+  }, [service, usable]);
 
   return useMemo<ForkWebdavController>(
     () => ({
+      // available 只描述「清单是否提供该通道」；发调用由 usable 另行门控。
       available: Boolean(service),
       status,
       backups,
@@ -127,13 +135,13 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async testConnection(input) {
-        if (!service) {
+        if (!usable || !service) {
           return { ok: false, error: "WebDAV 服务不可用" };
         }
         return await service.testConnection(input);
       },
       async configure(input) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -142,7 +150,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async disconnect() {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -151,7 +159,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async updateSettings(patch) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -159,7 +167,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async backupNow() {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -168,7 +176,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async restoreBackup(key) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -177,7 +185,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async deleteBackup(key) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -186,7 +194,7 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
       async resolveConflict(choice) {
-        if (!service) {
+        if (!usable || !service) {
           return;
         }
         await run(async () => {
@@ -195,6 +203,6 @@ export function useForkWebdav(): ForkWebdavController {
         });
       },
     }),
-    [backups, busy, error, refreshBackups, refreshStatus, run, service, status],
+    [backups, busy, error, refreshBackups, refreshStatus, run, service, status, usable],
   );
 }
