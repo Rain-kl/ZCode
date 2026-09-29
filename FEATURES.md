@@ -149,6 +149,38 @@
 - **上游收敛**：上游若自己实现「短内容免摘要」或把工具结果预算改成按剩余窗口自适应，删除本功能并采用上游实现——摘除范围见实现文档 §2。
 - **上游同步记录**：暂无。
 
+## 网络搜索渠道 (search-providers)
+
+- **状态**：已实现（2026-09-29），未做打包产物与真实 Tavily 端到端验证（见实现文档 §7）
+- **需求背景**：`WebSearch` 原本仅有 provider-native 服务端搜索一条实现路径，且编码层只支持 anthropic 通道。在 openai-compatible 通道上（`supportsNativeWebSearch` 恒为假），`WebSearch` 对模型被硬性过滤，模型拿不到任何搜索工具只能猜 URL。需要将搜索后端解耦为可插拔、可降级的渠道链，以服务端搜索为首选，并允许用户配置自带 Key 的 Tavily 外部搜索渠道作为备用和兜底。
+- **修改内容**：
+  1. **渠道模型**：抽象 `SearchChannel` 与 `SearchChannelOutcome`，服务端搜索与 Tavily 渠道统一纳管，对外维持单一 `WebSearch` 工具外观。
+  2. **路由与降级**：瀑布流按序尝试，首个成功渠道立即返回；前置失败留痕（`console.warn`）；全渠道失败抛出结构化 `SearchChannelsExhaustedError`；支持 `AbortSignal` 快速中断不降级。
+  3. **暴露门改造**：`shouldExposeWebSearch` 判据从「模型是否支持原生搜索」改为「可用渠道数 > 0」，为非原生模型解锁搜索能力，且无渠道时保持隐藏（回归保护）。
+  4. **设置页「搜索」栏目**：设置 → 基础设置 → 搜索，呈现活动模型服务端搜索只读状态，支持 Tavily 渠道的添加、启用/禁用、Key 掩码显示、拖拽排序与删除。
+  5. **存储与 WebDAV 同步**：渠道配置以 `0o600` 权限安全保存在 `<homedir>/.zcode/cli/fork/settings.json`（原子写与文件锁）；新增 `cliConfigDir` base 变体并纳入 WebDAV 同步清单。
+- **修改文件**：
+  - 新增文件：`packages/shared/src/fork/search-providers-contract.ts`、`packages/services/src/fork/search-providers.ts`、`packages/desktop/src/host/fork/search-providers/{file-store,service,index}.ts`、`packages/ui/src/fork/search-providers/{useForkSearchProviders.ts,SearchProvidersSection.tsx,ChannelList.tsx,ChannelDialogs.tsx,index.ts}`、`apps/zcode-cli/packages/core/src/fork/search-providers/{channel,router,tavily,channels,index}.ts`、`packages/shared/test/forkSearchProvidersContract.test.ts`、`apps/zcode-cli/packages/core/test/forkSearchProviders{Router,Tavily,Channels,Exposure,Handler}.test.ts`、`packages/desktop/test/forkSearchProvidersFileStore.test.ts`、`packages/desktop/test/forkWebdavManifestSearchProvidersContract.test.ts`、`packages/ui/test/forkSearchProvidersSection.test.ts`、`docs/features/search-providers/**`。
+  - 上游接线文件：`apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/config.ts`、`apps/zcode-cli/packages/contracts/src/tools/websearch.ts`、`packages/shared/src/index.ts`、`packages/services/src/{index.ts,accessor.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/desktop/src/host/fork/webdav-sync/manifest.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+- **上游改动标记**：13 个上游文件、共 24 处标记（含 5 对 `FORK-BEGIN/END` 块）：
+  - `core/src/tool/handlers/websearch.ts`（4 处：import 块保持上游第 24 行零 diff、工具名常量导出、描述函数导出与去掉 US-only、处理器主体接线与降级留痕）
+  - `core/src/runtime/methods/config.ts`（3 处：计数方法 import、守卫函数导出、渠道数暴露门判据）
+  - `contracts/src/tools/websearch.ts`（2 处：`max_results` 入参字段、`channel` 可选输出字段）
+  - `shared/src/index.ts`（1 处：契约导出）
+  - `services/src/index.ts`（1 处：服务面导出）
+  - `services/src/accessor.ts`（1 处：服务访问器属性）
+  - `client/src/remoteServiceAccess.ts`（4 处：通道常量、映射表、服务接口、工厂方法）
+  - `desktop/src/host/index.ts`（5 处：服务接口导入、工厂导入、运行时导入、`resolveBase` 的 `cliConfigDir` 分支、服务注册）
+  - `ui/src/settings/settingsPageConfig.ts`（2 处：图标导入、栏目注册）
+  - `ui/src/lib/settingsNavigation.ts`（3 处：分区 ID 类型、守卫导出、守卫分支）
+  - `ui/src/SettingsPage.tsx`（2 处：组件导入、渲染分支）
+  - `ui/src/i18n/locales/zh-CN.ts`（1 处：中文翻译区块）
+  - `ui/src/i18n/locales/en-US.ts`（1 处：英文翻译区块）
+- **设计文档**：`docs/features/search-providers/design.md`
+- **实现文档**：`docs/features/search-providers/implementation.md`
+- **已知边界**：见实现文档 §8（测试替身 `as never`、`statSync` 异常粒度、`createServerSearchChannel` 缺乏独立单测、测试临时目录清理、host 装配内联路径风格）。
+- **上游同步记录**：暂无。
+
 ## 其他更新
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
