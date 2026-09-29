@@ -243,6 +243,8 @@ export * from "./model-provider-types.js";
 // FORK(local-mode): 本地模式开关与判定；见 FEATURES.md 的 local-mode 条目
 export * from "./fork/flags.js";
 export * from "./fork/webdav-contract.js";
+// FORK(search-providers): 导出网络搜索渠道数据契约；见 FEATURES.md 的 search-providers 条目
+export * from "./fork/search-providers-contract.js";
 // FORK(identity-preset): 系统指令——用户自定义身份段的文件契约与模板；见 FEATURES.md 的 identity-preset 条目
 export * from "./fork/identity-preset-contract.js";
 export * from "./model-provider-family.js";
