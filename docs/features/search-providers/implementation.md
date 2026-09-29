@@ -261,3 +261,14 @@ Tavily 错误响应状态码及对应的含义分类如下：
 5. **Host 装配处 `join` 未抽取顶层常量**：
    - *位置*：`packages/desktop/src/host/index.ts` 第 2921 行。
    - *情况*：`cliConfigDir` 分支内联编写了 `join(homedir(), ZCODE_AGENT_RUNTIME.nativeConfigDir)`，未在当前文件顶层提取为命名常量 `forkCliConfigDir`，属纯代码风格对称性，不影响逻辑。
+6. **暴露门与执行链的判据不完全对称（理论窗口，非现实缺陷）**：
+   - *位置*：暴露门位于 `apps/zcode-cli/packages/core/src/runtime/methods/config.ts`（Task 5），执行链位于 `apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts` 与 `apps/zcode-cli/packages/core/src/fork/search-providers/channels.ts`（Task 6 / Task 4）。
+   - *情况*：暴露门使用 `countAvailableSearchChannels({ model })` 计算可用渠道数，不需要且未传入 `httpClientPort`；而执行链组装器 `buildSearchChannelChain({ serverChannel, httpClientPort })` 在 `httpClientPort` 为 `undefined` 时仅挂载服务端渠道，不加载 Tavily 渠道。因此理论上存在「暴露门判定有 N 个可用渠道并暴露了工具，但执行链中因缺失 `httpClientPort` 仅包含服务端渠道」的不对称组合。
+   - *现实影响与记录价值*：实测与代码核验确认，CLI runtime 在当前工具执行上下文（`ToolExecutionContext`）中 `httpClientPort` 恒定存在，因此在当前架构下**不构成实际缺陷**。但保留此记录具有防御性架构价值：若未来重构使 `httpClientPort` 的注入变成可选或按需能力，该不对称可能演变为「工具已向模型暴露、但实际调用时无可用外部渠道并导致失败」的真实缺陷。
+7. **渠道表变更的 TOCTOU（Time-of-Check to Time-of-Use）窗口**：
+   - *位置*：暴露门判定（`runtime/methods/config.ts`）与工具处理器执行（`tool/handlers/websearch.ts`）。
+   - *情况*：在暴露门计算可用渠道（Check）与模型发出工具调用并由处理器实际执行（Use）之间，存在极短的时间窗口。若用户在此窗口期通过设置页或外部修改了渠道表（`channels.ts` 的 `mtime` 缓存会在每次处理器调用时重新校验与刷新）：
+     - 若渠道在窗口期全部被删除或禁用：工具执行时 `runSearchChannels` 将抛出包含完整尝试轨迹的结构化 `SearchChannelsExhaustedError`，模型会明确获知渠道耗尽错误，**不会发生静默失败**；
+     - 若渠道在窗口期从无到有新增：由于此前暴露门已判定不暴露该工具，模型在当前轮次中根本不会发出 `WebSearch` 工具调用。
+   - *设计对齐*：此窗口属于跨进程式状态并发的内在物理现象，后果完全受控且安全。它与设计文档 §5.4 所定义的「生效时机：下一次工具调用生效，不追溯」是同一设计约束的两面，放在一起理解更为清晰。
+
