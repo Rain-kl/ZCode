@@ -20,6 +20,7 @@ import {
   type ForkWebdavSyncPhase,
 } from "@zcode/shared";
 import { createWebdavClient, type WebdavFetch } from "./webdav-client.js";
+import { describeForkWebdavError } from "./error-message.js";
 import type { SyncSnapshotApplierPort, SyncSnapshotPort } from "./snapshot-port.js";
 import {
   createForkWebdavCredentialPort,
@@ -230,7 +231,7 @@ export function createForkWebdavService(
       await createEngineFor(remote).runCycle(trigger, { allowUpload: options2?.allowUpload });
       lastError = null;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      lastError = describeForkWebdavError(error);
       options.log("[fork-webdav] 同步失败", { error: lastError, trigger });
       if (options2?.throwOnError) {
         throw error;
@@ -252,7 +253,7 @@ export function createForkWebdavService(
       await run(createEngineFor(remote));
       lastError = null;
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
+      lastError = describeForkWebdavError(error);
       options.log("[fork-webdav] 手动操作失败", { error: lastError });
       await refreshStatus();
       throw error;
@@ -287,7 +288,7 @@ export function createForkWebdavService(
       }
     } catch (error) {
       options.log("[fork-webdav] 定时同步异常", {
-        error: error instanceof Error ? error.message : String(error),
+        error: describeForkWebdavError(error),
       });
     }
   }
@@ -313,7 +314,7 @@ export function createForkWebdavService(
         await client.testConnection();
         return { ok: true };
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        return { ok: false, error: describeForkWebdavError(error) };
       }
     },
 
@@ -344,7 +345,7 @@ export function createForkWebdavService(
         // 目录不存在时创建；已被拒绝（无权限）时仍允许后续操作给出具体错误。
         await client.ensureDirectory();
       } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
+        lastError = describeForkWebdavError(error);
         await refreshStatus();
         throw error;
       }

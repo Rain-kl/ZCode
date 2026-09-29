@@ -37,6 +37,24 @@ export class WebdavRequestError extends Error {
   }
 }
 
+/**
+ * 连接层失败：**没有拿到 HTTP 响应**（TLS 被重置、DNS 失败、代理不可达…）。
+ *
+ * 与 WebdavRequestError（有状态码，说明服务端答了）分开，因为两者的排查方向完全不同：
+ * 前者查网络/代理，后者查地址/凭据/权限。原始原因挂在 `cause` 上，
+ * 由 error-message.ts 展开成可读消息。
+ */
+export class WebdavTransportError extends Error {
+  constructor(
+    readonly method: string,
+    readonly url: string,
+    cause: unknown,
+  ) {
+    super(`WebDAV ${method} ${url} 请求失败：未收到 HTTP 响应`, { cause });
+    this.name = "WebdavTransportError";
+  }
+}
+
 export interface WebdavClientOptions {
   baseUrl: string;
   directory: string;
@@ -147,7 +165,16 @@ export function createWebdavClient(options: WebdavClientOptions): WebdavClient {
     if (body) {
       headers["content-length"] = String(body.byteLength);
     }
-    const response = await options.fetchImpl(url, { method, headers, body });
+    // 用 try/catch（而不是 .catch()）同时兜住「返回 rejected promise」与「同步抛出」两种情况：
+    // 假实现/包装层可能同步抛，.catch() 接不住。
+    // undici 在这里抛的是 `TypeError: fetch failed`，真正原因在 cause 上；
+    // 补上方法与 URL 后再往上抛，否则调用方只能看到一句没有上下文的 "fetch failed"。
+    let response: WebdavFetchResponse;
+    try {
+      response = await options.fetchImpl(url, { method, headers, body });
+    } catch (error) {
+      throw new WebdavTransportError(method, url, error);
+    }
     if (!response.ok && response.status !== 207) {
       throw new WebdavRequestError(
         method,
