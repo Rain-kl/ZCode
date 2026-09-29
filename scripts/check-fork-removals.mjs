@@ -107,7 +107,8 @@ const REGISTRY = [
         // 必须匹配调用点而不是 import：只写符号名的话，光靠 import 行就能满足规则，
         // 上游版本把接线换掉也照样「通过」。
         pattern: /applyForkGithubUpdateFeed\(\s*autoUpdater\b/,
-        reason: "autoUpdater 必须仍由 fork 的 GitHub feed 接线（上游版本胜出会退回服务端 manifest）",
+        reason:
+          "autoUpdater 必须仍由 fork 的 GitHub feed 接线（上游版本胜出会退回服务端 manifest）",
       },
       {
         path: "packages/desktop/src/main/autoUpdater.ts",
@@ -129,6 +130,82 @@ const REGISTRY = [
         // 独立匹配赋值语句：只匹配 canary-build 的话，注释里的字样就能满足规则。
         pattern: /pointer_tag="canary-build"/,
         reason: "preview 通道的固定指针 Release",
+      },
+    ],
+  },
+  {
+    // 见 FEATURES.md 的 webfetch-direct-passthrough 条目与 docs/features/webfetch-direct-passthrough/design.md。
+    // 本功能没有「移除」，只有接线：判定 + 剩余预算透传是 8 个上游文件各 1 行。
+    // 上游同步时若某个文件取了上游版本，透传就从那一层断掉，而产品表现只是「又变回总结」——
+    // 不报错、不影响类型检查，属于最典型的静默失效，所以逐层钉住。
+    featureId: "webfetch-direct-passthrough",
+    absentFiles: [],
+    absentPatterns: [],
+    requiredFiles: [
+      {
+        path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/policy.ts",
+        reason: "直通判定与字数口径",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/remaining-tokens.ts",
+        reason: "剩余上下文预算投影",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts",
+        reason: "判定边界与处理器接线单测",
+      },
+    ],
+    requiredPatterns: [
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
+        // 匹配调用而不是 import：只写符号名的话，光靠 import 行就能满足规则。
+        pattern: /decideForkWebfetchDirectPassThrough\(\s*\{/,
+        reason: "WebFetch 必须仍走 fork 的直通判定（上游版本胜出会退回无条件总结）",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
+        pattern: /remainingContextTokens:\s*context\.remainingContextTokens/,
+        reason: "判定必须读 runtime 透传的预算，不能退化成常量或自行估算",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
+        pattern: /resolveForkRemainingContextTokens\(\s*\{/,
+        reason: "剩余预算的唯一计算点",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
+        pattern: /^\s*remainingContextTokens,\s*$/m,
+        reason: "算出的预算必须送进工具执行参数",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/runtime/types.ts",
+        pattern: /remainingContextTokens\?: number;/,
+        reason: "runtime → executor 的透传字段",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/runtime/methods/tools.ts",
+        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
+        reason: "executeTools 必须转发预算",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-tools.ts",
+        pattern: /remainingContextTokens:\s*options\.remainingContextTokens/,
+        reason: "工具步必须把预算交给 executeTools",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/executor/types.ts",
+        pattern: /remainingContextTokens\?: number;/,
+        reason: "执行参数类型里的透传字段",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/executor/call-runner.ts",
+        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
+        reason: "执行参数必须落进 ToolExecutionContext",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/types.ts",
+        pattern: /remainingContextTokens\?: number;/,
+        reason: "handler 唯一的预算输入通道",
       },
     ],
   },

@@ -50,6 +50,8 @@ export async function executeToolCallsForModelStep(
     result: RuntimeModelTextResult;
     streamedToolResults?: StreamedToolExecutionResult[];
     toolCalls: ModelToolCall[];
+    // FORK(webfetch-direct-passthrough): 本次请求的剩余上下文预算，透传给工具上下文；见 FEATURES.md 的对应条目
+    remainingContextTokens?: number;
   },
 ): Promise<"continue" | "break"> {
   const model = state.model;
@@ -184,6 +186,8 @@ export async function executeToolCallsForModelStep(
       traceContext: options.modelTraceContext,
       subagentModelOverride: state.subagentModelOverride,
       model: state.model,
+      // FORK(webfetch-direct-passthrough): 工具侧要读本次请求的剩余上下文预算；见 FEATURES.md 的对应条目
+      remainingContextTokens: options.remainingContextTokens,
       onBatchStart: async (toolCallIds) => {
         // 已取消的 batch 仍由 executor 返回 cancelled results，但不能把从未进入
         // handler 的 tool parts 误标记为 running。

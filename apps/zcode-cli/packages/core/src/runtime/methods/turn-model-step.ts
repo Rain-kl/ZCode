@@ -73,6 +73,8 @@ import {
   resolveModelStepMaxOutputTokens,
   resolveNormalRequestMaxOutputTokens,
 } from "./model-token-limits.js";
+// FORK(webfetch-direct-passthrough): 把本次请求的剩余上下文预算透传给工具侧；见 FEATURES.md 的对应条目
+import { resolveForkRemainingContextTokens } from "../../fork/webfetch-direct-passthrough/remaining-tokens.js";
 import {
   appendOutputTokenContinuation,
   classifyOutputTokenContinuation,
@@ -228,6 +230,18 @@ async function runModelBackedTurnStepImpl(
   };
 
   let result: RuntimeModelTextResult;
+  // FORK-BEGIN(webfetch-direct-passthrough)
+  // 本次请求的估算输入原先只喂给输出预算，工具侧的 WebFetch 直通判定也要读它换算出的
+  // 剩余上下文预算。挪出来算一次共用，避免出现第二套「当前用量/剩余量」事实。
+  const estimatedCurrentUsage = estimateCurrentModelInputTokens(
+    options.messages,
+    options.sourceEntries,
+  );
+  const remainingContextTokens = resolveForkRemainingContextTokens({
+    contextWindow: executionContextWindow,
+    estimatedCurrentUsage,
+  });
+  // FORK-END(webfetch-direct-passthrough)
   try {
     const baselineMaxOutputTokens = resolveNormalRequestMaxOutputTokens({
       modelMaxOutputTokens: executionMaxOutputTokens,
@@ -239,10 +253,7 @@ async function runModelBackedTurnStepImpl(
       maxOutputTokens: resolveModelStepMaxOutputTokens({
         baselineMaxOutputTokens,
         contextWindow: executionContextWindow,
-        estimatedCurrentUsage: estimateCurrentModelInputTokens(
-          options.messages,
-          options.sourceEntries,
-        ),
+        estimatedCurrentUsage,
         modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
       }),
       latestRealUserMessageIndex: options.latestRealUserMessageIndex,
@@ -728,6 +739,8 @@ async function runModelBackedTurnStepImpl(
     result,
     toolCalls: executableToolCalls,
     streamedToolResults,
+    // FORK(webfetch-direct-passthrough): 工具侧 WebFetch 直通判定要读的剩余上下文预算；见 FEATURES.md 的对应条目
+    remainingContextTokens,
   });
   return toolStepResult;
 }

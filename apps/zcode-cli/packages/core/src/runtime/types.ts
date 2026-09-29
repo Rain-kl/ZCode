@@ -746,6 +746,8 @@ export interface ExecuteToolsOptions {
   /** 仅透传给当前 turn 同步等待的 Agent child。 */
   subagentModelOverride?: import("@zcode/contracts").SubagentRunOptions["modelOverride"];
   model?: Model;
+  // FORK(webfetch-direct-passthrough): 透传本次请求的剩余上下文预算给工具上下文；见 FEATURES.md 的对应条目
+  remainingContextTokens?: number;
   onBatchStart?: (toolCallIds: string[]) => Promise<void>;
 }
 

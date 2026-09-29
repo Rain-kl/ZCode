@@ -86,6 +86,8 @@ export async function executeTools(
     traceContext,
     subagentModelOverride: options?.subagentModelOverride,
     model: options?.model,
+    // FORK(webfetch-direct-passthrough): 工具上下文要读本次请求的剩余上下文预算；见 FEATURES.md 的对应条目
+    remainingContextTokens: options?.remainingContextTokens,
   });
   let results: ToolExecutionResult[] = [];
 

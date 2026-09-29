@@ -116,6 +116,23 @@
 - **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
 - **上游同步记录**：暂无。
 
+## WebFetch 短内容直通 (webfetch-direct-passthrough)
+
+- **状态**：已实现（2026-09-29），单测覆盖决策边界与处理器接线；运行期以「日志里不再出现 `querySource=web_fetch_processing`」验证，待真实短页面抓取复验。
+- **需求背景**：上游 WebFetch 永远两段式——抓页面抽正文后，再调一次模型把正文压成摘要交给调用方。短页面（几段文档、单个 API 章节）压成摘要纯损失：多一次模型往返（可能超时/失败，失败时整页内容丢失，调用方只看到 `webfetch_processing_failed`），且摘要会丢表格、代码片段、字段名等细节，而抓取方无法察觉丢了什么。
+- **修改内容**：正文去标点后 `< 15000` 字、且发起本次调用的请求剩余上下文预算 `>= 30000`、且原始长度仍 `<= 100000`（模型输入上限守卫，防「几乎全是标点」的页面绕过字数判定）时，跳过加工模型，直接把抽取出的正文交给调用方模型。判定与计数是纯函数（`policy.ts`），剩余预算由 runtime 在发起请求前算一次（`remaining-tokens.ts`）并逐级透传，工具侧只读快照；任一条不满足或预算不可得都回落上游行为。
+  - 字数口径：Unicode 码点数，排除 `P*`（标点）；空白、换行与 `S*`（符号，如 `+` `=`）计入——保守取法，只会更早回落总结。
+  - 剩余预算口径与 `resolveModelStepMaxOutputTokens` 的 `estimatedCurrentUsage` 同源同值，不引入第二套估算。
+- **修改文件**：
+  - 新增 `apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/{policy.ts,remaining-tokens.ts}`、`apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts`（14 例）、`docs/features/webfetch-direct-passthrough/**`。
+  - 上游接线：`tool/handlers/webfetch-processing.ts`（判定调用），`tool/types.ts` + `tool/executor/types.ts` + `tool/executor/call-runner.ts` + `runtime/types.ts` + `runtime/methods/{tools.ts,turn-tools.ts,turn-model-step.ts}`（剩余预算透传）。
+- **上游改动标记**：8 个上游文件、12 处 `FORK(webfetch-direct-passthrough)`（含 2 对 `FORK-BEGIN/END`）。
+- **设计文档**：`docs/features/webfetch-direct-passthrough/design.md`
+- **实现文档**：`docs/features/webfetch-direct-passthrough/implementation.md`
+- **已知边界**：直通时不再执行加工分支的「引用合规指令」（125 字符引用上限等），正文原文进上下文——这是直通的定义使然，已明确接受；流失败恢复路径（`streaming-tool-coordinator.recoverFromModelFailure`）不带预算，回落总结；WebFetch 描述未改（仍是 "answers `prompt` against it using a small fast model"，对大多数调用成立）。
+- **上游收敛**：上游若自己实现「短内容免摘要」或把工具结果预算改成按剩余窗口自适应，删除本功能并采用上游实现——摘除范围见实现文档 §2。
+- **上游同步记录**：暂无。
+
 ## 其他更新
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。

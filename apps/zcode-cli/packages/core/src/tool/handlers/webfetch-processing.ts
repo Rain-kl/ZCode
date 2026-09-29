@@ -7,6 +7,8 @@ import {
 } from "@zcode/contracts";
 import type { ToolExecutionContext } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
+// FORK(webfetch-direct-passthrough): 短正文不再经过加工模型；见 FEATURES.md 的 webfetch-direct-passthrough 条目
+import { decideForkWebfetchDirectPassThrough } from "../../fork/webfetch-direct-passthrough/policy.js";
 import { MAX_MODEL_INPUT_CHARS, WEBFETCH_TOOL_NAME } from "./webfetch-constants.js";
 import { truncateContentForModel } from "./webfetch-content.js";
 import { webFetchError } from "./webfetch-errors.js";
@@ -26,6 +28,19 @@ export async function processFetchedContent(
   if (shouldReturnMarkdownDirectly(fetched, options)) {
     return { result: fetched.content, truncated: false };
   }
+
+  // FORK-BEGIN(webfetch-direct-passthrough)
+  // 为什么必须在这里：上游把「是否需要压成摘要」当成常量（永远压），
+  // 而短正文压缩是纯损失——加工往返可能失败并让整页内容丢失，摘要还会丢表格/代码细节。
+  // 判定参数由 runtime 逐级透传（context.remainingContextTokens），缺席即回落上游行为。
+  const directPassThrough = decideForkWebfetchDirectPassThrough({
+    content: fetched.content,
+    remainingContextTokens: context.remainingContextTokens,
+  });
+  if (directPassThrough.direct) {
+    return { result: fetched.content, truncated: false };
+  }
+  // FORK-END(webfetch-direct-passthrough)
 
   const model = context.model;
   if (!model) {
