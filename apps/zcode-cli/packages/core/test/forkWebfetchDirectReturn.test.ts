@@ -13,6 +13,7 @@ import {
 
 import { MAX_WEBFETCH_INLINE_BYTES, MAX_MODEL_INPUT_CHARS } from "../src/tool/handlers/webfetch-constants.js";
 import { putWebFetchCache } from "../src/tool/handlers/webfetch-cache.js";
+import { formatGenericPersistedOutputContent } from "../src/tool/result-persistence-format.js";
 import { clearWebFetchCacheForTests, webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
 import type { CachedFetchContent } from "../src/tool/handlers/webfetch-types.js";
 import type { ToolExecutionContext } from "../src/tool/types.js";
@@ -128,6 +129,37 @@ test("结果预算按内联上限封顶，且该上限低于输入侧落盘阈�
   assert.ok(
     MAX_WEBFETCH_INLINE_BYTES < MAX_MODEL_INPUT_CHARS,
     `内联上限 ${MAX_WEBFETCH_INLINE_BYTES} 必须小于输入侧阈值 ${MAX_MODEL_INPUT_CHARS}`,
+  );
+});
+
+test("落盘后的模型可见预览由共享信封决定，远小于落盘触发线", () => {
+  // MAX_WEBFETCH_INLINE_BYTES 只是「是否落盘」的触发线；一旦落盘，模型看到多少由
+  // result-persistence-format 的共享信封决定（与 resultBudget.preview 无关）。
+  // 这条差异直接决定「一次抓取真正占多少上下文」，所以要钉住，而不是只钉触发线。
+  const content = "x".repeat(64_858);
+  const envelope = formatGenericPersistedOutputContent({
+    content,
+    originalBytes: Buffer.byteLength(content, "utf8"),
+    persistedPath: "/tmp/artifact.txt",
+  });
+
+  assert.match(envelope, /^<persisted-output>/);
+  assert.match(envelope, /Full output saved to: \/tmp\/artifact\.txt/);
+  assert.match(envelope, /Output too large \(65 KB\)/);
+
+  // 只取预览正文：剔除信封的尾部标记行（`...` 与闭合标签），它们不属于预览内容。
+  const afterMarker = envelope.split("Preview (first 2 KB):\n")[1] ?? "";
+  const preview = afterMarker
+    .replace(/\n\.\.\.\n<\/persisted-output>$/, "")
+    .replace(/\n<\/persisted-output>$/, "");
+  assert.ok(preview.length > 0, "预览必须存在");
+  assert.ok(
+    preview.length <= 2_000,
+    `预览必须被共享信封限制在 2000 字符内，实际 ${preview.length}`,
+  );
+  assert.ok(
+    envelope.length < MAX_WEBFETCH_INLINE_BYTES / 2,
+    `落盘后进上下文的信封应当远小于 ${MAX_WEBFETCH_INLINE_BYTES} 字节，实际 ${envelope.length}`,
   );
 });
 

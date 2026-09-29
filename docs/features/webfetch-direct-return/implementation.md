@@ -94,6 +94,29 @@
 **仍未覆盖**：本会话自身跑在改动前的进程上，所以「新会话抓一次页面确实不再产生加工调用」这句
 只能由新进程验证——产物已就位，起新会话即可复验。
 
+## 5.1 端到端实测（20:23，重建后的 bundle）
+
+`zcode-host-local-1` / `zcode-cli` 在 20:22:24 重启（晚于 20:15 的重建），此后共抓取 2 个页面：
+
+| 页面 | 结果 |
+| --- | --- |
+| `https://example.com` | 返回**页面原文**（`Example Domain` / `This domain is for use in…` / `Learn more`），不是对调用方 prompt 的总结 |
+| `https://www.python.org/downloads/` | `Output too large (65 KB). Full output saved to: <artifact>` + 2,000 字符预览 |
+
+两条都成立的关键证据：`~/.zcode/cli/debug/model-io-no-session.jsonl` 里 `web_fetch_processing` 记录数
+**始终为 14**（与调用前基线一致），且该文件 mtime 停在 18:47——**加工调用一次都没有发生**，
+日志文件根本没被写入。同期唯一的新记录是本会话自己的 `main_turn`。
+
+**实测更正了一处文档判断**：落盘后模型可见的预览**不是** `resultBudget.preview.maxBytes`（我设的 32 KiB），
+而是 `tool/result-persistence-format.ts` 里独立于 resultBudget 的共享信封
+`PERSISTED_OUTPUT_PREVIEW_CHARS = 2,000` 字符（该文件注释明确写了这一点）。
+因此 `MAX_WEBFETCH_INLINE_BYTES` 的准确角色是**落盘触发线**，不是预览大小；
+超限页面的实际上下文代价约 2 KB。设计文档与 `FEATURES.md` 已按此更正，
+并新增单测 `落盘后的模型可见预览由共享信封决定，远小于落盘触发线` 钉住这条差异。
+
+python.org 的 artifact（64,858 字节 / 2,164 行）经核对是完整正文，内含 `Python 3.14.0`–`3.14.7` 全版本列表，
+即模型需要时可自行读取，不丢信息。
+
 **未覆盖**：`resultBudget` 的落盘/预览行为本身没有新增测试——它是所有工具共用的既有机制，
 本次只改了阈值常量；上面的单测断言的是「阈值已配置到会触发」（含 `内联上限 < 输入侧阈值` 这条不变量），
 不是执行器的落盘实现。若要覆盖，需为 `serializeOutput` 造一套 `ToolExecutorDeps`。

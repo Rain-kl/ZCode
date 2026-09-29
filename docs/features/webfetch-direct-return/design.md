@@ -37,13 +37,23 @@
    从 `WebFetchInputSchema` 移除后，工具声明（JSON schema）里不再出现该属性，模型无从传入。
 3. **上下文封顶改由工具结果预算（`resultBudget`）承担**，与其它工具同一条路径：
    正文不超过 `MAX_WEBFETCH_INLINE_BYTES`（32 KiB）时原样内联；超出时全文写入会话级 artifact，
-   模型只拿到**头部预览 + artifact 路径 + 截断标记**（`strategy: "artifact"` 既有行为）。
+   模型只拿到一份预览 + artifact 路径（`strategy: "artifact"` 既有行为）。
 
-### 为什么用 32 KiB
+### 32 KiB 是「落盘触发线」，不是「预览大小」
 
-`32 * 1024` 字节 ≈ 8k token，是单次网页抓取在上下文里可接受的上限量级：常见文档页（3~15 KiB 正文）
-仍可完整内联，不产生额外的「读文件」往返；而 python.org/downloads 这类 64 KiB 的页面会被拦住，
-模型拿到约 32 KiB 的头部预览与全文路径。该值是一个常量，若日后发现落盘过频或内联过大，改一处即可。
+这两个数量必须分清，否则会高估上下文占用：
+
+| 角色 | 由谁决定 | 值 |
+| --- | --- | --- |
+| 触发落盘的阈值 | `resultBudget.maxModelBytes`（本功能设的 `MAX_WEBFETCH_INLINE_BYTES`） | 32 KiB |
+| 落盘后模型可见的预览 | `PERSISTED_OUTPUT_PREVIEW_CHARS`（`tool/result-persistence-format.ts`，**全工具共享、与 resultBudget 无关**） | 2,000 **字符** |
+
+因此超过 32 KiB 的页面，其上下文代价约 **2 KB**，而不是 32 KiB。实测（python.org/downloads，正文 64,858 字节）：
+模型收到 `<persisted-output>` 信封，内含 `Output too large (65 KB). Full output saved to: <path>` 与 2,000 字符预览；
+全文落在 artifact 里，模型需要时自行读取。
+
+32 KiB 取值的意义因此是**决定「多少页面需要多走一次读文件」**：常见文档页（3~15 KiB 正文）完整内联，
+不产生额外往返；更大的页面才落到「预览 + 按需读文件」。该值是单一常量，若发现落盘过频或内联过大，改一处即可。
 
 ## 所有权与单一路径
 
