@@ -145,21 +145,25 @@
 - **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
 - **上游同步记录**：暂无。
 
-## WebFetch 短内容直通 (webfetch-direct-passthrough)
+## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 
-- **状态**：已实现（2026-09-29），单测覆盖决策边界与处理器接线；运行期以「日志里不再出现 `querySource=web_fetch_processing`」验证，待真实短页面抓取复验。
-- **需求背景**：上游 WebFetch 永远两段式——抓页面抽正文后，再调一次模型把正文压成摘要交给调用方。短页面（几段文档、单个 API 章节）压成摘要纯损失：多一次模型往返（可能超时/失败，失败时整页内容丢失，调用方只看到 `webfetch_processing_failed`），且摘要会丢表格、代码片段、字段名等细节，而抓取方无法察觉丢了什么。
-- **修改内容**：正文去标点后 `< 15000` 字、且发起本次调用的请求剩余上下文预算 `>= 30000`、且原始长度仍 `<= 100000`（模型输入上限守卫，防「几乎全是标点」的页面绕过字数判定）时，跳过加工模型，直接把抽取出的正文交给调用方模型。判定与计数是纯函数（`policy.ts`），剩余预算由 runtime 在发起请求前算一次（`remaining-tokens.ts`）并逐级透传，工具侧只读快照；任一条不满足或预算不可得都回落上游行为。
-  - 字数口径：Unicode 码点数，排除 `P*`（标点）；空白、换行与 `S*`（符号，如 `+` `=`）计入——保守取法，只会更早回落总结。
-  - 剩余预算口径与 `resolveModelStepMaxOutputTokens` 的 `estimatedCurrentUsage` 同源同值，不引入第二套估算。
+- **状态**：已实现（2026-09-29）。单测 11 例、全量单测、类型检查、lint、架构检查与移除守卫均通过；端到端复验（改动后的 bundle 里抓一次页面、确认日志无**新增** `web_fetch_processing`）待新进程验证。
+- **需求背景**：上游 WebFetch 固定两段式——抓页面抽正文后**再调一次模型**把正文压成摘要，用摘要回答调用方传入的 `prompt`。实测这次往返的代价（14 条 `querySource=web_fetch_processing` 记录）：中位 **16.2 秒**、均值 14.1 秒，其中**一个 510 字符的页面也要 3,970 ms**——耗时来自「一次完整模型往返（含 reasoning）」，与正文长度几乎无关。因此速度问题无法靠调阈值解决，只有取消这次调用；而上下文之所以受控，是摘要输出被 4096 token 封顶换来的，取消摘要后必须由别的机制接管封顶，否则 64,850 字符的页面会整段进上下文。
+- **修改内容**：
+  1. **取消摘要阶段**：WebFetch 不再调用任何模型，工具直接返回抽取出的正文（HTML → markdown，其余为原文），调用方模型自行阅读正文并回答自己的问题。上游加工分支附带的版权合规指令（125 字符引用上限等）随之消失，已明确接受——预批文档站原本就直接返回 markdown，本功能把它从特例变成通则。
+  2. **移除 `prompt` 参数**：从 `WebFetchInputSchema` 移除，工具声明的 JSON schema 里不再出现该属性，模型无从传入。该 schema 非 `.strict()`，历史会话回放传入的 `prompt` 会被静默丢弃而非报错，无回归。`webfetch_processing_failed` 不再可能产生，错误码与 `truncateContentForModel` 一并移除。
+  3. **上下文封顶改由 `resultBudget` 承担**（与其它工具同一条路径，不新增第二条封顶路径）：新增 `MAX_WEBFETCH_INLINE_BYTES = 32 * 1024`，正文不超过它时原样内联，超出则全文写入会话级 artifact、模型只拿到头部预览 + 路径 + 截断标记。此前该预算与 `MAX_WEBFETCH_MODEL_BYTES` 同为 100,000，而摘要输出恒 ≤4096 token，这道闸门**从未触发过**。
+  4. **退役被取代的 `webfetch-direct-passthrough`**（按阈值决定跳过/不跳过摘要）：其判定、剩余上下文预算投影、单测与穿过 9 个上游文件的透传全部删除；runtime 不再为工具侧计算剩余预算。
 - **修改文件**：
-  - 新增 `apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/{policy.ts,remaining-tokens.ts}`、`apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts`（14 例）、`docs/features/webfetch-direct-passthrough/**`。
-  - 上游接线：`tool/handlers/webfetch-processing.ts`（判定调用），`tool/types.ts` + `tool/executor/{types.ts,call-runner.ts,batch-runner.ts}` + `runtime/types.ts` + `runtime/methods/{tools.ts,turn-tools.ts,turn-model-step.ts}`（剩余预算透传）。
-- **上游改动标记**：9 个上游文件、14 处 `FORK(webfetch-direct-passthrough)`（含 2 对 `FORK-BEGIN/END`）。
-- **设计文档**：`docs/features/webfetch-direct-passthrough/design.md`
-- **实现文档**：`docs/features/webfetch-direct-passthrough/implementation.md`
-- **已知边界**：直通时不再执行加工分支的「引用合规指令」（125 字符引用上限等），正文原文进上下文——这是直通的定义使然，已明确接受；流失败恢复路径（`streaming-tool-coordinator.recoverFromModelFailure`）不带预算，回落总结；WebFetch 描述未改（仍是 "answers `prompt` against it using a small fast model"，对大多数调用成立）。
-- **上游收敛**：上游若自己实现「短内容免摘要」或把工具结果预算改成按剩余窗口自适应，删除本功能并采用上游实现——摘除范围见实现文档 §2。
+  - 新增：`apps/zcode-cli/packages/core/test/forkWebfetchDirectReturn.test.ts`（11 例）、`docs/features/webfetch-direct-return/**`、`.agents/notes/webfetch-direct-return/decisions.md`。
+  - 删除：`core/src/tool/handlers/webfetch-processing.ts`、`core/src/fork/webfetch-direct-passthrough/{policy.ts,remaining-tokens.ts}`、`core/test/forkWebfetchDirectPassthrough.test.ts`、`docs/features/webfetch-direct-passthrough/**`。
+  - 上游改动：`packages/contracts/src/tools/webfetch.ts`、`core/src/tool/handlers/{webfetch.ts,webfetch-constants.ts,webfetch-content.ts,webfetch-errors.ts}`。
+  - 上游回退（移除旧功能的透传与标记）：`core/src/runtime/{types.ts,methods/{tools.ts,turn-tools.ts,turn-model-step.ts}}`、`core/src/tool/{types.ts,executor/{types.ts,call-runner.ts,batch-runner.ts}}`。
+- **上游改动标记**：按可复现命令 `rg -n "FORK\(webfetch-direct-return\)" --glob '!docs/**' --glob '!node_modules' --glob '!dist'` 检索；当前为 **5 个上游文件、7 处单点标记**（无成对块；逐处分项见实现文档 §3）。
+- **设计文档**：`docs/features/webfetch-direct-return/design.md`
+- **实现文档**：`docs/features/webfetch-direct-return/implementation.md`
+- **已知边界**：正文质量未改——链接仍以 `[文本](URL)` 内联（python.org 下载页 64,850 字符中有 19,868 是 URL），导航与页脚仍保留；噪声治理明确不在本次范围。输入侧 artifact（`maybePersistRawContent`，>100,000 字符触发）是上游既有行为，与结果侧 artifact 可能对同一页面各写一份，冗余但无害。`resultBudget` 的落盘实现未被新增测试覆盖，只断言「阈值已配置到会触发」。
+- **上游收敛**：上游若自己实现「直接返回抽取正文 + 结果预算封顶」，删除本功能并采用上游实现；摘除范围与守卫见实现文档 §3、§4。
 - **上游同步记录**：暂无。
 
 ## 网络搜索渠道 (search-providers)

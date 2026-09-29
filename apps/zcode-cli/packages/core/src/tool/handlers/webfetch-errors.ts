@@ -17,7 +17,7 @@ export function webFetchError(
       toolName: WEBFETCH_TOOL_NAME,
     },
     recoverable: true,
-    retryable: code === "FetchFailed" || code === "ProcessingFailed",
+    retryable: code === "FetchFailed",
   });
 }
 
@@ -31,5 +31,6 @@ const WEBFETCH_ERROR_CODE_MAP = {
   TooManyRedirects: "webfetch_too_many_redirects",
   ResponseTooLarge: "webfetch_response_too_large",
   FetchFailed: "webfetch_fetch_failed",
-  ProcessingFailed: "webfetch_processing_failed",
+  // FORK(webfetch-direct-return): 原 ProcessingFailed（webfetch_processing_failed）随加工阶段移除，
+  // 不再有任何产生点；见 FEATURES.md 的 webfetch-direct-return 条目。
 } as const;

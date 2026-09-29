@@ -396,8 +396,6 @@ async function executeToolCallImpl(
         createToolModelStatusSink({ emitEvent, sessionId: deps.sessionId, turnId, traceId }),
       ),
       subagentModelOverride: options?.subagentModelOverride,
-      // FORK(webfetch-direct-passthrough): 本次请求的剩余上下文预算（runtime 算一次后透传）；见 FEATURES.md 的对应条目
-      remainingContextTokens: options?.remainingContextTokens,
       embeddedSearch: {
         ...(deps.embeddedSearchBackend ? { backend: deps.embeddedSearchBackend } : {}),
         enabled: embeddedSearchDecision?.useEmbeddedSearchBranch ?? false,

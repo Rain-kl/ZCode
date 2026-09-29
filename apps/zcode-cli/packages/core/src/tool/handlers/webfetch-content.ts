@@ -43,18 +43,9 @@ export async function maybePersistRawContent(
   return { path: artifact.path, uri: artifact.uri };
 }
 
-export function truncateContentForModel(content: string): { content: string; truncated: boolean } {
-  if (content.length <= MAX_MODEL_INPUT_CHARS) {
-    return { content, truncated: false };
-  }
-
-  const suffix = "\n\n[WebFetch content truncated before prompt processing]";
-  const maxBodyChars = Math.max(0, MAX_MODEL_INPUT_CHARS - suffix.length);
-  return {
-    content: `${content.slice(0, maxBodyChars)}${suffix}`,
-    truncated: true,
-  };
-}
+// FORK(webfetch-direct-return): 原 truncateContentForModel（截断到 MAX_MODEL_INPUT_CHARS 再交给
+// 加工模型）没有消费方了——正文封顶改由工具结果预算 resultBudget 承担，随加工阶段一并移除。
+// 见 FEATURES.md 的 webfetch-direct-return 条目。
 
 function htmlToMarkdown(html: string): string {
   let content = html

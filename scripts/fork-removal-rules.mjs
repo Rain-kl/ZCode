@@ -96,84 +96,87 @@ export const REGISTRY = [
     ],
   },
   {
-    // 见 FEATURES.md 的 webfetch-direct-passthrough 条目与 docs/features/webfetch-direct-passthrough/design.md。
-    // 本功能没有「移除」，只有接线：判定 + 剩余预算透传是 8 个上游文件各 1 行。
-    // 上游同步时若某个文件取了上游版本，透传就从那一层断掉，而产品表现只是「又变回总结」——
-    // 不报错、不影响类型检查，属于最典型的静默失效，所以逐层钉住。
-    featureId: "webfetch-direct-passthrough",
-    absentFiles: [],
-    absentPatterns: [],
-    requiredFiles: [
+    // 见 FEATURES.md 的 webfetch-direct-return 条目与 docs/features/webfetch-direct-return/design.md。
+    // 上游 WebFetch 是两段式：抽正文 → 再调一次模型压成摘要交给调用方。本 fork 取消整个加工阶段，
+    // 正文直接返回，上下文封顶交给工具结果预算。
+    //
+    // 最危险的失败形态是「加工阶段悄悄回来」：不报错、不影响类型检查，产品表现只是每次抓取多付
+    // 4~20 秒，并把正文换成一份摘要。因此这里既钉文件缺席、也钉行为缺席，还钉我们那版直返接线在位。
+    //
+    // 被取代的 webfetch-direct-passthrough（按阈值决定跳过/不跳过摘要）连同它的判定、剩余预算投影
+    // 与单测一并退役，路径列在 absentFiles 里。
+    featureId: "webfetch-direct-return",
+    absentFiles: [
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
+        reason: "加工阶段入口：上游版本胜出会把摘要重新接回 WebFetch",
+      },
       {
         path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/policy.ts",
-        reason: "直通判定与字数口径",
+        reason: "被取代功能的直通判定与字数口径",
       },
       {
         path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/remaining-tokens.ts",
-        reason: "剩余上下文预算投影",
+        reason: "被取代功能的剩余上下文预算投影，已无消费方",
       },
       {
         path: "apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts",
-        reason: "判定边界与处理器接线单测",
+        reason: "被取代功能的单测",
+      },
+    ],
+    absentPatterns: [],
+    absentPatternsInFile: [
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
+        pattern: /runWithModelInvocationContext|web_fetch_processing|processFetchedContent/,
+        reason:
+          "WebFetch handler 不得再调用任何加工模型：上游版本胜出会让每次抓取多付一次模型往返",
+      },
+      {
+        path: "apps/zcode-cli/packages/contracts/src/tools/webfetch.ts",
+        pattern: /^\s*prompt:/m,
+        reason:
+          "prompt 参数必须缺席——它没有接收方，留着等于让模型传入一个会被静默忽略的字段",
+      },
+    ],
+    requiredFiles: [
+      {
+        path: "apps/zcode-cli/packages/core/test/forkWebfetchDirectReturn.test.ts",
+        reason: "直返正文、参数缺席与封顶配置的单测",
       },
     ],
     requiredPatterns: [
       {
-        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
-        // 匹配调用而不是 import：只写符号名的话，光靠 import 行就能满足规则。
-        pattern: /decideForkWebfetchDirectPassThrough\(\s*\{/,
-        reason: "WebFetch 必须仍走 fork 的直通判定（上游版本胜出会退回无条件总结）",
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
+        // 匹配取数而不是 import：只写符号名的话，光靠 import 行就能满足规则，
+        // 上游版本把结果换成加工产物也照样「通过」。
+        pattern: /result:\s*fetched\.content/,
+        reason: "工具结果必须直接来自抽取正文（上游版本胜出会换成摘要产物）",
       },
       {
-        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
-        pattern: /remainingContextTokens:\s*context\.remainingContextTokens/,
-        reason: "判定必须读 runtime 透传的预算，不能退化成常量或自行估算",
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
+        pattern: /maxModelBytes:\s*MAX_WEBFETCH_INLINE_BYTES/,
+        reason: "上下文封顶必须接在内联上限上，否则「取消摘要」会退化成整页正文进上下文",
       },
       {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
-        pattern: /resolveForkRemainingContextTokens\(\s*\{/,
-        reason: "剩余预算的唯一计算点",
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
+        pattern: /MAX_WEBFETCH_INLINE_BYTES\s*=\s*32\s*\*\s*1024/,
+        reason: "内联上限的定义点（改值属产品决策，须同步改本规则与设计文档）",
       },
       {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
-        pattern: /^\s*remainingContextTokens,\s*$/m,
-        reason: "算出的预算必须送进工具执行参数",
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
+        pattern: /FORK\(webfetch-direct-return\)/,
+        reason: "移除标记必须在位（上游整段覆盖该文件时会连同标记一起消失，正好暴露）",
       },
       {
-        path: "apps/zcode-cli/packages/core/src/runtime/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "runtime → executor 的透传字段",
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-content.ts",
+        pattern: /FORK\(webfetch-direct-return\)/,
+        reason: "同上",
       },
       {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/tools.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason: "executeTools 必须转发预算",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-tools.ts",
-        pattern: /remainingContextTokens:\s*options\.remainingContextTokens/,
-        reason: "工具步必须把预算交给 executeTools",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "执行参数类型里的透传字段",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/call-runner.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason: "执行参数必须落进 ToolExecutionContext",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/batch-runner.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason:
-          "批量/调度层是白名单式重建 options，漏一行就静默丢字段（第一版实现正是在这里断的）；见同目录测试里的接线不变量用例",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "handler 唯一的预算输入通道",
+        path: "apps/zcode-cli/packages/contracts/src/tools/webfetch.ts",
+        pattern: /FORK\(webfetch-direct-return\)/,
+        reason: "同上",
       },
     ],
   },

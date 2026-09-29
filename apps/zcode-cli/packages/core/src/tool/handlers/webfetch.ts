@@ -11,7 +11,7 @@ import {
   type WebFetchInput,
   type WebFetchOutput,
 } from "@zcode/contracts";
-import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
+import type { ToolEntry, ToolHandler } from "../types.js";
 import {
   clearWebFetchCacheForTests as clearWebFetchContentCacheForTests,
   getWebFetchCache,
@@ -19,17 +19,16 @@ import {
 } from "./webfetch-cache.js";
 import {
   DEFAULT_WEBFETCH_TIMEOUT_MS,
+  MAX_WEBFETCH_INLINE_BYTES,
   MAX_WEBFETCH_MODEL_BYTES,
   WEBFETCH_TOOL_NAME,
 } from "./webfetch-constants.js";
 import { fetchAndExtractContent } from "./webfetch-network.js";
-import { processFetchedContent } from "./webfetch-processing.js";
 import type {
   FetchAndExtractContentResult,
   HttpErrorFetchContent,
   RedirectFetchContent,
 } from "./webfetch-types.js";
-import { isWebFetchPreapprovedUrl } from "../webfetch-preapproved.js";
 import { normalizeWebFetchUrl } from "./webfetch-url.js";
 
 export function clearWebFetchCacheForTests(): void {
@@ -37,17 +36,13 @@ export function clearWebFetchCacheForTests(): void {
 }
 
 const WEBFETCH_DESCRIPTION = [
-  "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.",
+  "Fetches a URL and returns the page content as markdown (plain text for non-HTML).",
   "",
   "- Fails on authenticated/private URLs — use an authenticated MCP tool or `gh` for those instead.",
   "- HTTP is upgraded to HTTPS. Cross-host redirects are returned to you rather than followed; call again with the redirect URL.",
   "- Responses are cached for 15 minutes per URL.",
+  "- Very large pages are truncated to a preview; the full content is saved to a file and its path is reported in the result.",
 ].join("\n");
-
-interface FreshWebFetchContent {
-  fetched: FetchAndExtractContentResult;
-  preapprovedUrl: boolean;
-}
 
 const webFetchHandler: ToolHandler = async (input, context) => {
   const parsed = WebFetchInputSchema.parse(input) as WebFetchInput;
@@ -55,18 +50,16 @@ const webFetchHandler: ToolHandler = async (input, context) => {
   const normalizedUrl = normalizeWebFetchUrl(parsed.url);
   const cacheKey = parsed.url;
   const cached = getWebFetchCache(cacheKey);
-  const content =
+  // FORK(webfetch-direct-return): 抽取结果直接作为工具结果返回，不再经过「加工模型」二次总结；
+  // 上下文封顶交给 resultBudget。见 FEATURES.md 的 webfetch-direct-return 条目。
+  const fetched =
     cached === undefined
-      ? await fetchFreshContent({
+      ? await fetchAndExtractContent({
           context,
           originalUrl: cacheKey,
           url: normalizedUrl,
         })
-      : {
-          fetched: cached,
-          preapprovedUrl: isWebFetchPreapprovedUrl(parsed.url),
-        };
-  const fetched = content.fetched;
+      : cached;
 
   if (isTerminalFetchContent(fetched)) {
     return formatTerminalOutput(parsed, fetched, Math.max(0, Date.now() - startedAt));
@@ -76,9 +69,6 @@ const webFetchHandler: ToolHandler = async (input, context) => {
     putWebFetchCache(cacheKey, fetched);
   }
 
-  const processing = await processFetchedContent(parsed, fetched, context, {
-    preapprovedUrl: content.preapprovedUrl,
-  });
   const durationMs = Math.max(0, Date.now() - startedAt);
 
   return {
@@ -89,30 +79,14 @@ const webFetchHandler: ToolHandler = async (input, context) => {
     contentType: fetched.contentType,
     bytes: fetched.bytes,
     durationMs,
-    result: processing.result,
+    result: fetched.content,
     cacheHit: cached !== undefined,
     redirects: fetched.redirects,
     artifactUri: fetched.artifactUri,
     artifactPath: fetched.artifactPath,
-    truncated: processing.truncated,
+    truncated: false,
   } satisfies WebFetchOutput;
 };
-
-async function fetchFreshContent(options: {
-  context: ToolExecutionContext;
-  originalUrl: string;
-  url: URL;
-}): Promise<FreshWebFetchContent> {
-  const fetched = await fetchAndExtractContent({
-    context: options.context,
-    originalUrl: options.originalUrl,
-    url: options.url,
-  });
-  return {
-    fetched,
-    preapprovedUrl: isWebFetchPreapprovedUrl(options.originalUrl),
-  };
-}
 
 function formatTerminalOutput(
   input: WebFetchInput,
@@ -140,7 +114,6 @@ function formatRedirectOutput(
     "",
     "To complete your request, I need to fetch content from the redirected URL. Please use WebFetch again with these parameters:",
     `- url: "${redirect.redirectUrl}"`,
-    `- prompt: "${input.prompt}"`,
   ].join("\n");
 
   return {
@@ -193,8 +166,7 @@ function isTerminalFetchContent(
 }
 
 export const webFetchToolEntry: ToolEntry = {
-  capability:
-    "Fetch a public URL, convert readable content to markdown, and answer a prompt from it",
+  capability: "Fetch a public URL and return its readable content as markdown",
   metadata: {
     name: WEBFETCH_TOOL_NAME,
     description: WEBFETCH_DESCRIPTION,
@@ -223,12 +195,15 @@ export const webFetchToolEntry: ToolEntry = {
     alwaysAllowPatternSources: ["network"],
     denyPriority: "beforeAsk",
   },
+  // FORK(webfetch-direct-return): 正文直接进上下文，封顶只能靠这里。此前跟着加工模型的
+  // 4096 token 输出上限，这道闸门从未触发过；现在按内联上限落盘并只给头部预览。
+  // 见 FEATURES.md 的 webfetch-direct-return 条目。
   resultBudget: {
-    maxInlineBytes: MAX_WEBFETCH_MODEL_BYTES,
-    maxModelBytes: MAX_WEBFETCH_MODEL_BYTES,
+    maxInlineBytes: MAX_WEBFETCH_INLINE_BYTES,
+    maxModelBytes: MAX_WEBFETCH_INLINE_BYTES,
     strategy: "artifact",
     preview: {
-      maxBytes: MAX_WEBFETCH_MODEL_BYTES,
+      maxBytes: MAX_WEBFETCH_INLINE_BYTES,
       direction: "head",
     },
     artifact: {

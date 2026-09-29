@@ -1,5 +1,10 @@
 # webfetch-direct-passthrough 设计与决策记录
 
+> **已取代（2026-09-29）**：本功能按阈值决定「跳过/不跳过摘要」，而实测证明单次加工往返的代价
+> （中位 16.2 秒，且与正文长度几乎无关）无法靠调阈值消除，故改为取消加工阶段本身。
+> 现行实现见 `.agents/notes/webfetch-direct-return/decisions.md` 与 `docs/features/webfetch-direct-return/`。
+> 本文保留作为当时的决策与踩坑记录。
+
 日期：2026-09-29
 关联：`docs/features/webfetch-direct-passthrough/design.md`、`docs/features/webfetch-direct-passthrough/implementation.md`、`FEATURES.md` 的 `webfetch-direct-passthrough` 条目
 

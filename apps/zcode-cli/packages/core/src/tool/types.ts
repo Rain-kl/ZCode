@@ -155,12 +155,6 @@ export interface ToolExecutionContext {
   imageProcessorPort?: ImageProcessorPort;
   pdfDocumentPort?: PdfDocumentPort;
   model?: Model;
-  /**
-   * 发起本次工具调用的那次模型请求、在请求发出时的剩余上下文预算（token，runtime 估算口径）。
-   * 由 runtime 算一次后逐级透传，工具侧只读快照；缺席表示宿主未接线，按「不可得」处理。
-   */
-  // FORK(webfetch-direct-passthrough): WebFetch 直通判定要用它；见 FEATURES.md 的 webfetch-direct-passthrough 条目
-  remainingContextTokens?: number;
   /** Core Server 对前台 child 的 Selection override。 */
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   skillPort?: SkillPort;

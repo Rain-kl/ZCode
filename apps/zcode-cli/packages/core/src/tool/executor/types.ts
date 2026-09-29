@@ -172,8 +172,6 @@ export interface ToolExecuteOptions {
   traceContext?: TraceContext;
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
   model?: Model;
-  // FORK(webfetch-direct-passthrough): 本次请求的剩余上下文预算，落进 ToolExecutionContext；见 FEATURES.md 的对应条目
-  remainingContextTokens?: number;
 }
 
 export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
