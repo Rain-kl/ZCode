@@ -402,6 +402,7 @@ jobs:
               "构建流水线：${RUN_URL}" \
               "" \
               "macOS 安装包未公证，首次打开需右键“打开”，或在“系统设置 → 隐私与安全性”中放行；" \
+              '若提示“已损坏”或仍无法打开，在终端执行 `xattr -cr /Applications/ZCode.app` 后再启动。' \
               "产物校验见 SHA256SUMS.txt。")
 
             create_args=(--title "${title}" --notes "${notes}" --verify-tag)
@@ -428,7 +429,9 @@ jobs:
               "" \
               "当前版本：${VERSION}" \
               "提交：${COMMIT}" \
-              "构建流水线：${RUN_URL}")
+              "构建流水线：${RUN_URL}" \
+              "" \
+              'macOS 安装包未公证：若提示“已损坏”或无法打开，在终端执行 `xattr -cr /Applications/ZCode.app` 后再启动。')
             pointer_args=(--title "${pointer_title}" --notes "${pointer_notes}" --prerelease --latest=false)
 
             if ! retry gh release edit "${pointer_tag}" "${pointer_args[@]}"; then
