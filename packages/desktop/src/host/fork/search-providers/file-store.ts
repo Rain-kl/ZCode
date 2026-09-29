@@ -65,7 +65,11 @@ export function createForkSearchProvidersFileStore(input: {
       await mkdir(dirname(input.filePath), { recursive: true });
       const temporaryPath = `${input.filePath}.${process.pid}.tmp`;
       // 临时文件 + rename：读者永远看不到半截文件（CLI 侧是 statSync+readFileSync，必须有这个保证）。
-      await writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+      // 显式 mode: 0o600 限制仅所有者可读写，保护包含明文 apiKey 的渠道文件。
+      await writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
       await rename(temporaryPath, input.filePath);
     },
   };

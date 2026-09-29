@@ -1,10 +1,8 @@
 import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
 // FORK(local-mode): WebDAV 服务通道名
-import {
-  FORK_IDENTITY_PRESET_CHANNEL,
-  FORK_SEARCH_PROVIDERS_CHANNEL,
-  FORK_WEBDAV_CHANNEL,
-} from "@zcode/shared";
+import { FORK_IDENTITY_PRESET_CHANNEL, FORK_WEBDAV_CHANNEL } from "@zcode/shared";
+// FORK(search-providers): 网络搜索渠道服务通道名；见 FEATURES.md 的 search-providers 条目
+import { FORK_SEARCH_PROVIDERS_CHANNEL } from "@zcode/shared";
 import {
   IFileService,
   IMediaPreviewService,
