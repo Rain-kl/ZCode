@@ -22,10 +22,8 @@ export const FORK_WEBDAV_STATUS_BROADCAST_CHANNEL = "fork:webdav-status";
 export const FORK_WEBDAV_BACKUP_FILE_PREFIX = "zcode-";
 export const FORK_WEBDAV_BACKUP_FILE_PATTERN = /^zcode-\d{8}-\d{6}(?:-\d+)?\.zip$/;
 
-/** 备份包内文件名。 */
+/** 备份包内的清单文件名（容器自身的元数据，不属于任何业务资源）。 */
 export const FORK_WEBDAV_MANIFEST_FILE = "manifest.json";
-export const FORK_WEBDAV_SETTING_FILE = "setting.json";
-export const FORK_WEBDAV_PROVIDER_CONFIG_FILE = "provider_config.json";
 
 /** 备份包 manifest（zip 内）。 */
 export interface ForkWebdavBackupManifest {
@@ -36,11 +34,16 @@ export interface ForkWebdavBackupManifest {
   source: string;
 }
 
-/** 备份包内容（解包结果）。 */
+/**
+ * 备份包内容（解包结果）。
+ *
+ * `files` 是「zip 条目名 → 文本」的扁平映射——引擎不认识任何具体资源，
+ * 同步范围由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 声明。
+ * 这样新增一个要同步的配置只需要往清单加一行，不必改契约、打包、解包、哈希任何一处。
+ */
 export interface ForkWebdavBackupContent {
   manifest: ForkWebdavBackupManifest;
-  setting: Record<string, unknown>;
-  providerConfig: Record<string, unknown>;
+  files: Record<string, string>;
 }
 
 export interface ForkWebdavCredentials {

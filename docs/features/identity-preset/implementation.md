@@ -261,3 +261,27 @@ messageCount: 5，role=system 2 条
 - **第 3 期（同步）**：`presets/` 纳入 WebDAV 备份包，覆盖验收场景 11–13，并在 `FEATURES.md` 的 local-mode 条目下加功能增强记录。
 
 因此本期没有任何 UI 入口：用户此时只能手写 `~/.zcode/presets/` 下的文件（尚未提供写入方），`~/.zcode/presets` 不存在时的行为与改动前完全一致。
+
+## 7. 第 3 期：WebDAV 同步（已完成）
+
+**落地位置**：无新文件——改的是 fork 自有的备份链路与一处宿主装配。
+
+| 文件                                                      | 改动                                                                                                                                           |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/fork/webdav-contract.ts`             | 新增 `FORK_WEBDAV_PRESETS_STATE_FILE` / `_PROFILES_PREFIX` 与 `ForkWebdavPresetsSnapshot`；`ForkWebdavBackupContent` 多一个可选 `presets` 字段 |
+| `packages/desktop/src/host/fork/webdav/backup-archive.ts` | 打包写入 presets 条目；解包读回并校验条目名；内容哈希纳入预设正文                                                                              |
+| `packages/desktop/src/host/fork/webdav/local-snapshot.ts` | 读/写 `presets/`：只收合法 id 的 `<id>.md`；恢复整目录覆盖                                                                                     |
+| `packages/desktop/src/host/fork/webdav/sync-engine.ts`    | 上传带上 `presets`；恢复把 `content.presets` 传进快照；哈希回退分支同样带上                                                                    |
+| `packages/desktop/src/host/fork/webdav/service.ts`        | `CreateForkWebdavServiceOptions` 新增必填 `presetsDir`，传给两个端口                                                                           |
+| `packages/desktop/src/host/index.ts`                      | 装配时传 `join(await resolveZCodeStorageRoot(), FORK_IDENTITY_PRESET_ROOT_NAME)`                                                               |
+
+**语义要点**：
+
+- 预设正文参与内容哈希——否则只改提示词时哈希不变，永远不会上传。
+- 旧备份包（无 `presets/` 条目）解包后**不产生** `presets` 键，恢复时保持本地不动：用户不该因为恢复一个旧包而丢掉后来新建的配置。
+- 恢复是整目录覆盖（先删本地 `profiles/` 再写入）：远端删过的配置不会在本地复活。
+- 条目名校验：读取侧拒嵌套路径、拒非法 id；写入侧 `yazl` 自身拒绝 `..`，测试把这条也钉住了。
+
+**验证记录**：`pnpm exec tsx --test packages/desktop/test/forkWebdavPresets.test.ts` → 7/7；全部 WebDAV 测试 33/33；本功能其余测试 41/41；`pnpm typecheck`、oxlint、oxfmt 均干净。设计第 10 节验收场景 11–13 分别对应用例「zip 往返保留系统指令配置」「恢复到旧备份（无 presets）时保持本地配置不动」「备份包内的越界预设文件名被拒绝」。
+
+**与设计的偏差**：无。

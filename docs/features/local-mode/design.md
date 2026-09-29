@@ -133,7 +133,7 @@
 
 ### 6.5 备份范围
 
-**同步**：`provider_config.json`（自定义提供商整份）与 `setting.json` 中的用户偏好白名单。
+**同步**：`provider_config.json`（自定义提供商整份）、`setting.json` 中的用户偏好白名单，以及系统指令配置 `presets/`（`active.json` + `profiles/<id>.md`，见 FEATURES.md 的 identity-preset 条目与 `docs/features/identity-preset/design.md` 第 5 节）。
 
 白名单规则：**默认不同步**，只同步跨机器有意义、且不与本机环境绑定的用户偏好。初始白名单（实现时落在 `packages/desktop/src/host/fork/webdav/syncFields.ts`；每个字段需与 `packages/shared/src/protocol.ts` 的 `AppSettings` 定义逐个核对存在性，不存在的直接剔除，新增字段需在本文件登记）：
 
@@ -141,7 +141,19 @@
 
 明确排除（本机/网络/账号/运行态绑定）：`dataBaseDir`、`desktopWindowSize`、`keepAwakeWhileRunning`、`closeToTrayOnWindows*`、`desktopChromiumHardwareAccelerationEnabled`、`recentProjects`、`lastWorkspaceSession`、`lastActiveTabIndex`、`httpProxy*`、`providerFamily*`、`receivePreviewUpdates`、`autoDownloadAndInstallUpdates`、`skippedElectronUpdateVersions`、`settingsSyncFirstRunPromptHandled`、`*MigrationInitialized` 等迁移标记。
 
-**不同步**：`credentials.json`（机器派生密钥加密，跨机不可解）、`certs`、`telemetry-state.json`、sessions/数据库/日志/checkpoint、`~/.zcode/cli/config.json` 与 skills/agents/commands/plugins 目录（本期不做）。
+**不同步**：`credentials.json`（机器派生密钥加密，跨机不可解）、`certs`、`telemetry-state.json`、sessions/数据库/日志/checkpoint、`~/.zcode/cli/config.json` 与 skills/agents/commands/plugins 目录。
+
+**同步范围由清单声明**：备份包里有什么，只由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 的 `FORK_WEBDAV_SYNC_MANIFEST` 决定——一行一个资源，声明归档名 + 本地路径 + IO 形状（`setting-service` / `file-json` / `file-json-whitelist` / `directory`）。新增一个要同步的配置**只改清单**，契约、打包、解包、内容哈希、同步引擎、服务装配都不用动。
+
+WebDAV 引擎（`packages/desktop/src/host/fork/webdav/**`）不含任何业务逻辑：它只处理「zip 条目名 → 文本」的扁平映射与一个内容哈希，读写由注入的快照端口完成。
+
+清单层的统一语义：
+
+- **缺席即保持**：快照里完全没有某个资源的条目时（旧版本备份包），恢复时保持本地不动——不因为恢复一个旧包就丢掉后来新增的配置。
+- **整目录覆盖**：`directory` 类型先删本地目录再写入，远端删过的配置不会在本地复活。
+- **条目名校验**：读取侧拒嵌套/穿越条目名与非法的文件名主干；写入侧 `yazl` 自身拒绝 `..`。
+
+`presets` 因此拆成两条清单项：`presets/active.json`（单份 JSON）与 `presets/profiles`（一层目录，只收 `<合法 id>.md`）——`directory` 类型只处理一层目录，用一个条目同时表达两者会漏掉子目录里的文件。
 
 已知取舍：备份包内 `provider_config.json` 的 `access.apiKey` 是明文，会原样上传到用户自己的 WebDAV（已确认接受）。
 

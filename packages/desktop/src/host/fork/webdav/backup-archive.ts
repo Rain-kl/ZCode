@@ -11,8 +11,6 @@ import {
   FORK_WEBDAV_BACKUP_FILE_PATTERN,
   FORK_WEBDAV_BACKUP_FILE_PREFIX,
   FORK_WEBDAV_MANIFEST_FILE,
-  FORK_WEBDAV_PROVIDER_CONFIG_FILE,
-  FORK_WEBDAV_SETTING_FILE,
   type ForkWebdavBackupContent,
   type ForkWebdavBackupManifest,
 } from "@zcode/shared";
@@ -131,28 +129,25 @@ export function stableStringify(value: unknown): string {
     .join(",")}}`;
 }
 
-/** 内容哈希：setting 白名单 + provider_config 归一化后的 sha256（设计 6.2）。 */
-export function normalizeContentHash(input: {
-  setting: Record<string, unknown>;
-  providerConfig: Record<string, unknown>;
-}): string {
-  return createHash("sha256")
-    .update(
-      stableStringify({ setting: input.setting, providerConfig: input.providerConfig }),
-      "utf8",
-    )
-    .digest("hex");
+/** 内容哈希：备份包内全部文件的文本归一化后的 sha256（设计 6.2）。
+ *
+ * 对资源无知：换掉同步范围不需要动这里；新增资源只要进了 `files` 就自动参与哈希，
+ * 因此「只改某个配置」也一定会被识别成本地变更。
+ */
+export function normalizeContentHash(input: { files: Record<string, string> }): string {
+  return createHash("sha256").update(stableStringify(input.files), "utf8").digest("hex");
 }
 
-/** 打包备份包（zip 内三份 JSON）。 */
+/** 打包备份包：manifest + 每个文件一条 zip 条目（文本原样写入）。 */
 export async function buildBackupZip(content: ForkWebdavBackupContent): Promise<Buffer> {
   const zip = new yazl.ZipFile();
-  const addJson = (fileName: string, value: unknown) => {
-    zip.addBuffer(Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8"), fileName);
-  };
-  addJson(FORK_WEBDAV_MANIFEST_FILE, content.manifest);
-  addJson(FORK_WEBDAV_SETTING_FILE, content.setting);
-  addJson(FORK_WEBDAV_PROVIDER_CONFIG_FILE, content.providerConfig);
+  zip.addBuffer(
+    Buffer.from(`${JSON.stringify(content.manifest, null, 2)}\n`, "utf8"),
+    FORK_WEBDAV_MANIFEST_FILE,
+  );
+  for (const [fileName, text] of Object.entries(content.files)) {
+    zip.addBuffer(Buffer.from(text, "utf8"), fileName);
+  }
 
   return await new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -163,22 +158,10 @@ export async function buildBackupZip(content: ForkWebdavBackupContent): Promise<
   });
 }
 
-function parseJsonEntry(fileName: string, buffer: Buffer | undefined): Record<string, unknown> {
-  if (!buffer) {
-    throw new Error(`备份包缺少 ${fileName}`);
-  }
-  try {
-    const parsed = JSON.parse(buffer.toString("utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error(`备份包内 ${fileName} 不是 JSON 对象`);
-    }
-    return parsed as Record<string, unknown>;
-  } catch (error) {
-    throw new Error(`备份包内 ${fileName} 解析失败: ${(error as Error).message}`);
-  }
-}
-
-/** 解包并校验备份包。 */
+/**
+ * 解包。只校验 manifest 与 schemaVersion，其余条目一律按「名字 → 文本」交回业务侧：
+ * 引擎不知道哪些条目该存在，也就不会因为多一个/少一个条目而误判备份包损坏。
+ */
 export async function readBackupZip(buffer: Buffer): Promise<ForkWebdavBackupContent> {
   const zipFile = await new Promise<yauzl.ZipFile>((resolve, reject) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (error, file) =>
@@ -212,19 +195,29 @@ export async function readBackupZip(buffer: Buffer): Promise<ForkWebdavBackupCon
     zipFile.readEntry();
   });
 
-  const manifest = parseJsonEntry(
-    FORK_WEBDAV_MANIFEST_FILE,
-    entries.get(FORK_WEBDAV_MANIFEST_FILE),
-  );
-  if (manifest.schemaVersion !== 1) {
-    throw new Error(`不支持的备份包 schemaVersion: ${String(manifest.schemaVersion)}`);
+  const manifestBuffer = entries.get(FORK_WEBDAV_MANIFEST_FILE);
+  if (!manifestBuffer) {
+    throw new Error(`备份包缺少 ${FORK_WEBDAV_MANIFEST_FILE}`);
   }
-  return {
-    manifest: manifest as unknown as ForkWebdavBackupManifest,
-    setting: parseJsonEntry(FORK_WEBDAV_SETTING_FILE, entries.get(FORK_WEBDAV_SETTING_FILE)),
-    providerConfig: parseJsonEntry(
-      FORK_WEBDAV_PROVIDER_CONFIG_FILE,
-      entries.get(FORK_WEBDAV_PROVIDER_CONFIG_FILE),
-    ),
-  };
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestBuffer.toString("utf8"));
+  } catch (error) {
+    throw new Error(`备份包内 ${FORK_WEBDAV_MANIFEST_FILE} 解析失败: ${(error as Error).message}`);
+  }
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new Error(`备份包内 ${FORK_WEBDAV_MANIFEST_FILE} 不是 JSON 对象`);
+  }
+  if ((manifest as { schemaVersion?: unknown }).schemaVersion !== 1) {
+    throw new Error(
+      `不支持的备份包 schemaVersion: ${String((manifest as { schemaVersion?: unknown }).schemaVersion)}`,
+    );
+  }
+
+  const files: Record<string, string> = {};
+  for (const [fileName, entryBuffer] of entries) {
+    if (fileName === FORK_WEBDAV_MANIFEST_FILE) continue;
+    files[fileName] = entryBuffer.toString("utf8");
+  }
+  return { manifest: manifest as unknown as ForkWebdavBackupManifest, files };
 }

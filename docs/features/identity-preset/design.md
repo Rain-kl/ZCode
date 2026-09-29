@@ -227,7 +227,7 @@ function buildIdentityPresetSection(preset: ResolvedIdentityPreset): ContextSect
 
 1. **内核期**：共享契约与模板常量、core fork 模块（解析 + 端口 + 身份段构造）、bootstrap 端口装配、`builder.ts` 接线。验收场景 1–4；不涉及 UI 与同步。
 2. **服务与设置页期**：fork 系统指令服务（文件 CRUD、`active.json`、路径校验、事件）、访问层接线、设置页「系统指令」栏目（开关、列表、新建、编辑、删除、激活）、i18n、test-ids。验收场景 5–10。
-3. **同步期**：`presets/` 纳入 WebDAV 备份包——契约新增 entry 名、`buildBackupZip` / `readBackupZip`、内容哈希纳入、恢复写盘（目录级覆盖 + 路径校验）、`CreateForkWebdavServiceOptions` 与宿主装配新增目录、单测与文档回写。验收场景 11–13。
+3. **同步期（已完成）**：`presets/` 纳入 WebDAV 备份包——契约新增 entry 名与 `ForkWebdavPresetsSnapshot`、`buildBackupZip` / `readBackupZip`、内容哈希纳入正文、恢复写盘（目录级覆盖 + 条目名校验）、`CreateForkWebdavServiceOptions` 与宿主装配新增 `presetsDir`。验收场景 11–13 已由 `packages/desktop/test/forkWebdavPresets.test.ts` 覆盖。
 
 ## 10. 验收场景
 

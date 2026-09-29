@@ -16,10 +16,10 @@ import {
 } from "./backup-archive.js";
 import type { ForkWebdavState } from "./state-store.js";
 import type {
-  LocalSnapshot,
-  LocalSnapshotPort,
-  RemoteSnapshotApplierPort,
-} from "./local-snapshot.js";
+  SyncSnapshot,
+  SyncSnapshotPort,
+  SyncSnapshotApplierPort,
+} from "./snapshot-port.js";
 
 export type SyncTrigger = "startup" | "poll" | "local-change" | "manual";
 
@@ -33,8 +33,8 @@ export interface ForkWebdavRemotePort {
 export interface SyncEngineDeps {
   /** 未配置时为 null：引擎只维护状态，不做任何远端调用。 */
   remote: ForkWebdavRemotePort | null;
-  localSnapshot: LocalSnapshotPort;
-  remoteApplier: RemoteSnapshotApplierPort;
+  localSnapshot: SyncSnapshotPort;
+  remoteApplier: SyncSnapshotApplierPort;
   state: {
     get(): ForkWebdavState;
     set(next: ForkWebdavState): Promise<void>;
@@ -111,8 +111,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         contentHash: snapshot.contentHash,
         source: state.source,
       },
-      setting: snapshot.setting,
-      providerConfig: snapshot.providerConfig,
+      files: snapshot.files,
     });
     await remote.putObject(key, zip);
     deps.log("uploaded", { key, reason: options.reason, contentHash: snapshot.contentHash });
@@ -147,16 +146,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
     }
     const zip = await remote.getObject(key);
     const content = await readBackupZip(zip);
-    const snapshot: LocalSnapshot = {
-      setting: content.setting,
-      providerConfig: content.providerConfig,
+    const snapshot: SyncSnapshot = {
+      files: content.files,
       contentHash:
         typeof content.manifest.contentHash === "string" && content.manifest.contentHash
           ? content.manifest.contentHash
-          : normalizeContentHash({
-              setting: content.setting,
-              providerConfig: content.providerConfig,
-            }),
+          : normalizeContentHash({ files: content.files }),
     };
     await deps.remoteApplier.apply(snapshot);
     await patchState({

@@ -10,14 +10,38 @@ import {
   createDefaultForkWebdavState,
   type ForkWebdavState,
 } from "../src/host/fork/webdav/state-store.js";
-import type { LocalSnapshot } from "../src/host/fork/webdav/local-snapshot.js";
+import type {
+  SyncSnapshot,
+  SyncSnapshotApplierPort,
+} from "../src/host/fork/webdav/snapshot-port.js";
+
+/** 快照条目是文本：这里造与 production 清单层一致的 JSON 文本。 */
+function jsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** 引擎只认识「条目名 → 文本」；本测试用 setting.json 一个资源驱动状态机。 */
+function snapshotFiles(
+  setting: Record<string, unknown>,
+  providerConfig: Record<string, unknown> = {},
+): Record<string, string> {
+  return {
+    "setting.json": jsonText(setting),
+    "provider_config.json": jsonText(providerConfig),
+  };
+}
+
+function appliedSetting(snapshot: SyncSnapshot | undefined): Record<string, unknown> {
+  assert.ok(snapshot, "应有被应用的远端快照");
+  return JSON.parse(snapshot.files["setting.json"] ?? "{}") as Record<string, unknown>;
+}
 
 interface Harness {
   engine: ReturnType<typeof createSyncEngine>;
   remoteFiles: Map<string, Buffer>;
   putOrder: string[];
   deletedKeys: string[];
-  appliedSnapshots: LocalSnapshot[];
+  appliedSnapshots: SyncSnapshot[];
   setLocal: (setting: Record<string, unknown>) => void;
   getState: () => ForkWebdavState;
   logs: string[];
@@ -33,7 +57,7 @@ function createHarness(options?: {
   const remoteFiles = new Map<string, Buffer>();
   const putOrder: string[] = [];
   const deletedKeys: string[] = [];
-  const appliedSnapshots: LocalSnapshot[] = [];
+  const appliedSnapshots: SyncSnapshot[] = [];
   const logs: string[] = [];
   let setting: Record<string, unknown> = { locale: "zh-CN" };
   const providerConfig: Record<string, unknown> = {};
@@ -80,21 +104,23 @@ function createHarness(options?: {
     },
   };
 
+  const localSnapshot = {
+    async read() {
+      const files = snapshotFiles(setting, providerConfig);
+      return { files, contentHash: normalizeContentHash({ files }) };
+    },
+  };
+  const remoteApplier: SyncSnapshotApplierPort = {
+    async apply(snapshot) {
+      appliedSnapshots.push(snapshot);
+      setting = appliedSetting(snapshot);
+    },
+  };
+
   const engine = createSyncEngine({
     remote,
-    localSnapshot: {
-      async read() {
-        const picked = { ...setting };
-        const hash = normalizeContentHash({ setting: picked, providerConfig });
-        return { setting: picked, providerConfig, contentHash: hash };
-      },
-    },
-    remoteApplier: {
-      async apply(snapshot) {
-        appliedSnapshots.push(snapshot);
-        setting = { ...snapshot.setting };
-      },
-    },
+    localSnapshot,
+    remoteApplier,
     state: {
       get: () => state,
       set: async (next) => {
@@ -133,17 +159,16 @@ async function seedRemoteBackup(
   key: string,
   setting: Record<string, unknown>,
 ): Promise<void> {
-  const contentHash = normalizeContentHash({ setting, providerConfig: {} });
+  const files = snapshotFiles(setting);
   const zip = await buildBackupZip({
     manifest: {
       schemaVersion: 1,
       createdAt: "2026-09-28T06:30:05.000Z",
       appVersion: "3.14.3",
-      contentHash,
+      contentHash: normalizeContentHash({ files }),
       source: "other-machine",
     },
-    setting,
-    providerConfig: {},
+    files,
   });
   harness.remoteFiles.set(key, zip);
 }
@@ -191,15 +216,14 @@ test("仅远端有更新且本地无改动时自动恢复", async () => {
   const localSetting = { locale: "zh-CN" };
   harness.setLocal(localSetting);
   harness.getState().lastUploadedHash = normalizeContentHash({
-    setting: localSetting,
-    providerConfig: {},
+    files: snapshotFiles(localSetting),
   });
   await seedRemoteBackup(harness, "zcode-20260928-060000.zip", { locale: "en-US" });
 
   await harness.engine.runCycle("poll");
 
   assert.equal(harness.appliedSnapshots.length, 1);
-  assert.deepEqual(harness.appliedSnapshots[0]?.setting, { locale: "en-US" });
+  assert.deepEqual(appliedSetting(harness.appliedSnapshots[0]), { locale: "en-US" });
   assert.equal(harness.putOrder.length, 0);
   assert.equal(harness.getState().pendingConflict, false);
 });
@@ -207,8 +231,7 @@ test("仅远端有更新且本地无改动时自动恢复", async () => {
 test("双侧都有改动时进入冲突且不覆盖任一侧", async () => {
   const harness = createHarness({ lastSyncAt: "2026-09-28T00:00:00.000Z" });
   harness.getState().lastUploadedHash = normalizeContentHash({
-    setting: { locale: "zh-CN" },
-    providerConfig: {},
+    files: snapshotFiles({ locale: "zh-CN" }),
   });
   harness.setLocal({ locale: "ja-JP" });
   await seedRemoteBackup(harness, "zcode-20260928-060000.zip", { locale: "en-US" });
@@ -237,10 +260,7 @@ test("冲突解决：保留本地会上传，使用远端会恢复并先备份�
   await useRemote.engine.resolveConflict("use-remote-latest");
   // 恢复前先自动备份本地，再应用远端。
   assert.equal(useRemote.putOrder.length, 1);
-  assert.deepEqual(
-    useRemote.appliedSnapshots.map((item) => item.setting),
-    [{ locale: "en-US" }],
-  );
+  assert.deepEqual(useRemote.appliedSnapshots.map(appliedSetting), [{ locale: "en-US" }]);
   assert.ok(useRemote.putOrder[0]!.startsWith("zcode-"));
 });
 
@@ -294,7 +314,7 @@ test("拿不到锁时跳过本周期", async () => {
     localSnapshot: {
       async read() {
         calls += 1;
-        return { setting: {}, providerConfig: {}, contentHash: "h" };
+        return { files: {}, contentHash: "h" };
       },
     },
     remoteApplier: { async apply() {} },

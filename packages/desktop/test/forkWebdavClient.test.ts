@@ -10,6 +10,11 @@ import {
 } from "../src/host/fork/webdav/webdav-client.js";
 import { buildBackupZip } from "../src/host/fork/webdav/backup-archive.js";
 
+/** 快照条目是文本：这里造与 production 清单层一致的 JSON 文本。 */
+function jsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 test("PROPFIND 解析：命名空间前缀无关、忽略目录项、URL 解码", () => {
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <D:multistatus xmlns:D="DAV:">
@@ -178,8 +183,10 @@ test("客户端对一个假 WebDAV 服务完成目录创建、上传、列表、
         contentHash: "hash-1",
         source: "test-machine",
       },
-      setting: { locale: "zh-CN" },
-      providerConfig: {},
+      files: {
+        "setting.json": jsonText({ locale: "zh-CN" }),
+        "provider_config.json": jsonText({}),
+      },
     });
     await client.putObject("zcode-20260928-143005.zip", archive);
     // 同目录的非备份对象不应出现在列表里。

@@ -77,6 +77,12 @@ import {
 import { join } from "node:path";
 import { createForkWebdavService } from "./fork/webdav/index.js";
 import { createForkIdentityPresetService } from "./fork/identity-preset/index.js";
+// FORK(local-mode): 同步范围清单与按清单读写快照（引擎不认识具体资源）
+import {
+  createManifestSnapshotApplier,
+  createManifestSnapshotPort,
+  type ForkSyncBase,
+} from "./fork/webdav-sync/index.js";
 import { createHostResourceUsageResponder } from "./hostResourceUsage.js";
 import {
   assertBoundSessionDispatchable,
@@ -2902,10 +2908,17 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
         const forkCredentialService = services.getOptional(ICredentialService);
         if (forkCredentialService) {
           const forkAppConfigDir = getAppConfigDir();
-          const forkWebdavService = createForkWebdavService({
+          const forkStorageRoot = await resolveZCodeStorageRoot();
+          // FORK(local-mode): 同步哪些资源由 webdav-sync 的清单声明；引擎只消费「条目名 → 文本」快照。
+          const forkSyncOptions = {
+            resolveBase: (base: ForkSyncBase) =>
+              base === "appConfigDir" ? forkAppConfigDir : forkStorageRoot,
             settingService,
+          };
+          const forkWebdavService = createForkWebdavService({
+            snapshotPort: createManifestSnapshotPort(forkSyncOptions),
+            snapshotApplier: createManifestSnapshotApplier(forkSyncOptions),
             credentialStore: forkCredentialService,
-            providerConfigPath: join(forkAppConfigDir, "provider_config.json"),
             stateFilePath: join(forkAppConfigDir, "fork-webdav.json"),
             lockFilePath: join(forkAppConfigDir, "fork-webdav.lock"),
             appVersion: ZCODE_VERSION,

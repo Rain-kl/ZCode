@@ -1,19 +1,40 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { buildBackupZip, readBackupZip } from "../src/host/fork/webdav/backup-archive.js";
 import {
   createDefaultForkWebdavState,
   readForkWebdavState,
   writeForkWebdavState,
 } from "../src/host/fork/webdav/state-store.js";
 import {
-  buildSettingsPatchFromRemote,
-  createLocalSnapshotPort,
-  createRemoteSnapshotApplier,
-  pickSyncedSettings,
-} from "../src/host/fork/webdav/local-snapshot.js";
+  FORK_WEBDAV_SYNC_MANIFEST,
+  FORK_WEBDAV_SYNCED_SETTING_KEYS,
+  type ForkSyncEntry,
+} from "../src/host/fork/webdav-sync/manifest.js";
+import {
+  createManifestSnapshotApplier,
+  createManifestSnapshotPort,
+  pickKeys,
+} from "../src/host/fork/webdav-sync/snapshot.js";
+
+/** 快照条目是文本：这里造与 production 清单层一致的 JSON 文本。 */
+function jsonText(value: unknown): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function parseJson(text: string | undefined): unknown {
+  return JSON.parse(text ?? "null");
+}
+
+/** 清单里的 base 在真实宿主会解析成两个目录；单测统一指向临时目录即可。 */
+const stubSettingService = {
+  get: async (): Promise<unknown> => ({}),
+  update: async (): Promise<unknown> => undefined,
+};
 
 async function withTempDir<T>(run: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), "fork-webdav-test-"));
@@ -57,20 +78,27 @@ test("状态文件：缺失或损坏都回落默认值，写入后可读回", as
 });
 
 test("快照投影只包含白名单字段，远端多余键不会写回本地", () => {
-  const picked = pickSyncedSettings({
-    locale: "zh-CN",
-    memoryEnabled: true,
-    recentProjects: ["/secret/path"],
-    dataBaseDir: "/custom",
-    providerFamilyDomain: "zai",
-  });
+  // 读快照与写回本地走同一个 pickKeys：两个方向都不许漏出白名单外的键。
+  const picked = pickKeys(
+    {
+      locale: "zh-CN",
+      memoryEnabled: true,
+      recentProjects: ["/secret/path"],
+      dataBaseDir: "/custom",
+      providerFamilyDomain: "zai",
+    },
+    FORK_WEBDAV_SYNCED_SETTING_KEYS,
+  );
   assert.deepEqual(picked, { locale: "zh-CN", memoryEnabled: true });
 
-  const patch = buildSettingsPatchFromRemote({
-    locale: "en-US",
-    httpProxy: "http://proxy",
-    unknownFutureKey: 1,
-  });
+  const patch = pickKeys(
+    {
+      locale: "en-US",
+      httpProxy: "http://proxy",
+      unknownFutureKey: 1,
+    },
+    FORK_WEBDAV_SYNCED_SETTING_KEYS,
+  );
   assert.deepEqual(patch, { locale: "en-US" });
 });
 
@@ -82,17 +110,20 @@ test("本地快照读取：provider_config 缺失按空对象，哈希稳定", a
       dataBaseDir: "/custom",
       memoryEnabled: false,
     };
-    const port = createLocalSnapshotPort({
+    const port = createManifestSnapshotPort({
+      resolveBase: () => dir,
       settingService: {
         get: async () => settingsStore,
         update: async () => undefined,
       },
-      providerConfigPath,
     });
 
     const first = await port.read();
-    assert.deepEqual(first.setting, { locale: "zh-CN", memoryEnabled: false });
-    assert.deepEqual(first.providerConfig, {});
+    assert.deepEqual(parseJson(first.files["setting.json"]), {
+      locale: "zh-CN",
+      memoryEnabled: false,
+    });
+    assert.deepEqual(parseJson(first.files["provider_config.json"]), {});
 
     const second = await port.read();
     assert.equal(first.contentHash, second.contentHash);
@@ -100,7 +131,7 @@ test("本地快照读取：provider_config 缺失按空对象，哈希稳定", a
     await writeFile(providerConfigPath, JSON.stringify({ providers: [{ id: "a" }] }), "utf8");
     const third = await port.read();
     assert.notEqual(third.contentHash, first.contentHash);
-    assert.deepEqual(third.providerConfig, { providers: [{ id: "a" }] });
+    assert.deepEqual(parseJson(third.files["provider_config.json"]), { providers: [{ id: "a" }] });
   });
 });
 
@@ -108,7 +139,8 @@ test("应用远端快照：只写白名单设置并原子覆盖 provider_config"
   await withTempDir(async (dir) => {
     const providerConfigPath = join(dir, "provider_config.json");
     const patches: Array<Record<string, unknown>> = [];
-    const applier = createRemoteSnapshotApplier({
+    const applier = createManifestSnapshotApplier({
+      resolveBase: () => dir,
       settingService: {
         get: async () => ({}),
         update: async (patch) => {
@@ -116,12 +148,13 @@ test("应用远端快照：只写白名单设置并原子覆盖 provider_config"
           return undefined;
         },
       },
-      providerConfigPath,
     });
 
     await applier.apply({
-      setting: { locale: "en-US", recentProjects: ["/x"] },
-      providerConfig: { providers: [{ id: "b" }] },
+      files: {
+        "setting.json": jsonText({ locale: "en-US", recentProjects: ["/x"] }),
+        "provider_config.json": jsonText({ providers: [{ id: "b" }] }),
+      },
       contentHash: "hash-2",
     });
 
@@ -129,5 +162,66 @@ test("应用远端快照：只写白名单设置并原子覆盖 provider_config"
     assert.deepEqual(JSON.parse(await readFile(providerConfigPath, "utf8")), {
       providers: [{ id: "b" }],
     });
+    // 快照里完全缺席的资源保持本地不动：这份快照没有 presets 条目，就不该凭空造出目录。
+    assert.equal(existsSync(join(dir, "presets")), false);
+  });
+});
+
+test("扩展点：清单加一行即可同步新资源，webdav/ 引擎目录零改动", async () => {
+  await withTempDir(async (dir) => {
+    const sourceRoot = join(dir, "source");
+    const targetRoot = join(dir, "target");
+
+    // 生产清单里没有这个资源：新增同步范围只声明一行（复用既有 IO 形状），
+    // 契约、打包、解包、哈希与 webdav/ 下的同步引擎都不需要改。
+    const customEntry: ForkSyncEntry = {
+      archiveName: "mcp_servers.json",
+      source: { type: "file-json", base: "appConfigDir", path: "mcp_servers.json" },
+    };
+    assert.deepEqual(
+      FORK_WEBDAV_SYNC_MANIFEST.map((entry) => entry.archiveName),
+      ["setting.json", "provider_config.json", "presets/active.json", "presets/profiles"],
+    );
+    assert.equal(
+      FORK_WEBDAV_SYNC_MANIFEST.some((entry) => entry.archiveName === customEntry.archiveName),
+      false,
+    );
+
+    const servers = { servers: [{ id: "s1", command: "npx" }] };
+    await mkdir(sourceRoot, { recursive: true });
+    await writeFile(join(sourceRoot, "mcp_servers.json"), jsonText(servers), "utf8");
+
+    const port = createManifestSnapshotPort({
+      manifest: [customEntry],
+      resolveBase: () => sourceRoot,
+      settingService: stubSettingService,
+    });
+    const snapshot = await port.read();
+    assert.deepEqual(Object.keys(snapshot.files), ["mcp_servers.json"]);
+
+    // 走一遍真实容器（打包 → 解包），新增资源经通用映射原样到达另一台机器。
+    const zip = await buildBackupZip({
+      manifest: {
+        schemaVersion: 1,
+        createdAt: "2026-09-29T01:00:00.000Z",
+        appVersion: "3.14.3",
+        contentHash: snapshot.contentHash,
+        source: "test-machine",
+      },
+      files: snapshot.files,
+    });
+    const restored = await readBackupZip(zip);
+
+    const applier = createManifestSnapshotApplier({
+      manifest: [customEntry],
+      resolveBase: () => targetRoot,
+      settingService: stubSettingService,
+    });
+    await applier.apply({ files: restored.files, contentHash: restored.manifest.contentHash });
+
+    assert.deepEqual(
+      JSON.parse(await readFile(join(targetRoot, "mcp_servers.json"), "utf8")),
+      servers,
+    );
   });
 });

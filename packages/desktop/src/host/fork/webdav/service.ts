@@ -20,11 +20,7 @@ import {
   type ForkWebdavSyncPhase,
 } from "@zcode/shared";
 import { createWebdavClient, type WebdavFetch } from "./webdav-client.js";
-import {
-  createLocalSnapshotPort,
-  createRemoteSnapshotApplier,
-  type ForkSettingPort,
-} from "./local-snapshot.js";
+import type { SyncSnapshotApplierPort, SyncSnapshotPort } from "./snapshot-port.js";
 import {
   createForkWebdavCredentialPort,
   createDefaultForkWebdavState,
@@ -48,9 +44,10 @@ export interface ForkWebdavCredentialStore {
 }
 
 export interface CreateForkWebdavServiceOptions {
-  settingService: ForkSettingPort;
   credentialStore: ForkWebdavCredentialStore;
-  providerConfigPath: string;
+  /** 同步范围由业务侧清单声明；引擎只消费通用快照。 */
+  snapshotPort: SyncSnapshotPort;
+  snapshotApplier: SyncSnapshotApplierPort;
   stateFilePath: string;
   lockFilePath: string;
   appVersion: string;
@@ -96,14 +93,8 @@ export function createForkWebdavService(
   let disposed = false;
 
   const credentials = createForkWebdavCredentialPort(options.credentialStore);
-  const localSnapshot = createLocalSnapshotPort({
-    settingService: options.settingService,
-    providerConfigPath: options.providerConfigPath,
-  });
-  const remoteApplier = createRemoteSnapshotApplier({
-    settingService: options.settingService,
-    providerConfigPath: options.providerConfigPath,
-  });
+  const localSnapshot = options.snapshotPort;
+  const remoteApplier = options.snapshotApplier;
 
   async function loadState(): Promise<ForkWebdavState> {
     if (!stateLoaded) {

@@ -34,21 +34,28 @@
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录**：暂无。
 
+### 备份范围增强：纳入系统指令配置（identity-preset 第 3 期）
+
+- **增强点**：备份包新增 `presets/active.json` 与 `presets/profiles/<id>.md`；预设正文参与内容哈希（只改提示词也会触发上传）；恢复整目录覆盖，旧包无该条目时保持本地不动。
+- **影响的上游标记**：无新增上游文件——改的是 fork 自有文件（`packages/shared/src/fork/webdav-contract.ts`、`packages/desktop/src/host/fork/webdav/{backup-archive,local-snapshot,sync-engine,service}.ts`）与一处宿主装配（`packages/desktop/src/host/index.ts` 的 `FORK(identity-preset)` 标记）。
+- **验收**：`packages/desktop/test/forkWebdavPresets.test.ts`（7 个用例：往返、旧包不产生字段、哈希敏感、越界条目名被拒、本地只收合法 id、恢复旧包不动本地、整目录覆盖）。
+
 ## 系统指令：用户自定义提示词 (identity-preset)
 
-- **状态**：第 1、2 期完成（2026-09-29）；第 3 期（WebDAV 同步）待实施
+- **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步
 - **需求背景**：上游的系统提示词是代码里的固定文本，用户无法调整模型的回答风格；core 虽有 `customSystemPrompt`，但它是「整段替换」语义且没有任何生产写入方，不适合直接暴露给用户。需要一条用户可管理的自定义提示词通道：多组命名配置 + 总开关 + 本地文件存储（与 `~/.zcode/agents` 同级，全机一份），并纳入既有 WebDAV 同步；启用后只替换**身份段**，运行时事实段（环境信息 / gitStatus / 上下文管理 / 桌面契约）保持不变。
 - **修改内容**：
   1. 第 1 期（内核）已完成：共享契约与模板常量（`presets/` 目录名、id 规则、`active.json` 形态、`default` / `skeleton` 模板）；agent 侧只读文件端口（读盘失败一律回退系统默认，绝不抛出、不写盘）；身份段构造与激活项解析；`builder.ts` 接线——启用后 `cli_prefix` 不再发出、身份段换成用户配置正文，system 消息由 3 条变 2 条，动态段与缓存语义不变，`workflowActor` / `customSystemPrompt` / 内置子代理三条路径让位；bootstrap 端口装配（`<storageRoot>/presets`，可用 `ZCodeAppOptions.identityPresetPort` 覆盖）。同一 App 内有效值只有一份（并发首次进入可能各读一次、结果相同）、只对新建会话生效，配置目录不存在时行为与改动前一致。
   2. 第 2 期（服务与设置页）已完成：宿主文件层（原子写、空闲 id 分配、名称归一化、正文长度上限、Windows 保留设备名避让、删除激活项同时清空 activeId）；fork 服务面与宿主实现（写操作后广播状态，含 activeMissing 供 UI 提示）；访问层四处接线；设置页「系统指令」栏目（总开关、配置列表与激活标记、按模板新建、编辑器、删除确认，并明示「对新会话生效」）；i18n 与 test-ids。写入方绝不覆盖已有配置——id 派生会撞名（`"a b"` 与 `"a-b"` 都得 `a-b`），冲突时退让成 `-2`、`-3`。
-  3. 第 3 期（同步，待实施）：`presets/` 纳入 WebDAV 备份包。
+  3. 第 3 期（同步）已完成：`presets/` 纳入 WebDAV 备份包（`presets/active.json` + `presets/profiles/<id>.md`）；预设正文参与内容哈希，只改提示词也会触发上传；恢复时整目录覆盖，但旧备份包（无 `presets/` 条目）保持本地不动；读取侧拒绝 zip 内的嵌套/穿越条目名。
 - **修改文件**：
   - 已实现（第 1 期）新增：`packages/shared/src/fork/identity-preset-contract.ts`、`packages/shared/test/forkIdentityPresetContract.test.ts`、`apps/zcode-cli/packages/core/src/fork/identity-preset/{profile-file,identityManager,file-port,index}.ts`、`apps/zcode-cli/packages/core/test/forkIdentityPreset{,Context}.test.ts`、`docs/features/identity-preset/**`。
   - 已实现（第 2 期）新增：`packages/services/src/fork/identityPreset.ts`、`packages/desktop/src/host/fork/identity-preset/{profile-store,service,index}.ts`、`packages/desktop/test/forkIdentityPresetStore.test.ts`、`packages/ui/src/fork/identity-preset/{useForkIdentityPreset.ts,SystemInstructionsSection.tsx,index.ts}`；上游接线 `packages/services/src/index.ts`、`packages/services/src/accessor.ts`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/shared/src/test-ids.ts`。
   - 待实现（第 3 期）：`presets/` 纳入 WebDAV 备份包（fork 内部既有文件：`packages/shared/src/fork/webdav-contract.ts`、`packages/desktop/src/host/fork/webdav/{backup-archive,local-snapshot,sync-engine,service}.ts`）。
-- **上游改动标记**：第 1、2 期共 20 个上游文件、41 行标记。
+- **上游改动标记**：第 1–3 期共 21 个上游文件、42 行标记（`rg -l "FORK\(identity-preset\)|FORK-BEGIN\(identity-preset\)" -g '!docs/**' -g '!FEATURES.md' -g '!AGENTS.md'` 的实测口径）。
   - 第 1 期（10 文件 / 30 行，16 单行 + 7 对）：`packages/shared/src/index.ts`、`apps/zcode-cli/packages/core/src/{index.ts,context/types.ts,context/builder.ts,runtime/types.ts,runtime/internal.ts,runtime/agent-runtime.ts,runtime/methods/context.ts}`、`apps/zcode-cli/packages/bootstrap/src/app/{types.ts,create-app.ts}`。
-  - 第 2 期（10 文件 / 11 行）：`packages/services/src/{index.ts,accessor.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/shared/src/test-ids.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+  - 第 2 期（11 文件 / 12 行）：`packages/services/src/{index.ts,accessor.ts,node.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/shared/src/test-ids.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+  - 第 3 期（0 新文件）：只改 fork 自有的备份链路与 `packages/desktop/src/host/index.ts` 的装配行（该文件已计入第 2 期）。同步范围改由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 的清单声明，WebDAV 引擎（`fork/webdav/**`）不认识任何具体资源。
 - **设计文档**：`docs/features/identity-preset/design.md`
 - **实现文档**：`docs/features/identity-preset/implementation.md`（第 1 期：落地位置、关键改动、上游接线、验证证据、与设计的偏差）与 `implementation-plan-2.md`（第 2 期计划与硬性要求）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；`writing-plans` 产出第 1 期计划，逐任务实现并评审后由 `verification-before-completion` 收口）。
