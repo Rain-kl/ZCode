@@ -104,6 +104,9 @@ jobs:
   verify:
     name: Verify workspace gates
     needs: [resolve]
+    # dev 渠道（canary 推送）跳过全部校验，直接进集成以缩短 CI 时间；tag 发布仍走完整门禁。
+    # 依赖它的 build 作业用 result 判定容忍 skipped，见下。
+    if: ${{ needs.resolve.outputs.channel != 'dev' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -157,6 +160,8 @@ jobs:
   build-macos:
     name: Build macOS (${{ matrix.arch }})
     needs: [resolve, verify]
+    # verify 在 dev 渠道被跳过（不是失败）：这里按 result 判定，成功或跳过都继续。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     strategy:
       fail-fast: false
       # 只发布 Apple Silicon 包。若将来要出 Intel 包，必须在 Intel runner 上构建：
@@ -266,6 +271,8 @@ jobs:
   build-windows:
     name: Build Windows (x64)
     needs: [resolve, verify]
+    # verify 在 dev 渠道被跳过（不是失败）：这里按 result 判定，成功或跳过都继续。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
     runs-on: windows-2025
     timeout-minutes: 150
     env:
