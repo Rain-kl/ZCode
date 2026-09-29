@@ -730,6 +730,10 @@ export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE = "settings-system-instructio
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT = "settings-system-instructions-edit";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DELETE = "settings-system-instructions-delete";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_ACTIVATE = "settings-system-instructions-activate";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_DIALOG =
+  "settings-system-instructions-create-dialog";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_SUBMIT =
+  "settings-system-instructions-create-submit";
 
 export function testId(base: string, suffix: string): string {
   return `${base}-${suffix}`;
