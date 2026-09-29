@@ -2200,6 +2200,33 @@ const enUS: Record<string, string> = {
   "settings.configSync.conflictDialogBody":
     'Choose a side: "Keep local and back up" uploads your current setup as a new snapshot; "Restore remote" overwrites this machine with the newest remote snapshot (the current local state is backed up first).',
   "settings.configSync.conflictLater": "Later",
+  // FORK(search-providers): Settings → Basics → Search; see FEATURES.md search-providers entry
+  "settings.searchProviders.title": "Search",
+  "settings.searchProviders.serverChannel": "Server-side search (decided by model config)",
+  "settings.searchProviders.serverChannelEnabled": "Enabled",
+  "settings.searchProviders.serverChannelDisabled": "Disabled",
+  "settings.searchProviders.channels": "Channels",
+  "settings.searchProviders.add": "Add channel",
+  "settings.searchProviders.addTitle": "Add search channel",
+  "settings.searchProviders.edit": "Edit",
+  "settings.searchProviders.editTitle": "Edit search channel",
+  "settings.searchProviders.save": "Save",
+  "settings.searchProviders.cancel": "Cancel",
+  "settings.searchProviders.kind": "Type",
+  "settings.searchProviders.label": "Label",
+  "settings.searchProviders.apiKey": "API Key",
+  "settings.searchProviders.enabled": "Enabled",
+  "settings.searchProviders.remove": "Delete",
+  "settings.searchProviders.deleteConfirm": "Are you sure you want to delete this channel?",
+  "settings.searchProviders.empty": "No custom search channels configured",
+  "settings.searchProviders.unavailable":
+    "Configuring search channels is not supported in the current environment (desktop only).",
+  "settings.searchProviders.priorityHint":
+    "Channels are tried top-down; a failure falls through to the next.",
+  "settings.searchProviders.keySyncHint":
+    "Keys are stored in plain text and synced to your WebDAV with config backups.",
+  "settings.searchProviders.labelPlaceholder": "e.g. Primary",
+  "settings.searchProviders.apiKeyPlaceholder": "Enter API Key",
   "settings.systemDescription": "These preferences affect the current window experience.",
   "settings.locale": "Language",
   "settings.localeDescription": "Choose the display language used by the application UI.",

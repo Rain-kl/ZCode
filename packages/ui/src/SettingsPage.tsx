@@ -71,6 +71,8 @@ import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 // FORK(local-mode): 设置 → 基础设置 → 同步；见 FEATURES.md 的 local-mode 条目
 import { ConfigSyncPanel } from "@/fork/local-mode/ConfigSyncPanel.js";
+// FORK(search-providers): 设置页「搜索」栏目；见 FEATURES.md 的 search-providers 条目
+import { SearchProvidersSection } from "@/fork/search-providers/SearchProvidersSection.js";
 // FORK(identity-preset): 设置 → Agent 能力 → 系统指令；见 FEATURES.md 的 identity-preset 条目
 import { SystemInstructionsSection } from "@/fork/identity-preset/SystemInstructionsSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
@@ -1929,6 +1931,9 @@ export function SettingsPage({
                           />
                         ) : activeSection === "configSync" ? (
                           <ConfigSyncPanel />
+                        ) : // FORK(search-providers): 设置页「搜索」栏目渲染分支；见 FEATURES.md 的 search-providers 条目
+                        activeSection === "searchProviders" ? (
+                          <SearchProvidersSection />
                         ) : activeSection === "systemInstructions" ? (
                           <SystemInstructionsSection />
                         ) : activeSection === "browser" ? (

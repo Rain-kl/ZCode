@@ -21,6 +21,8 @@ import {
   Cloud,
   // FORK(identity-preset): 系统指令栏目图标
   ScrollText,
+  // FORK(search-providers): 搜索栏目图标；见 FEATURES.md 的 search-providers 条目
+  Search,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -81,6 +83,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "configSync",
     icon: Cloud,
     titleId: "settings.configSync.title",
+    groupId: "basics",
+  },
+  // FORK(search-providers): 设置页新增「搜索」栏目；见 FEATURES.md 的 search-providers 条目
+  {
+    id: "searchProviders",
+    icon: Search,
+    titleId: "settings.searchProviders.title",
     groupId: "basics",
   },
   // FORK(identity-preset): 系统指令栏目；见 FEATURES.md 的 identity-preset 条目

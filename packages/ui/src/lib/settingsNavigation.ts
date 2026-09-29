@@ -23,7 +23,9 @@ export type SettingsSectionId =
   // FORK(local-mode): 设置 → 基础设置 → 同步；见 FEATURES.md 的 local-mode 条目
   | "configSync"
   // FORK(identity-preset): 设置 → Agent 能力 → 系统指令；见 FEATURES.md 的 identity-preset 条目
-  | "systemInstructions";
+  | "systemInstructions"
+  // FORK(search-providers): 设置页新增「搜索」栏目；见 FEATURES.md 的 search-providers 条目
+  | "searchProviders";
 
 type SettingsUsageTabTarget = "app" | "codingPlan";
 type SettingsPluginTabTarget = "plugins" | "mcps" | "skills" | "commands";
@@ -62,7 +64,8 @@ export interface SettingsModelProviderTarget {
   providerId: string;
 }
 
-function isSettingsSectionId(value: string): value is SettingsSectionId {
+// FORK(search-providers): 导出守卫函数供测试与外部断言；见 FEATURES.md 的 search-providers 条目
+export function isSettingsSectionId(value: string): value is SettingsSectionId {
   return (
     value === "general" ||
     value === "appearance" ||
@@ -85,7 +88,9 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     // FORK(local-mode): configSync 此前漏进 guard，导致「上次所在栏目」无法恢复
     value === "configSync" ||
     // FORK(identity-preset): 同上，新增栏目必须一并入 guard
-    value === "systemInstructions"
+    value === "systemInstructions" ||
+    // FORK(search-providers): 搜索栏目入 guard，保证「上次所在栏目」可恢复
+    value === "searchProviders"
   );
 }
 
