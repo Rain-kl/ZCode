@@ -109,7 +109,7 @@ test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => 
       id: "a",
       name: "A",
       content: "你是我的私人助理。",
-      injectDynamic: false,
+      injectDynamic: true,
       injectSkills: true,
     },
   });
@@ -126,7 +126,7 @@ test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => 
       id: "a",
       name: "A",
       content: "你是我的私人助理。",
-      injectDynamic: false,
+      injectDynamic: true,
       injectSkills: false,
     },
   });
@@ -134,4 +134,36 @@ test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => 
     withoutListing.metaUserAttachments.map((attachment) => attachment.source),
     ["context_prefix"],
   );
+});
+
+test("关闭动态段注入后，当前日期也不再注入（AGENTS.md 照旧）", () => {
+  const base = {
+    identityPreset: {
+      id: "a",
+      name: "A",
+      content: "你是我的私人助理。",
+      injectDynamic: false,
+      injectSkills: true,
+    },
+  };
+  const withoutInstructions = build(base);
+  // 工作区没有指令时，context_prefix 整条消失（它只装日期与 agentsMd）。
+  assert.deepEqual(withoutInstructions.metaUserAttachments, []);
+
+  const withInstructions = build({
+    ...base,
+    userInstructions: {
+      filePath: "/tmp/ws/AGENTS.md",
+      fileName: "AGENTS.md",
+      content: "项目规则",
+      bytesRead: 12,
+      sizeBytes: 12,
+      truncated: false,
+    },
+  });
+  const sources = withInstructions.metaUserAttachments.map((attachment) => attachment.source);
+  assert.deepEqual(sources, ["context_prefix"]);
+  const body = withInstructions.metaUserAttachments[0]?.content ?? "";
+  assert.match(body, /项目规则/);
+  assert.doesNotMatch(body, /# currentDate/);
 });

@@ -217,7 +217,11 @@ export class ContextBuilder {
       sections.push(requestUserContextSection);
     }
 
-    const currentDateSection = buildCurrentDateSection(this.config.currentDate);
+    // 当前日期属于动态信息：关掉「注入动态提示词」时一并停掉。
+    // 同一附件里的 # agentsMd（工作区指令 / memory 索引）是项目配置，不受该开关影响。
+    const currentDateSection = injectDynamic
+      ? buildCurrentDateSection(this.config.currentDate)
+      : null;
     if (currentDateSection) {
       sections.push(currentDateSection);
     }

@@ -303,3 +303,11 @@ messageCount: 5，role=system 2 条
 语义边界：只停那条 meta-user 消息（`source: "skills_listing"`），**不摘掉 Skill 工具**——模型仍可调用它，只是不知道有哪些技能（除非提示词里自己列）。要不要连工具一起摘，是另一个开关，未做。
 
 `context_prefix`（`# agentsMd` + `# currentDate`）不受这两个开关影响：它是独立的一条 meta-user 消息，注不注入目前没有开关。
+
+### 8.2 附：`# currentDate` 归入动态开关（injectDynamic）
+
+用户反馈：那句「As you answer the user's questions… / # currentDate / IMPORTANT」的注入属于动态提示词，关掉动态段时不应出现。
+
+实现：`build()` 里 `buildCurrentDateSection` 的结果受 `injectDynamic` 门控（`injectDynamic ? build… : null`）。
+
+边界（有意为之）：`# currentDate` 与 `# agentsMd`（工作区指令 / memory 索引）同处 `context_prefix` 这一条 meta-user 消息中，但**只有日期**跟随该开关——AGENTS.md 是项目配置，关掉它等于让 agent 忽略仓库里的规则。若日后要连 AGENTS.md 一起停，需要第三个开关（或在 `injectDynamic` 上加档位），不要偷偷塞进现有开关。
