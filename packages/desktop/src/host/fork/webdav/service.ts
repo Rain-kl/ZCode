@@ -314,7 +314,11 @@ export function createForkWebdavService(
         await client.testConnection();
         return { ok: true };
       } catch (error) {
-        return { ok: false, error: describeForkWebdavError(error) };
+        const message = describeForkWebdavError(error);
+        // 设置页的「测试连接」是遇到网络问题时最先点的入口，但它原来不落日志，
+        // 排查时日志里没有任何痕迹、只能看 UI 上那一句话。补一条便于事后对照。
+        options.log("[fork-webdav] 连接测试失败", { error: message, url: input.url });
+        return { ok: false, error: message };
       }
     },
 
