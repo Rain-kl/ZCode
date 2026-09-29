@@ -49,6 +49,8 @@ import {
   IForkWebdavService,
   // FORK(identity-preset): 系统指令配置服务面
   IForkIdentityPresetService,
+  // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
+  IForkSearchProvidersService,
   createZCodeAgentConnectionScope,
   type ZCodeAgentV4ClientMode,
   collectServiceMemoryDiagnostics,
@@ -77,6 +79,8 @@ import {
 import { join } from "node:path";
 import { createForkWebdavService } from "./fork/webdav/index.js";
 import { createForkIdentityPresetService } from "./fork/identity-preset/index.js";
+// FORK(search-providers): 网络搜索渠道服务工厂；见 FEATURES.md 的 search-providers 条目
+import { createForkSearchProvidersService } from "./fork/search-providers/index.js";
 // FORK(local-mode): 同步范围清单与按清单读写快照（引擎不认识具体资源）
 import {
   createManifestSnapshotApplier,
@@ -2936,6 +2940,13 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
             root: join(await resolveZCodeStorageRoot(), FORK_IDENTITY_PRESET_ROOT_NAME),
           });
           services.register(IForkIdentityPresetService, forkIdentityPresetService);
+        }
+        // FORK(search-providers): 注册网络搜索渠道服务（桌面专属；未注册时渲染层拿不到该服务；见 FEATURES.md 的 search-providers 条目）
+        {
+          const forkSearchProvidersService = createForkSearchProvidersService({
+            logger,
+          });
+          services.register(IForkSearchProvidersService, forkSearchProvidersService);
         }
 
         const zcodeTaskService = services.getOptional(IZCodeTaskService);

@@ -91,5 +91,7 @@ export interface IServiceAccessor {
   readonly forkWebdavService?: import("./fork/webdav.js").IForkWebdavService;
   /** FORK(identity-preset): 系统指令配置；host 未提供时（web/远端）为 undefined。 */
   readonly forkIdentityPresetService?: import("./fork/identityPreset.js").IForkIdentityPresetService;
+  /** FORK(search-providers): 网络搜索渠道；host 未提供时（web/远端）为 undefined；见 FEATURES.md 的 search-providers 条目。 */
+  readonly forkSearchProvidersService?: import("./fork/search-providers.js").IForkSearchProvidersService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 }
