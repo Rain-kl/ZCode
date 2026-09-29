@@ -82,6 +82,18 @@
 可观测信号仍是 `~/.zcode/cli/debug/model-io-*.jsonl`；本次改动前该文件里已有 14 条历史记录，
 复验时要看**新增**而非总量。
 
+**已做的产物级核验**：`pnpm --filter @zcode/cli build` 重建 `packages/cli/dist/zcode.cjs`（20:15）后确认：
+
+- `processFetchedContent` 在 bundle 中出现 **0** 次（加工阶段入口确已消失）；
+- `MAX_WEBFETCH_INLINE_BYTES` 出现 5 次（封顶常量已进产物）；
+- 新的工具描述（`Very large pages are truncated to a preview…`）在位；
+- `web_fetch_processing` 仍出现 2 次，逐处核对后确认**都在遥测枚举里**
+  （`ModelApiOperation.WebFetch` 的 querySource 映射与 `agent-execution.ts` 的 vocabulary），
+  不是调用点。该枚举保留是有意的：历史遥测数据仍会引用它，删除属于遥测契约变更，不在本次范围。
+
+**仍未覆盖**：本会话自身跑在改动前的进程上，所以「新会话抓一次页面确实不再产生加工调用」这句
+只能由新进程验证——产物已就位，起新会话即可复验。
+
 **未覆盖**：`resultBudget` 的落盘/预览行为本身没有新增测试——它是所有工具共用的既有机制，
 本次只改了阈值常量；上面的单测断言的是「阈值已配置到会触发」（含 `内联上限 < 输入侧阈值` 这条不变量），
 不是执行器的落盘实现。若要覆盖，需为 `serializeOutput` 造一套 `ToolExecutorDeps`。
