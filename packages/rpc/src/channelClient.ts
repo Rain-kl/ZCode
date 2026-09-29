@@ -26,12 +26,25 @@ export class ChannelClient implements IChannelClient, IDisposable {
   private pendingRejections = new Map<number, (error: Error) => void>();
   private lastRequestId = 0;
   private protocolListener: IDisposable | null;
+  // FORK(rpc-channel-manifest): 服务端在 Initialize 里声明的已注册通道；undefined 表示清单未知
+  // （旧服务端，或 Initialize 尚未到达），此时调用方必须保持历史行为。
+  private channelManifest: readonly string[] | undefined = undefined;
 
   private readonly _onDidInitialize = new Emitter<void>();
   readonly onDidInitialize = this._onDidInitialize.event;
 
   constructor(private protocol: IMessagePassingProtocol) {
     this.protocolListener = this.protocol.onMessage((msg) => this.onBuffer(msg));
+  }
+
+  /** FORK(rpc-channel-manifest): 同步读取最近一次 Initialize 声明的通道清单；见 FEATURES.md 的 rpc-channel-manifest 条目 */
+  channelNames(): readonly string[] | undefined {
+    return this.channelManifest;
+  }
+
+  /** FORK(rpc-channel-manifest): 是否已收到对端 Initialize。false 时清单未知只是「握手未完成」。 */
+  isInitialized(): boolean {
+    return this.state === State.Idle;
   }
 
   getChannel<T extends IChannel>(channelName: string): T {
@@ -214,7 +227,11 @@ export class ChannelClient implements IChannelClient, IDisposable {
 
     switch (type) {
       case ResponseType.Initialize:
-        this.onResponse({ type: ResponseType.Initialize });
+        // FORK(rpc-channel-manifest): 清单缺字段（旧服务端）时保持 undefined，调用方按「未知」处理
+        this.onResponse({
+          type: ResponseType.Initialize,
+          channels: readChannelManifest(body),
+        });
         return;
       case ResponseType.PromiseSuccess:
       case ResponseType.PromiseError:
@@ -231,6 +248,10 @@ export class ChannelClient implements IChannelClient, IDisposable {
 
   private onResponse(response: IRawResponse): void {
     if (response.type === ResponseType.Initialize) {
+      // 只在服务端确实带了清单时才覆盖：旧服务端不带该字段，不能把已有清单清成未知。
+      if (response.channels) {
+        this.channelManifest = response.channels;
+      }
       this.state = State.Idle;
       this._onDidInitialize.fire();
       return;
@@ -272,4 +293,22 @@ export class ChannelClient implements IChannelClient, IDisposable {
     this.pendingRejections.clear();
     this._onDidInitialize.dispose();
   }
+}
+
+/**
+ * FORK(rpc-channel-manifest): 解析 Initialize 载荷里的通道清单。
+ * 只接受非空字符串数组；缺失、类型不符或空数组都返回 undefined（= 清单未知，按历史行为建代理）。
+ * 空数组按「未知」处理是有意的：调用方若把「本端没注册任何通道」当真，会静默把可用服务显示成
+ * 不支持，这比一次可见的超时报错更难排查；而清单非空的正常服务端不受影响。
+ */
+function readChannelManifest(payload: unknown): readonly string[] | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const channels = (payload as { channels?: unknown }).channels;
+  if (!Array.isArray(channels) || channels.length === 0) {
+    return undefined;
+  }
+  const names = channels.filter((name): name is string => typeof name === "string");
+  return names.length === 0 ? undefined : names;
 }

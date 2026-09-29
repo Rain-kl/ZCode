@@ -31,7 +31,11 @@ export const enum ResponseType {
 }
 
 export type IRawResponse =
-  | { type: ResponseType.Initialize }
+  | {
+      type: ResponseType.Initialize;
+      // FORK(rpc-channel-manifest): 已注册通道清单；旧服务端不带该字段（undefined = 清单未知）
+      channels?: readonly string[];
+    }
   | { type: ResponseType.PromiseSuccess; id: number; data: any }
   | {
       type: ResponseType.PromiseError;
@@ -63,4 +67,10 @@ export interface IChannelServer<TContext = string> {
 
 export interface IChannelClient {
   getChannel<T extends IChannel>(channelName: string): T;
+  // FORK(rpc-channel-manifest): 服务端在 Initialize 里声明的已注册通道清单；旧服务端不含该字段时为 undefined
+  channelNames?(): readonly string[] | undefined;
+  // FORK(rpc-channel-manifest): Initialize 是否已到达。调用方据此判断「清单未知」是握手未完成还是旧服务端
+  isInitialized?(): boolean;
+  // FORK(rpc-channel-manifest): Initialize 到达时触发；订阅方据此重新判定通道可用性
+  readonly onDidInitialize?: Event<void>;
 }

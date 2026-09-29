@@ -145,4 +145,9 @@ export class NetworkTelemetryChannelClient implements IChannelClient {
     const channel = this.inner.getChannel<T>(channelName);
     return new NetworkTelemetryChannel(channel as unknown as IChannel, channelName) as unknown as T;
   }
+
+  // FORK(rpc-channel-manifest): 装饰器不能吞掉通道清单，否则包一层遥测就会让下游回到「清单未知」
+  channelNames(): readonly string[] | undefined {
+    return this.inner.channelNames?.();
+  }
 }

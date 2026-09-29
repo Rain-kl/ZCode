@@ -154,4 +154,9 @@ export class LoggingChannelClient implements IChannelClient {
       this.logger,
     ) as unknown as T;
   }
+
+  // FORK(rpc-channel-manifest): 装饰器不能吞掉通道清单，否则包一层日志就会让下游回到「清单未知」
+  channelNames(): readonly string[] | undefined {
+    return this.inner.channelNames?.();
+  }
 }

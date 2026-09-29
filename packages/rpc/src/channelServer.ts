@@ -18,6 +18,9 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
     { request: any; timer: ReturnType<typeof setTimeout> }[]
   >();
   private protocolListener: IDisposable | null;
+  // FORK(rpc-channel-manifest): 清单是否已经发出过。用于区分「首次装配注册」与「运行期新增通道」，
+  // 前者不该重复发 Initialize，后者必须让客户端跟上（否则新增通道会被永久判为不存在）。
+  private hasSentInitialize = false;
 
   constructor(
     private protocol: IMessagePassingProtocol,
@@ -27,7 +30,11 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
   ) {
     this.protocolListener = this.protocol.onMessage((msg) => this.onRawMessage(msg));
     if (!this.deferInit) {
-      this.sendResponse({ type: ResponseType.Initialize });
+      // FORK(rpc-channel-manifest): Initialize 现在携带通道清单，必须在通道注册完成后才发。
+      // 各装配点（ServiceCollection.exposeOnChannelServer 等）都在构造之后同步注册，因此推迟到
+      // 本 tick 末尾发送才能保证清单不漏通道；构造时同步发会把「尚未注册」误报成「通道不存在」。
+      // 见 FEATURES.md 的 rpc-channel-manifest 条目
+      queueMicrotask(() => this.sendResponse({ type: ResponseType.Initialize }));
     }
   }
 
@@ -36,14 +43,22 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
   }
 
   registerChannel(channelName: string, channel: IServerChannel<TContext>): void {
+    const isNewChannel = !this.channels.has(channelName);
     this.channels.set(channelName, channel);
     setTimeout(() => this.flushPendingRequests(channelName), 0);
+    // FORK(rpc-channel-manifest): 清单是活的事实——Initialize 之后新增的通道要补发一次清单，
+    // 否则客户端会把它当成「对端没有这个通道」。首次装配注册发生在清单首次发送之前，不会走到这里。
+    if (this.hasSentInitialize && isNewChannel) {
+      this.sendResponse({ type: ResponseType.Initialize });
+    }
   }
 
   private sendResponse(response: IRawResponse): void {
     switch (response.type) {
       case ResponseType.Initialize:
-        this.send([response.type]);
+        // FORK(rpc-channel-manifest): 每次 Initialize 都带当前完整清单，客户端以最后一次为准
+        this.hasSentInitialize = true;
+        this.send([response.type], { channels: [...this.channels.keys()] });
         return;
       case ResponseType.PromiseSuccess:
       case ResponseType.PromiseError:
