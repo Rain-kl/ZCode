@@ -34,6 +34,8 @@ export type { IForkIdentityPresetService as IForkIdentityPresetServiceType } fro
 // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
 export { IForkSearchProvidersService } from "./fork/search-providers.js";
 export type { IForkSearchProvidersService as IForkSearchProvidersServiceType } from "./fork/search-providers.js";
+// FORK(rpc-channel-manifest): 对端通道可用性面；见 FEATURES.md 的 rpc-channel-manifest 条目
+export type { IChannelAvailability } from "./fork/channel-availability.js";
 export {
   ConversationShareServiceError,
   createUnsupportedConversationShareService,

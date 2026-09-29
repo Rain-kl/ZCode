@@ -1,4 +1,6 @@
-import { ProxyChannel, type IChannelClient } from "@zcode/rpc";
+import { Event, ProxyChannel, type IChannel, type IChannelClient } from "@zcode/rpc";
+import type { IChannelAvailability } from "@zcode/services";
+import { isChannelAvailable } from "./channelManifest.js";
 // FORK(local-mode): WebDAV 服务通道名
 import { FORK_IDENTITY_PRESET_CHANNEL, FORK_WEBDAV_CHANNEL } from "@zcode/shared";
 // FORK(search-providers): 网络搜索渠道服务通道名；见 FEATURES.md 的 search-providers 条目
@@ -53,29 +55,47 @@ import {
   type IServiceAccessor,
 } from "@zcode/services";
 
+/** FORK(rpc-channel-manifest): 需要按通道清单判定的可选服务成员名。 */
+type ManifestGatedServiceKey =
+  | "mediaPreviewService"
+  | "onboardingRecordService"
+  | "windowControllerService"
+  | "cuaPermissionService"
+  | "forkWebdavService"
+  | "forkIdentityPresetService"
+  | "forkSearchProvidersService";
+
 /**
  * RemoteServiceAccess — 通过 ChannelClient 自动创建类型安全的服务代理
  *
  * 新增服务只需在此添加一个 getter。
+ *
+ * FORK(rpc-channel-manifest): `IServiceAccessor` 上可选的成员（各 host 未必注册的通道）改为
+ * 按服务端 Initialize 声明的通道清单惰性解析：清单里没有的通道置为 undefined，让 UI 立即显示
+ * 「当前环境不支持」，而不是先建一个惰性代理、等到调用时才超时。清单未知（旧服务端 / Initialize
+ * 未到达）时保持历史行为（照旧建代理），保证向前兼容。
+ * 见 FEATURES.md 的 rpc-channel-manifest 条目与 docs/features/rpc-channel-manifest/design.md。
  */
 export class RemoteServiceAccess implements IServiceAccessor {
   readonly fileService: IFileService;
-  readonly mediaPreviewService: IMediaPreviewService;
+  // FORK(rpc-channel-manifest): 下面这些成员在 IServiceAccessor 上是可选的（各 host 未必注册），
+  // 因此由构造里的 defineManifestGatedService 按通道清单惰性解析；清单里没有该通道时读作 undefined。
+  readonly mediaPreviewService?: IMediaPreviewService;
   readonly gitService: IGitService;
   readonly gitCheckpointService: IGitCheckpointService;
   readonly systemService: ISystemService;
   readonly terminalService: ITerminalService;
   readonly settingService: ISettingService;
-  readonly onboardingRecordService: IOnboardingRecordService;
+  readonly onboardingRecordService?: IOnboardingRecordService;
   readonly credentialService: ICredentialService;
   readonly broadcastService: IBroadcastService;
   readonly zcodeTaskService: IZCodeTaskService;
-  readonly windowControllerService: IWindowControllerService;
+  readonly windowControllerService?: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供），但桌面 renderer
-  // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
-  readonly cuaPermissionService: ICuaPermissionService;
+  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供）。桌面 main host 始终
+  // 注册此 descriptor（非 macOS / 未启用时方法返回 available:false），所以桌面 renderer 仍拿到代理。
+  readonly cuaPermissionService?: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
   readonly fileWatcherService: IFileWatcherService;
@@ -108,16 +128,21 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly forkSearchProvidersService?: IForkSearchProvidersService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
+  /** FORK(rpc-channel-manifest): UI 判定可选服务可用性的唯一入口；见 FEATURES.md 的 rpc-channel-manifest 条目。 */
+  readonly channelAvailability: IChannelAvailability;
+  /** FORK(rpc-channel-manifest): 按清单引用缓存的可选服务代理，保证同一清单下成员标识稳定。 */
+  private readonly manifestGatedCache = new Map<
+    ManifestGatedServiceKey,
+    { manifest: readonly string[] | undefined; service: unknown }
+  >();
 
-  constructor(channelClient: IChannelClient) {
+  constructor(private channelClient: IChannelClient) {
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );
     // Host 已注册 media-preview channel，但遗漏 renderer proxy 时，PreviewPane
     // 会静默回退到 8 MiB 的 file.readMediaPreview，导致大 MP4 无法打开。
-    this.mediaPreviewService = ProxyChannel.toService<IMediaPreviewService>(
-      channelClient.getChannel(IMediaPreviewService.channelName),
-    );
+    this.defineManifestGatedService("mediaPreviewService", IMediaPreviewService.channelName);
     this.gitService = ProxyChannel.toService<IGitService>(
       channelClient.getChannel(IGitService.channelName),
     );
@@ -133,8 +158,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.settingService = ProxyChannel.toService<ISettingService>(
       channelClient.getChannel(ISettingService.channelName),
     );
-    this.onboardingRecordService = ProxyChannel.toService<IOnboardingRecordService>(
-      channelClient.getChannel(IOnboardingRecordService.channelName),
+    this.defineManifestGatedService(
+      "onboardingRecordService",
+      IOnboardingRecordService.channelName,
     );
     this.credentialService = ProxyChannel.toService<ICredentialService>(
       channelClient.getChannel(ICredentialService.channelName),
@@ -145,8 +171,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
     );
-    this.windowControllerService = ProxyChannel.toService<IWindowControllerService>(
-      channelClient.getChannel(IWindowControllerService.channelName),
+    this.defineManifestGatedService(
+      "windowControllerService",
+      IWindowControllerService.channelName,
     );
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
@@ -154,9 +181,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeSessionService = ProxyChannel.toService<IZCodeSessionService>(
       channelClient.getChannel(IZCodeSessionService.channelName),
     );
-    this.cuaPermissionService = ProxyChannel.toService<ICuaPermissionService>(
-      channelClient.getChannel(ICuaPermissionService.channelName),
-    );
+    this.defineManifestGatedService("cuaPermissionService", ICuaPermissionService.channelName);
     this.conversationShareService = ProxyChannel.toService<IConversationShareService>(
       channelClient.getChannel(IConversationShareService.channelName),
     );
@@ -226,18 +251,12 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.memoryService = ProxyChannel.toService<IMemoryService>(
       channelClient.getChannel(IMemoryService.channelName),
     );
-    // FORK(local-mode): WebDAV 备份恢复服务
-    this.forkWebdavService = ProxyChannel.toService<IForkWebdavService>(
-      channelClient.getChannel(FORK_WEBDAV_CHANNEL),
-    );
-    // FORK(identity-preset): 系统指令配置服务
-    this.forkIdentityPresetService = ProxyChannel.toService<IForkIdentityPresetService>(
-      channelClient.getChannel(FORK_IDENTITY_PRESET_CHANNEL),
-    );
+    // FORK(local-mode): WebDAV 备份恢复服务（host 未注册 → 清单里没有该通道 → undefined）
+    this.defineManifestGatedService("forkWebdavService", FORK_WEBDAV_CHANNEL);
+    // FORK(identity-preset): 系统指令配置服务（同上）
+    this.defineManifestGatedService("forkIdentityPresetService", FORK_IDENTITY_PRESET_CHANNEL);
     // FORK(search-providers): 网络搜索渠道管理服务；见 FEATURES.md 的 search-providers 条目
-    this.forkSearchProvidersService = ProxyChannel.toService<IForkSearchProvidersService>(
-      channelClient.getChannel(FORK_SEARCH_PROVIDERS_CHANNEL),
-    );
+    this.defineManifestGatedService("forkSearchProvidersService", FORK_SEARCH_PROVIDERS_CHANNEL);
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(
       channelClient.getChannel(ISettingsSyncService.channelName),
     );
@@ -247,5 +266,45 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.promptAttachmentTransferService = ProxyChannel.toService<IPromptAttachmentTransferService>(
       channelClient.getChannel(IPromptAttachmentTransferService.channelName),
     );
+    this.channelAvailability = {
+      isInitialized: () => channelClient.isInitialized?.() ?? true,
+      channelNames: () => channelClient.channelNames?.(),
+      // 事件是惰性转发：装饰器（日志/遥测）不保证暴露 onDidInitialize，此时退化为
+      // 「只认同步快照」，UI 仍能通过自身重渲染拿到清单，而不是订阅失败。
+      get onDidChange() {
+        return channelClient.onDidInitialize ?? Event.None;
+      },
+    };
+  }
+
+  /**
+   * FORK(rpc-channel-manifest): 可选服务成员统一按通道清单解析。
+   *
+   * 定义成 getter 而不是构造期一次性赋值，是因为 Initialize 可能晚于 RemoteServiceAccess 构造
+   * （desktop 的 deferInit 链路要先注册完通道才发清单）；getter 每次读取时取当次清单，
+   * 既不会把尚未确认存在的通道提前冒充为可用，也不会在清单到达后仍停留在 unavailable。
+   * 清单未知时 isChannelAvailable 返回 true，等价于改造前的「照旧建代理」。
+   *
+   * 代理按「清单引用」缓存：ProxyChannel.toService 每次调用都返回新对象，若不做缓存，
+   * React 里以该成员为依赖的 effect 会每次渲染都重跑并触发状态写入，形成重渲染循环。
+   * ChannelClient 在收到新的 Initialize 前复用同一份清单数组，因此该缓存同时给出了稳定的成员标识。
+   */
+  private defineManifestGatedService(member: ManifestGatedServiceKey, channelName: string): void {
+    Object.defineProperty(this, member, {
+      get: () => {
+        const manifest = this.channelClient.channelNames?.();
+        const cached = this.manifestGatedCache.get(member);
+        if (cached && cached.manifest === manifest) {
+          return cached.service;
+        }
+        const service = isChannelAvailable(manifest, channelName)
+          ? ProxyChannel.toService<IChannel>(this.channelClient.getChannel(channelName))
+          : undefined;
+        this.manifestGatedCache.set(member, { manifest, service });
+        return service;
+      },
+      enumerable: true,
+      configurable: true,
+    });
   }
 }

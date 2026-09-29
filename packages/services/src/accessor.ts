@@ -93,5 +93,7 @@ export interface IServiceAccessor {
   readonly forkIdentityPresetService?: import("./fork/identityPreset.js").IForkIdentityPresetService;
   /** FORK(search-providers): 网络搜索渠道；host 未提供时（web/远端）为 undefined；见 FEATURES.md 的 search-providers 条目。 */
   readonly forkSearchProvidersService?: import("./fork/search-providers.js").IForkSearchProvidersService;
+  /** FORK(rpc-channel-manifest): 对端通道可用性；非 RPC 装配（测试替身）可不提供，见 FEATURES.md 的 rpc-channel-manifest 条目。 */
+  readonly channelAvailability?: import("./fork/channel-availability.js").IChannelAvailability;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 }
