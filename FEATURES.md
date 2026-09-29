@@ -195,6 +195,23 @@
 - **已知边界**：见实现文档 §8（测试替身 `as never`、`statSync` 异常粒度、`createServerSearchChannel` 缺乏独立单测、测试临时目录清理、host 装配内联路径风格）。
 - **上游同步记录**：暂无。
 
+## 通道清单驱动的服务可用性 (rpc-channel-manifest)
+
+- **状态**：已实现（2026-09-29），单测覆盖判定边界、客户端过滤与装配时序；网页端与桌面端均已 CDP 实测（桌面端为「新旧混跑」验证，见实现文档 §5.4）。
+- **需求背景**：网页端打开「设置 → Agent 能力 → 系统指令」时报 `Channel name 'fork-identity-preset' timed out after 1000ms`，本应是空态的列表被错误取代。根因是「通道是否存在」在协议里没有表达：`RemoteServiceAccess` 为每个通道无条件创建惰性代理（代理恒为真值对象），服务端收到未知通道则挂起 1s 后回 `Unknown channel`。于是 UI 里 `available: Boolean(service)` 探测永远为真，真正的「能力缺席」被伪装成「一条超时错误 + 空数据」，且与「调用出错」共用同一个 `error` 状态。
+- **修改内容**：**传输层预登记可用通道**。服务端 `ChannelServer` 在既有的 `ResponseType.Initialize` 握手里带上当前已注册通道名数组，不新增往返；客户端 `ChannelClient` 保存并暴露同步读取的 `channelNames()` / `isInitialized()`；`RemoteServiceAccess` 上 `IServiceAccessor` 的可选成员（7 个：media-preview、onboarding-record、window-controller、cua-permission 及三个 fork 服务）改为按清单惰性解析，清单里没有的通道为 `undefined`；清单未知（旧服务端 / 握手未完成）时保持历史行为（照旧建代理）保证向前兼容。UI 两段时间分离：`available` 读成员（清单缺席即「当前环境不支持」），调用由 `usable` 门控（清单到达前不发探测请求）。
+  - 时序硬约束：Initialize 必须在通道注册完成后才发，否则会把真实服务误判为不可用（比原报错更糟）。立即初始化改为 `queueMicrotask` 推迟到本 tick 末尾；`deferInit` 路径保持原语义并由契约测试锁定顺序。核查结论与残余风险见实现文档 §6。
+  - 判定为「空清单 = 未知」：服务端在注册完成前发送会得到空清单，若当成事实会把本端全部服务显示成不支持——静默失效比可见报错更难排查（设计文档 §2.1）。
+- **修改文件**：
+  - 新增文件：`packages/client/src/channelManifest.ts`、`packages/services/src/fork/channel-availability.ts`、`packages/ui/src/hooks/useChannelAvailabilityReady.ts`、`packages/rpc/test/rpcChannelManifestHandshake.test.ts`、`packages/client/test/{channelManifest,remoteServiceAccessManifest,channelManifestAssembly}.test.ts`、`docs/features/rpc-channel-manifest/**`。
+  - 上游接线文件（12 个）：`packages/rpc/src/{channels.shared.ts,channelServer.ts,channelClient.ts,logging-middleware.ts,network-telemetry-middleware.ts}`、`packages/services/src/{accessor.ts,index.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/ui/src/fork/identity-preset/useForkIdentityPreset.ts`、`packages/ui/src/fork/local-mode/{useForkWebdav.ts,FirstRunWebdavScreen.tsx}`、`packages/ui/src/fork/search-providers/useForkSearchProviders.ts`。
+- **上游改动标记**：按可复现命令 `rg -n "FORK\(rpc-channel-manifest\)|FORK-BEGIN\(rpc-channel-manifest\)|FORK-END\(rpc-channel-manifest\)" --glob '!AGENTS.md' --glob '!FEATURES.md' --glob '!docs/**' --glob '!.superpowers/**'` 检索；当前为 **12 个上游文件、30 行标记、30 处逻辑改动**（无成对块；逐处分项见实现文档 §4）。
+- **设计文档**：`docs/features/rpc-channel-manifest/design.md`
+- **实现文档**：`docs/features/rpc-channel-manifest/implementation.md`
+- **已知边界**：`deferInit === true` 链路无生产调用方，仅有契约测试覆盖；桌面端验收是「旧 host + 新 renderer 混跑」而非全新实例复验；空清单兜底会掩盖「服务端真的零通道」（当前无此装配点）。
+- **上游收敛**：上游若自带服务能力协商（Initialize 携带可用服务声明等），整体删除本功能并采用上游实现；摘除范围与「必须保留的时序不变量」见实现文档 §2。
+- **上游同步记录**：暂无。
+
 ## 其他更新
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
