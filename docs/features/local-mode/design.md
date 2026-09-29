@@ -133,7 +133,9 @@
 
 ### 6.5 备份范围
 
-**同步**：`provider_config.json`（自定义提供商整份）、`setting.json` 中的用户偏好白名单，以及系统指令配置 `presets/`（`active.json` + `profiles/<id>.md`，见 FEATURES.md 的 identity-preset 条目与 `docs/features/identity-preset/design.md` 第 5 节）。
+**同步**：`provider_config.json`（自定义提供商整份）、`setting.json` 中的用户偏好白名单、系统指令配置 `presets/`（见 FEATURES.md 的 identity-preset 条目），以及用户级子代理 `agents/` 与自定义命令 `commands/`（两者加载器都递归扫描子目录，故条目声明为 `recursive`）。
+
+未纳入（已知覆盖缺口）：命令还有第二个用户级来源 `~/.agents/commands`，本清单只覆盖 `<storage root>/commands`；`~/.agents` 是跨工具共享目录（本机 `~/.agents/skills` 里还有其它工具的元数据），把它纳入同步等于对别人拥有的目录做整目录覆盖，需单独决策。工作区级的 `<ws>/.zcode/{agents,commands}` 属仓库内容，不跟人走，不同步。
 
 白名单规则：**默认不同步**，只同步跨机器有意义、且不与本机环境绑定的用户偏好。初始白名单（实现时落在 `packages/desktop/src/host/fork/webdav/syncFields.ts`；每个字段需与 `packages/shared/src/protocol.ts` 的 `AppSettings` 定义逐个核对存在性，不存在的直接剔除，新增字段需在本文件登记）：
 
@@ -142,6 +144,8 @@
 明确排除（本机/网络/账号/运行态绑定）：`dataBaseDir`、`desktopWindowSize`、`keepAwakeWhileRunning`、`closeToTrayOnWindows*`、`desktopChromiumHardwareAccelerationEnabled`、`recentProjects`、`lastWorkspaceSession`、`lastActiveTabIndex`、`httpProxy*`、`providerFamily*`、`receivePreviewUpdates`、`autoDownloadAndInstallUpdates`、`skippedElectronUpdateVersions`、`settingsSyncFirstRunPromptHandled`、`*MigrationInitialized` 等迁移标记。
 
 **不同步**：`credentials.json`（机器派生密钥加密，跨机不可解）、`certs`、`telemetry-state.json`、sessions/数据库/日志/checkpoint、`~/.zcode/cli/config.json` 与 skills/agents/commands/plugins 目录。
+
+**清单的 IO 形状**：`setting-service` / `file-json` / `file-json-whitelist` / `directory`（`recursive` 时按相对路径递归，逐段校验路径安全）。`directory` 默认只处理一层：`recursive` 是必须显式声明的，因为「加载器递归而同步不递归」会静默漏文件（presets/profiles 就是这样漏过一次）。
 
 **同步范围由清单声明**：备份包里有什么，只由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 的 `FORK_WEBDAV_SYNC_MANIFEST` 决定——一行一个资源，声明归档名 + 本地路径 + IO 形状（`setting-service` / `file-json` / `file-json-whitelist` / `directory`）。新增一个要同步的配置**只改清单**，契约、打包、解包、内容哈希、同步引擎、服务装配都不用动。
 

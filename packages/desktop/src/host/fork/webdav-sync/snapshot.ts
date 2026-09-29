@@ -6,6 +6,7 @@
  *
  * 见 FEATURES.md 的 local-mode 条目与 docs/features/local-mode/design.md 第 6.5 节。
  */
+import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -92,31 +93,81 @@ async function readDirectoryEntry(
 ): Promise<Record<string, string>> {
   const dir = localPath(source, options);
   const files: Record<string, string> = {};
-  if (source.stateFileName) {
-    const state = await readOptionalJsonObject(join(dir, source.stateFileName));
-    if (state) {
-      files[`${entry.archiveName}/${source.stateFileName}`] = toJsonText(state);
-    }
+  for (const [relativePath, text] of Object.entries(
+    await collectDirectoryFiles(dir, source, "", 0),
+  )) {
+    files[`${entry.archiveName}/${relativePath}`] = text;
   }
-  let fileNames: string[] = [];
+  return files;
+}
+
+/** 目录深度上限：防止软链环或异常深的目录把一次备份拖死。 */
+const MAX_DIRECTORY_DEPTH = 24;
+
+/**
+ * 收集目录下的文件，键为相对路径（posix 分隔符）。
+ * 与加载器一致：`recursive` 时才下钻——加载器递归而同步不递归会静默漏文件。
+ */
+async function collectDirectoryFiles(
+  dir: string,
+  source: Extract<ForkSyncSource, { type: "directory" }>,
+  prefix: string,
+  depth: number,
+): Promise<Record<string, string>> {
+  const files: Record<string, string> = {};
+  if (depth > MAX_DIRECTORY_DEPTH) return files;
+  let entries: Dirent[];
   try {
-    fileNames = await readdir(dir);
+    entries = await readdir(dir, { withFileTypes: true });
   } catch {
     // 目录不存在 = 还没配置过，属正常状态。
     return files;
   }
-  for (const fileName of fileNames) {
-    if (source.fileExtension && !fileName.endsWith(source.fileExtension)) continue;
-    const stem = source.fileExtension ? fileName.slice(0, -source.fileExtension.length) : fileName;
-    // 主干不合法的文件不入包：既不该被带到别的机器，也不该在那边被写出来。
-    if (source.isValidStem && !source.isValidStem(stem)) continue;
+  for (const item of entries) {
+    const relativePath = prefix ? `${prefix}/${item.name}` : item.name;
+    if (item.isDirectory()) {
+      if (!source.recursive) continue;
+      Object.assign(
+        files,
+        await collectDirectoryFiles(join(dir, item.name), source, relativePath, depth + 1),
+      );
+      continue;
+    }
+    if (!item.isFile()) continue;
+    if (!isAcceptedFileName(item.name, source)) continue;
     try {
-      files[`${entry.archiveName}/${fileName}`] = await readFile(join(dir, fileName), "utf8");
+      files[relativePath] = await readFile(join(dir, item.name), "utf8");
     } catch {
       // 单个文件读失败不影响其余条目与整次备份。
     }
   }
   return files;
+}
+
+function isAcceptedFileName(
+  fileName: string,
+  source: Extract<ForkSyncSource, { type: "directory" }>,
+): boolean {
+  if (fileName.includes("/") || fileName.includes("\\")) return false;
+  if (fileName === "." || fileName === "..") return false;
+  const extensions = source.fileExtensions ?? [];
+  const matched = extensions.find((extension) => fileName.endsWith(extension));
+  if (extensions.length > 0 && matched === undefined) return false;
+  const stem = matched ? fileName.slice(0, -matched.length) : fileName;
+  if (stem.length === 0) return false;
+  // 主干不合法的文件不入包：既不该被带到别的机器，也不该在那边被写出来。
+  if (source.isValidStem && !source.isValidStem(stem)) return false;
+  return true;
+}
+
+/** 相对路径逐段校验：zip 条目名与备份包内容都是外部输入，任何一段越界都拒收。 */
+function isSafeRelativePath(relativePath: string): boolean {
+  if (relativePath.length === 0) return false;
+  for (const segment of relativePath.split("/")) {
+    if (segment.length === 0 || segment === "." || segment === "..") return false;
+    if (segment.includes("\\") || segment.includes("\u0000")) return false;
+  }
+  return true;
 }
 
 // -----------------------------------------------
@@ -178,18 +229,14 @@ async function applyEntry(
       const dir = localPath(source, options);
       // 整目录覆盖：先删再写，避免「远端删过的配置在本地复活」。
       await rm(dir, { recursive: true, force: true });
-      for (const [fileName, text] of Object.entries(collected.directoryFiles)) {
-        if (source.stateFileName && fileName === source.stateFileName) {
-          await writeTextAtomic(join(dir, fileName), text);
-          continue;
-        }
-        const stem = source.fileExtension
-          ? fileName.slice(0, -source.fileExtension.length)
-          : fileName;
-        if (source.fileExtension && !fileName.endsWith(source.fileExtension)) continue;
-        if (source.isValidStem && !source.isValidStem(stem)) continue;
-        if (fileName.includes("/") || fileName.includes("\\")) continue;
-        await writeTextAtomic(join(dir, fileName), text);
+      for (const [relativePath, text] of Object.entries(collected.directoryFiles)) {
+        if (!isSafeRelativePath(relativePath)) continue;
+        // 非递归条目拒收嵌套路径：同步范围里根本没有那一层，写出去只会成为
+        // 「agent 读不到、用户也看不见」的孤儿文件，顺带给了恶意备份包建目录的能力。
+        if (!source.recursive && relativePath.includes("/")) continue;
+        const fileName = relativePath.slice(relativePath.lastIndexOf("/") + 1);
+        if (!isAcceptedFileName(fileName, source)) continue;
+        await writeTextAtomic(join(dir, relativePath), text);
       }
       return;
     }

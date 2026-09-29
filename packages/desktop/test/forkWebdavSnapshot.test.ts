@@ -180,7 +180,14 @@ test("扩展点：清单加一行即可同步新资源，webdav/ 引擎目录零
     };
     assert.deepEqual(
       FORK_WEBDAV_SYNC_MANIFEST.map((entry) => entry.archiveName),
-      ["setting.json", "provider_config.json", "presets/active.json", "presets/profiles"],
+      [
+        "setting.json",
+        "provider_config.json",
+        "presets/active.json",
+        "presets/profiles",
+        "agents",
+        "commands",
+      ],
     );
     assert.equal(
       FORK_WEBDAV_SYNC_MANIFEST.some((entry) => entry.archiveName === customEntry.archiveName),
@@ -223,5 +230,79 @@ test("扩展点：清单加一行即可同步新资源，webdav/ 引擎目录零
       JSON.parse(await readFile(join(targetRoot, "mcp_servers.json"), "utf8")),
       servers,
     );
+  });
+});
+
+test("递归目录条目：子目录文件一起往返，非声明扩展名不入包", async () => {
+  await withTempDir(async (dir) => {
+    const sourceRoot = join(dir, "source");
+    const targetRoot = join(dir, "target");
+    // 加载器递归扫描子目录，所以同步条目也必须声明 recursive——否则嵌套文件会被静默漏掉。
+    const entry: ForkSyncEntry = {
+      archiveName: "agents",
+      source: {
+        type: "directory",
+        base: "storageRoot",
+        path: "agents",
+        fileExtensions: [".md"],
+        recursive: true,
+      },
+    };
+    await mkdir(join(sourceRoot, "agents", "team"), { recursive: true });
+    await writeFile(join(sourceRoot, "agents", "flat.md"), "flat", "utf8");
+    await writeFile(join(sourceRoot, "agents", "team", "nested.md"), "nested", "utf8");
+    await writeFile(join(sourceRoot, "agents", "notes.txt"), "skip", "utf8");
+
+    const snapshot = await createManifestSnapshotPort({
+      manifest: [entry],
+      resolveBase: () => sourceRoot,
+      settingService: stubSettingService,
+    }).read();
+    assert.deepEqual(Object.keys(snapshot.files).sort(), [
+      "agents/flat.md",
+      "agents/team/nested.md",
+    ]);
+
+    await createManifestSnapshotApplier({
+      manifest: [entry],
+      resolveBase: () => targetRoot,
+      settingService: stubSettingService,
+    }).apply(snapshot);
+
+    assert.equal(await readFile(join(targetRoot, "agents", "team", "nested.md"), "utf8"), "nested");
+    assert.equal(existsSync(join(targetRoot, "agents", "notes.txt")), false);
+  });
+});
+
+test("递归目录条目不因递归而放行越界路径", async () => {
+  await withTempDir(async (dir) => {
+    const targetRoot = join(dir, "target");
+    const entry: ForkSyncEntry = {
+      archiveName: "commands",
+      source: {
+        type: "directory",
+        base: "storageRoot",
+        path: "commands",
+        fileExtensions: [".md"],
+        recursive: true,
+      },
+    };
+
+    await createManifestSnapshotApplier({
+      manifest: [entry],
+      resolveBase: () => targetRoot,
+      settingService: stubSettingService,
+    }).apply({
+      files: {
+        "commands/ok.md": "ok",
+        "commands/../escaped.md": "escaped",
+        "commands/./dot.md": "dot",
+      },
+      contentHash: "h",
+    });
+
+    assert.equal(await readFile(join(targetRoot, "commands", "ok.md"), "utf8"), "ok");
+    assert.equal(existsSync(join(targetRoot, "escaped.md")), false);
+    assert.equal(existsSync(join(targetRoot, "commands", "dot.md")), false);
   });
 });

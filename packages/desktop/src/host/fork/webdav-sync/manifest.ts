@@ -37,8 +37,13 @@ export type ForkSyncSource =
       path: string;
       /** 目录内的状态文件（单份 JSON），会同步到 `<archiveName>/<stateFileName>`。 */
       stateFileName?: string;
-      /** 只同步这个扩展名的文件。 */
-      fileExtension?: string;
+      /** 只同步这些扩展名的文件（如 `.md` / `.markdown`）。 */
+      fileExtensions?: readonly string[];
+      /**
+       * 按相对路径递归收集子目录。必须显式声明：加载器递归而同步不递归会静默漏文件
+       * （presets/profiles 就这样漏过一次，恢复时还删掉了用户配置）。
+       */
+      recursive?: boolean;
       /** 去掉扩展名的文件名主干必须通过校验，否则不入包也不落盘。 */
       isValidStem?: (stem: string) => boolean;
     };
@@ -71,7 +76,7 @@ export const FORK_WEBDAV_SYNCED_SETTING_KEYS = [
   "computerUseComposerEntryHidden",
 ] as const;
 
-/** 清单：同步范围就是这四项。加资源请只改这里。 */
+/** 清单：同步范围就是这几项。加资源请只改这里。 */
 export const FORK_WEBDAV_SYNC_MANIFEST: readonly ForkSyncEntry[] = [
   {
     archiveName: "setting.json",
@@ -98,8 +103,30 @@ export const FORK_WEBDAV_SYNC_MANIFEST: readonly ForkSyncEntry[] = [
       type: "directory",
       base: "storageRoot",
       path: FORK_IDENTITY_PRESET_PROFILES_DIR,
-      fileExtension: FORK_IDENTITY_PRESET_PROFILE_EXTENSION,
+      fileExtensions: [FORK_IDENTITY_PRESET_PROFILE_EXTENSION],
       isValidStem: isValidForkIdentityPresetId,
+    },
+  },
+  {
+    // 子代理配置：加载器递归扫描 `<name>.md` / `<group>/<name>.md`，所以同步也必须递归。
+    archiveName: "agents",
+    source: {
+      type: "directory",
+      base: "storageRoot",
+      path: "agents",
+      fileExtensions: [".md", ".markdown"],
+      recursive: true,
+    },
+  },
+  {
+    // 自定义斜杠命令：`<name>.md`，同样支持子目录（加载器 MAX_SCAN_DEPTH = 12）。
+    archiveName: "commands",
+    source: {
+      type: "directory",
+      base: "storageRoot",
+      path: "commands",
+      fileExtensions: [".md"],
+      recursive: true,
     },
   },
 ];

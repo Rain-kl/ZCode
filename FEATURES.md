@@ -34,6 +34,12 @@
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录**：暂无。
 
+### 备份范围增强：同步范围改为 manifest 声明，并纳入子代理与命令（2026-09-29）
+
+- **增强点**：同步范围由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 的清单声明，WebDAV 引擎不再包含业务逻辑；新增用户级子代理 `agents/`（`.md`/`.markdown`，递归）与自定义命令 `commands/`（`.md`，递归）两个同步条目——两者加载器都递归扫描，故条目显式声明 `recursive`，并新增「非递归条目拒收嵌套路径」规则。
+- **影响的上游标记**：无新增上游文件；改的是 fork 自有文件与 `packages/desktop/src/host/index.ts` 的装配行（已在第 2、3 期计入）。
+- **验收**：`packages/desktop/test/forkWebdav*.test.ts` 36 个用例（新增递归往返、递归条目越界拒收、非递归条目拒收嵌套路径、清单扩展点）。
+
 ### 备份范围增强：纳入系统指令配置（identity-preset 第 3 期）
 
 - **增强点**：备份包新增 `presets/active.json` 与 `presets/profiles/<id>.md`；预设正文参与内容哈希（只改提示词也会触发上传）；恢复整目录覆盖，旧包无该条目时保持本地不动。
