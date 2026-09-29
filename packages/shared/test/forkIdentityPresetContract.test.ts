@@ -83,7 +83,13 @@ test("normalizeForkIdentityPresetName 拒绝空名与超长名", () => {
 });
 
 test("状态文件解析对缺失与损坏一律降级为关闭", () => {
-  const fallback = { schemaVersion: 1, enabled: false, activeId: null, injectDynamic: true };
+  const fallback = {
+    schemaVersion: 1,
+    enabled: false,
+    activeId: null,
+    injectDynamic: true,
+    injectSkills: true,
+  };
   assert.deepEqual(parseForkIdentityPresetStateFile(undefined), fallback);
   assert.deepEqual(parseForkIdentityPresetStateFile("not an object"), fallback);
   assert.deepEqual(parseForkIdentityPresetStateFile({ enabled: true, activeId: "x" }), fallback);
@@ -98,6 +104,7 @@ test("状态文件解析对缺失与损坏一律降级为关闭", () => {
       enabled: true,
       activeId: null,
       injectDynamic: true,
+      injectSkills: true,
     },
   );
   assert.deepEqual(
@@ -107,6 +114,7 @@ test("状态文件解析对缺失与损坏一律降级为关闭", () => {
       enabled: true,
       activeId: null,
       injectDynamic: true,
+      injectSkills: true,
     },
   );
   assert.deepEqual(
@@ -116,6 +124,7 @@ test("状态文件解析对缺失与损坏一律降级为关闭", () => {
       enabled: false,
       activeId: "concise",
       injectDynamic: true,
+      injectSkills: true,
     },
   );
   assert.deepEqual(
@@ -125,8 +134,22 @@ test("状态文件解析对缺失与损坏一律降级为关闭", () => {
       enabled: true,
       activeId: "concise",
       injectDynamic: true,
+      injectSkills: true,
     },
   );
+});
+
+test("skills 清单开关：缺省注入，显式 false 才关，非布尔值回落缺省", () => {
+  const parsed = (extra: Record<string, unknown>) =>
+    parseForkIdentityPresetStateFile({
+      schemaVersion: 1,
+      enabled: true,
+      activeId: "concise",
+      ...extra,
+    }).injectSkills;
+  assert.equal(parsed({}), true);
+  assert.equal(parsed({ injectSkills: false }), false);
+  assert.equal(parsed({ injectSkills: "no" }), true);
 });
 
 test("动态段开关：缺省注入，显式 false 才关，非布尔值回落缺省", () => {

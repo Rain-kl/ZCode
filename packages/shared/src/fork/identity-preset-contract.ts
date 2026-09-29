@@ -67,6 +67,11 @@ export interface ForkIdentityPresetState {
    * 关闭后系统提示词只剩身份段与 Desktop Context——适合完全自己写提示词的人。
    */
   injectDynamic: boolean;
+  /**
+   * 是否注入 skills 清单（那条列出可用技能与文件路径的 meta-user 消息）。
+   * 关闭后模型不知道有哪些技能，除非在提示词里自己列。
+   */
+  injectSkills: boolean;
   /** enabled 为真但 activeId 指向不存在的配置；UI 据此提示「已回退系统默认」。 */
   activeMissing: boolean;
   /** 预设根目录绝对路径，便于用户排查「文件到底在哪」。 */
@@ -80,6 +85,7 @@ export interface ForkIdentityPresetStateFile {
   activeId: string | null;
   /** 缺省视为注入：旧状态文件没有这个字段，不能因此被判成「不认识」。 */
   injectDynamic: boolean;
+  injectSkills: boolean;
 }
 
 export function isValidForkIdentityPresetId(value: string): boolean {
@@ -152,24 +158,27 @@ export function parseForkIdentityPresetStateFile(raw: unknown): ForkIdentityPres
     enabled: false,
     activeId: null,
     injectDynamic: true,
+    injectSkills: true,
   };
   if (typeof raw !== "object" || raw === null) return fallback;
   const record = raw as Record<string, unknown>;
   if (record.schemaVersion !== FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION) return fallback;
   if (typeof record.enabled !== "boolean") return fallback;
   const injectDynamic = typeof record.injectDynamic === "boolean" ? record.injectDynamic : true;
+  const injectSkills = typeof record.injectSkills === "boolean" ? record.injectSkills : true;
   const activeId = record.activeId;
   if (activeId === null || activeId === undefined) {
-    return { ...fallback, enabled: record.enabled, injectDynamic };
+    return { ...fallback, enabled: record.enabled, injectDynamic, injectSkills };
   }
   if (typeof activeId !== "string" || !isValidForkIdentityPresetId(activeId)) {
-    return { ...fallback, enabled: record.enabled, injectDynamic };
+    return { ...fallback, enabled: record.enabled, injectDynamic, injectSkills };
   }
   return {
     schemaVersion: FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION,
     enabled: record.enabled,
     activeId,
     injectDynamic,
+    injectSkills,
   };
 }
 

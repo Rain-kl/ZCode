@@ -93,15 +93,15 @@ test("「默认」模板与 cli_prefix + identity 的当前原文逐字节一致
 test("激活项解析：关闭、悬空 id、命中", () => {
   const profiles = new Map([["concise", { id: "concise", name: "极简", content: "x" }]]);
   assert.equal(
-    resolveActiveIdentityPreset({ enabled: false, activeId: "concise", injectDynamic: true, profiles }),
+    resolveActiveIdentityPreset({ enabled: false, activeId: "concise", injectDynamic: true, injectSkills: true, profiles }),
     undefined,
   );
   assert.equal(
-    resolveActiveIdentityPreset({ enabled: true, activeId: null, injectDynamic: true, profiles }),
+    resolveActiveIdentityPreset({ enabled: true, activeId: null, injectDynamic: true, injectSkills: true, profiles }),
     undefined,
   );
   assert.equal(
-    resolveActiveIdentityPreset({ enabled: true, activeId: "missing", injectDynamic: true, profiles }),
+    resolveActiveIdentityPreset({ enabled: true, activeId: "missing", injectDynamic: true, injectSkills: true, profiles }),
     undefined,
   );
   assert.deepEqual(
@@ -109,6 +109,7 @@ test("激活项解析：关闭、悬空 id、命中", () => {
       enabled: true,
       activeId: "concise",
       injectDynamic: false,
+      injectSkills: true,
       profiles,
     }),
     {
@@ -117,6 +118,7 @@ test("激活项解析：关闭、悬空 id、命中", () => {
       content: "x",
       // 开关取自状态而非配置正文：同一份配置在开关变化时得到不同结果。
       injectDynamic: false,
+      injectSkills: true,
     },
   );
 });
@@ -155,6 +157,7 @@ test("端口按 activeId 载入对应配置", async () => {
     name: "极简",
     content: "只给结论。",
     injectDynamic: true,
+    injectSkills: true,
   });
 });
 

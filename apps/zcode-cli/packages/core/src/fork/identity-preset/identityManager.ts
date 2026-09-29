@@ -20,6 +20,8 @@ export interface IdentityPresetContent {
 export interface ResolvedIdentityPreset extends IdentityPresetContent {
   /** 是否注入动态段（环境/git/风格指导/上下文管理）。false 时系统提示词只剩身份段与 Desktop Context。 */
   injectDynamic: boolean;
+  /** 是否注入 skills 清单。false 时模型不知道有哪些技能，除非提示词里自己列。 */
+  injectSkills: boolean;
 }
 
 export function buildIdentityPresetSection(preset: ResolvedIdentityPreset): ContextSection {
@@ -42,6 +44,7 @@ export function resolveActiveIdentityPreset(input: {
   enabled: boolean;
   activeId: string | null;
   injectDynamic: boolean;
+  injectSkills: boolean;
   profiles: ReadonlyMap<string, IdentityPresetContent>;
 }): ResolvedIdentityPreset | undefined {
   if (!input.enabled || input.activeId === null) return undefined;
@@ -49,5 +52,5 @@ export function resolveActiveIdentityPreset(input: {
   // 悬空 activeId 等同关闭：让会话回到系统默认，而不是让 agent 起不来。
   if (!preset || preset.content.trim().length === 0) return undefined;
   // 开关取自状态文件（功能级），不在配置正文里：切预设不该顺带改掉注入行为。
-  return { ...preset, injectDynamic: input.injectDynamic };
+  return { ...preset, injectDynamic: input.injectDynamic, injectSkills: input.injectSkills };
 }

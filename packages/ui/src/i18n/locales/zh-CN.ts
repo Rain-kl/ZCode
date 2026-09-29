@@ -1993,6 +1993,9 @@ const zhCN: Record<string, string> = {
   "settings.systemInstructions.injectDynamic": "注入动态提示词",
   "settings.systemInstructions.injectDynamicHint":
     "关闭后只注入你写的提示词；模型将不再收到环境信息、git 状态、沟通风格与上下文管理说明",
+  "settings.systemInstructions.injectSkills": "注入 skills 清单",
+  "settings.systemInstructions.injectSkillsHint":
+    "关闭后不再列出可用技能；除非你在提示词里自己列，模型不会知道有哪些技能",
   "settings.systemInstructions.takesEffectOnNewSession":
     "保存与激活对新会话生效，正在进行的会话不受影响。",
   "settings.systemInstructions.profiles": "提示词配置",

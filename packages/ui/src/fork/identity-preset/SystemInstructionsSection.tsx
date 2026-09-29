@@ -41,6 +41,7 @@ import {
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_SUBMIT,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_DELETE,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH,
+  TID_SETTINGS_SYSTEM_INSTRUCTIONS_SKILLS_SWITCH,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH,
@@ -90,6 +91,7 @@ export function SystemInstructionsSection() {
   const enabled = state?.enabled ?? false;
   // 缺省注入：旧 active.json 没有该字段，界面不能因为字段缺席就显示成关闭。
   const injectDynamic = state?.injectDynamic ?? true;
+  const injectSkills = state?.injectSkills ?? true;
   const profiles = state?.profiles ?? [];
   // state 为 null 是首次拉取（controller 订阅到位前），与「确实没有配置」区分开。
   const loading = state === null && controller.error === null;
@@ -148,6 +150,18 @@ export function SystemInstructionsSection() {
               disabled={controller.busy || !enabled}
               onCheckedChange={(next: boolean) => void controller.setInjectDynamic(next)}
               data-testid={TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH}
+            />
+          }
+        />
+        <SettingsRow
+          label={t("settings.systemInstructions.injectSkills")}
+          description={t("settings.systemInstructions.injectSkillsHint")}
+          control={
+            <Switch
+              checked={injectSkills}
+              disabled={controller.busy || !enabled}
+              onCheckedChange={(next: boolean) => void controller.setInjectSkills(next)}
+              data-testid={TID_SETTINGS_SYSTEM_INSTRUCTIONS_SKILLS_SWITCH}
             />
           }
         />

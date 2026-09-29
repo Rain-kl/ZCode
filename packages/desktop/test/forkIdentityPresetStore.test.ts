@@ -100,6 +100,7 @@ test("开关与激活项写入 active.json 并可读回", async () => {
     enabled: true,
     activeId: id,
     injectDynamic: true,
+    injectSkills: true,
   });
 });
 
@@ -118,6 +119,7 @@ test("删除正在激活的配置会同时清空 activeId", async () => {
     enabled: true,
     activeId: null,
     injectDynamic: true,
+    injectSkills: true,
   });
 });
 
@@ -140,6 +142,7 @@ test("目录不存在时按空配置处理，不报错", async () => {
     enabled: false,
     activeId: null,
     injectDynamic: true,
+    injectSkills: true,
   });
 });
 
@@ -155,6 +158,7 @@ test("active.json 损坏时降级为未启用且不覆写用户文件", async ()
     enabled: false,
     activeId: null,
     injectDynamic: true,
+    injectSkills: true,
   });
   assert.equal((await stat(statePath)).size, "{ not json".length);
 });
@@ -173,5 +177,24 @@ test("动态段开关写入 active.json，且不影响开关与激活项", async
     enabled: true,
     activeId: id,
     injectDynamic: false,
+    injectSkills: true,
+  });
+});
+
+test("skills 清单开关写入 active.json，且不影响开关与激活项", async () => {
+  const root = await createRoot();
+  const store = createFileIdentityPresetStore({ root });
+  const { id } = await store.create({ name: "concise", template: "skeleton" });
+  await store.setEnabled(true);
+  await store.activate(id);
+
+  await store.setInjectSkills(false);
+
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: true,
+    activeId: id,
+    injectDynamic: true,
+    injectSkills: false,
   });
 });

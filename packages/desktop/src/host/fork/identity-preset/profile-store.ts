@@ -47,6 +47,8 @@ export interface IdentityPresetStore {
   setEnabled(enabled: boolean): Promise<void>;
   /** 是否注入动态段；功能级开关，不随预设切换而变。 */
   setInjectDynamic(injectDynamic: boolean): Promise<void>;
+  /** 是否注入 skills 清单。 */
+  setInjectSkills(injectSkills: boolean): Promise<void>;
   activate(id: string | null): Promise<void>;
 }
 
@@ -134,6 +136,11 @@ export function createFileIdentityPresetStore(input: { root: string }): Identity
     async setInjectDynamic(injectDynamic) {
       const state = await readStateFile(statePath);
       await writeStateFile(statePath, { ...state, injectDynamic });
+    },
+
+    async setInjectSkills(injectSkills) {
+      const state = await readStateFile(statePath);
+      await writeStateFile(statePath, { ...state, injectSkills });
     },
 
     async activate(id) {
@@ -226,6 +233,7 @@ async function readStateFile(statePath: string): Promise<ForkIdentityPresetState
     enabled: false,
     activeId: null,
     injectDynamic: true,
+    injectSkills: true,
   };
   const text = await readTextIfExists(statePath);
   if (text === undefined) return fallback;
@@ -238,11 +246,13 @@ async function readStateFile(statePath: string): Promise<ForkIdentityPresetState
         ? raw.activeId
         : null;
     const injectDynamic = typeof raw.injectDynamic === "boolean" ? raw.injectDynamic : true;
+    const injectSkills = typeof raw.injectSkills === "boolean" ? raw.injectSkills : true;
     return {
       schemaVersion: FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION,
       enabled: raw.enabled,
       activeId,
       injectDynamic,
+      injectSkills,
     };
   } catch {
     // 用户手改坏了 active.json：按「未启用」继续，绝不覆写——覆写会把他的配置一次抹掉。

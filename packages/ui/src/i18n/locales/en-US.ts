@@ -2123,6 +2123,9 @@ const enUS: Record<string, string> = {
   "settings.systemInstructions.injectDynamic": "Inject dynamic prompt sections",
   "settings.systemInstructions.injectDynamicHint":
     "When off, only your prompt is injected — the model no longer receives environment info, git status, communication style, or context-management guidance",
+  "settings.systemInstructions.injectSkills": "Inject the skills listing",
+  "settings.systemInstructions.injectSkillsHint":
+    "When off, available skills are no longer listed — the model will not know them unless you list them in your prompt",
   "settings.systemInstructions.takesEffectOnNewSession":
     "Saving and activating apply to new sessions; running sessions are unaffected.",
   "settings.systemInstructions.profiles": "Presets",

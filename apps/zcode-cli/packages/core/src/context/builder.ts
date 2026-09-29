@@ -111,6 +111,7 @@ export class ContextBuilder {
     // 关闭「注入动态段」时整条 ③ 不发出：只剩身份段与 Desktop Context（它属 stable，不受此开关影响）。
     // 功能未启用（customIdentity 缺席）时保持注入，行为与改动前一致。
     const injectDynamic = customIdentity?.injectDynamic ?? true;
+    const injectSkills = customIdentity?.injectSkills ?? true;
     // FORK-END(identity-preset)
 
     // 1. CLI / product prefix. Keep this as the short leading identity block.
@@ -196,7 +197,7 @@ export class ContextBuilder {
     // guidanceToolNames 是 runtime 当下的
     // 工具表；一个 Skill 工具未注册的工作流子代理被告知「以下技能可经 Skill 工具使用」，
     // 只会让它相信自己有一个没有的工具。表缺席（测试 / 旧调用方）时保持既有行为。
-    if (this.config.skills && this.skillToolAvailable()) {
+    if (injectSkills && this.config.skills && this.skillToolAvailable()) {
       const skillsSection = buildSkillsSection({
         outcome: this.config.skills,
         metadataBudget: this.config.skillMetadataBudget,

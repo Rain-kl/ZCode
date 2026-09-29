@@ -295,3 +295,11 @@ messageCount: 5，role=system 2 条
 **接线**：`IdentityPresetContent`（配置内容：id/name/content）与 `ResolvedIdentityPreset`（内容 + 本次生效的 `injectDynamic`）分成两层——开关来自状态而非配置正文，混在一个类型里会出现「字段必填但会被覆盖」的假象。builder 用 `customIdentity?.injectDynamic ?? true` 门控第 ③ 条；功能未启用时恒为 `true`，行为与改动前一致。
 
 **验证**：`forkIdentityPresetContract.test.ts`（缺省注入 / 显式 false / 非布尔回落）、`forkIdentityPresetStore.test.ts`（写入不影响开关与激活项）、`forkIdentityPresetContext.test.ts`（关闭后 system 消息只剩 1 条且不含 `# Environment`）。全量 84/84。
+
+### 8.1 附：skills 清单开关（injectSkills）
+
+与 `injectDynamic` 同形：功能级状态落在 `presets/active.json` 的 `injectSkills`（缺省注入），`ResolvedIdentityPreset` 携带，builder 的 skills 段门控从 `this.config.skills && this.skillToolAvailable()` 变为先看 `injectSkills`。
+
+语义边界：只停那条 meta-user 消息（`source: "skills_listing"`），**不摘掉 Skill 工具**——模型仍可调用它，只是不知道有哪些技能（除非提示词里自己列）。要不要连工具一起摘，是另一个开关，未做。
+
+`context_prefix`（`# agentsMd` + `# currentDate`）不受这两个开关影响：它是独立的一条 meta-user 消息，注不注入目前没有开关。

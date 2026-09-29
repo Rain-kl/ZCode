@@ -94,3 +94,44 @@ test("关闭动态段注入后，system 提示词只剩身份段", () => {
   assert.doesNotMatch(only, /# Context management/);
   assert.doesNotMatch(only, /You are ZCode, an interactive coding agent/);
 });
+
+test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => {
+  // 清单是独立的 meta-user 消息；这条开关只控制它，不影响身份段与动态段。
+  const skills = {
+    skills: [{ name: "demo-skill", description: "示例技能", path: "/tmp/demo/SKILL.md" }],
+    diagnostics: [],
+    totalDiscovered: 1,
+  };
+  const withListing = build({
+    skills,
+    guidanceToolNames: ["Skill"],
+    identityPreset: {
+      id: "a",
+      name: "A",
+      content: "你是我的私人助理。",
+      injectDynamic: false,
+      injectSkills: true,
+    },
+  });
+  assert.deepEqual(
+    withListing.metaUserAttachments.map((attachment) => attachment.source),
+    // context_prefix（当前日期那段）与本开关无关，始终在。
+    ["skills_listing", "context_prefix"],
+  );
+
+  const withoutListing = build({
+    skills,
+    guidanceToolNames: ["Skill"],
+    identityPreset: {
+      id: "a",
+      name: "A",
+      content: "你是我的私人助理。",
+      injectDynamic: false,
+      injectSkills: false,
+    },
+  });
+  assert.deepEqual(
+    withoutListing.metaUserAttachments.map((attachment) => attachment.source),
+    ["context_prefix"],
+  );
+});
