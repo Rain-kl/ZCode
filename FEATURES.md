@@ -88,3 +88,4 @@
 ## 其他更新
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
+- 2026-09-29：亮色主题配色——对话/主区域底色改纯白 `#ffffff`，侧边栏改 `#f7f8f9`。侧边栏此前不铺底色、直接透出窗口底色（`bg-background-alt`），现改为消费设计系统里原本闲置的 `--color-sidebar`（展开态 aside 与折叠态轨道都铺底色）。暗色主题 `theme-zai-dark` 本次未改；`packages/ui/src/styles.css`、`packages/ui/src/app-shell/WorkspaceShellLayout.tsx`、`packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx`。

@@ -1539,9 +1539,10 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             isSidebarPanelVisible ? "opacity-100" : "pointer-events-none opacity-0",
           )}
         >
+          {/* FORK(其他更新): 侧边栏此前透出窗口底色，需自己铺 --color-sidebar 才能独立配色；见 FEATURES.md 的 其他更新 条目 */}
           <aside
             ref={sidebarContainerRef}
-            className="h-full overflow-hidden select-none"
+            className="h-full overflow-hidden select-none bg-sidebar"
             aria-hidden={!isSidebarPanelVisible}
           >
             <ScopedErrorBoundary

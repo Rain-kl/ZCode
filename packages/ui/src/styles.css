@@ -461,7 +461,8 @@ body {
 .theme-zai-light {
   --animated-gradient-text-strong: rgba(13, 13, 13, 1);
   --animated-gradient-text-soft: rgba(13, 13, 13, 0.22);
-  --color-background: #f8f8f8;
+  /* FORK(其他更新): 对话/主区域底色改为纯白 #ffffff；见 FEATURES.md 的 其他更新 条目 */
+  --color-background: #ffffff;
   --color-background-win-alt: #ececee;
   --color-background-alt: color-mix(in oklab, var(--color-background) 70%, transparent);
   --color-brand: #000000;
@@ -482,7 +483,8 @@ body {
   --color-selected: rgba(13, 13, 13, 0.05);
   --color-header: #ffffff;
   --color-panel: #ffffff;
-  --color-sidebar: #f0f0f0;
+  /* FORK(其他更新): 侧边栏底色 #f7f8f9，与纯白对话区拉开层次；见 FEATURES.md 的 其他更新 条目 */
+  --color-sidebar: #f7f8f9;
   --color-surface: rgba(13, 13, 13, 0.03);
   --color-surface-hover: rgba(13, 13, 13, 0.05);
   --color-card: #ffffff;
