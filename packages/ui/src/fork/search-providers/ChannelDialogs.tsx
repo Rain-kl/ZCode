@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ForkSearchProviderChannel } from "@zcode/shared";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
@@ -28,6 +28,19 @@ export function AddChannelDialog({
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const resetForm = () => {
+    setLabel("");
+    setApiKey("");
+    setApiKeyVisible(false);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setApiKeyVisible(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
@@ -35,15 +48,16 @@ export function AddChannelDialog({
     try {
       await onSubmit({ kind: "tavily", label: label.trim(), apiKey: apiKey.trim() });
       setOpen(false);
-      setLabel("");
-      setApiKey("");
+      resetForm();
+    } catch {
+      // 保存失败时保留表单与草稿，不清除 apiKey，错误信息由 controller.error 展示
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" disabled={disabled} className="self-start gap-1.5">
           <Plus className="size-4" />
@@ -84,6 +98,9 @@ export function AddChannelDialog({
               <ApiKeyInput
                 value={apiKey}
                 visible={apiKeyVisible}
+                placeholder={intl.formatMessage({
+                  id: "settings.searchProviders.apiKeyPlaceholder",
+                })}
                 onChange={setApiKey}
                 onBlur={() => {}}
                 onToggleVisibility={() => setApiKeyVisible((v) => !v)}
@@ -91,7 +108,15 @@ export function AddChannelDialog({
             </div>
           </div>
           <DialogFooter className="flex justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setOpen(false);
+                setApiKeyVisible(false);
+              }}
+            >
               {intl.formatMessage({ id: "settings.searchProviders.cancel" })}
             </Button>
             <Button type="submit" size="sm" disabled={submitting || !apiKey.trim()}>
@@ -121,30 +146,36 @@ export function EditChannelDialog({
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    setLabel(channel.label);
+    setApiKey(channel.apiKey);
+    setApiKeyVisible(false);
+  }, [channel.id, channel.label, channel.apiKey, open]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setApiKeyVisible(false);
+    }
+    onOpenChange(nextOpen);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!apiKey.trim()) return;
     setSaving(true);
     try {
       await onSave({ label: label.trim(), apiKey: apiKey.trim() });
+      setApiKeyVisible(false);
       onOpenChange(false);
+    } catch {
+      // 保存失败时保留表单与草稿，不清除 apiKey，错误信息由 controller.error 展示
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen) {
-          setLabel(channel.label);
-          setApiKey(channel.apiKey);
-          setApiKeyVisible(false);
-        }
-        onOpenChange(nextOpen);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
@@ -179,6 +210,9 @@ export function EditChannelDialog({
               <ApiKeyInput
                 value={apiKey}
                 visible={apiKeyVisible}
+                placeholder={intl.formatMessage({
+                  id: "settings.searchProviders.apiKeyPlaceholder",
+                })}
                 onChange={setApiKey}
                 onBlur={() => {}}
                 onToggleVisibility={() => setApiKeyVisible((v) => !v)}
@@ -186,7 +220,15 @@ export function EditChannelDialog({
             </div>
           </div>
           <DialogFooter className="flex justify-end gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setApiKeyVisible(false);
+                onOpenChange(false);
+              }}
+            >
               {intl.formatMessage({ id: "settings.searchProviders.cancel" })}
             </Button>
             <Button type="submit" size="sm" disabled={saving || !apiKey.trim()}>

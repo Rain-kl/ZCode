@@ -43,6 +43,7 @@ export function useForkSearchProviders(): ForkSearchProvidersController {
       setChannels(result.channels);
     } catch (caught) {
       setError(toMessage(caught));
+      throw caught;
     } finally {
       setBusy(false);
     }

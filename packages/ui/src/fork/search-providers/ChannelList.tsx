@@ -1,4 +1,4 @@
-import { useCallback, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useState } from "react";
 import {
   closestCenter,
   DndContext,
@@ -20,6 +20,16 @@ import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import type { ForkSearchProviderChannel } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ForkSearchProvidersController } from "./useForkSearchProviders.js";
@@ -31,30 +41,14 @@ function maskApiKey(key: string): string {
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
 }
 
-class InteractiveChannelPointerSensor extends PointerSensor {
-  static activators = [
-    {
-      eventName: "onPointerDown" as const,
-      handler: ({ nativeEvent }: ReactPointerEvent) => {
-        if (!nativeEvent.target || !(nativeEvent.target instanceof Element)) {
-          return true;
-        }
-        return (
-          nativeEvent.target.closest(
-            "button, input, textarea, select, a, [role=switch], [data-no-drag]",
-          ) === null
-        );
-      },
-    },
-  ];
-}
-
 function SortableChannelItem({
   channel,
   controller,
+  onDelete,
 }: {
   channel: ForkSearchProviderChannel;
   controller: ForkSearchProvidersController;
+  onDelete: () => void;
 }) {
   const { intl } = useZCodeIntl();
   const [editOpen, setEditOpen] = useState(false);
@@ -127,31 +121,39 @@ function SortableChannelItem({
             size="icon-sm"
             disabled={controller.busy}
             className="text-destructive hover:text-destructive"
-            onClick={() => {
-              void controller.remove(channel.id);
-            }}
+            onClick={onDelete}
             aria-label={intl.formatMessage({ id: "settings.searchProviders.remove" })}
           >
             <Trash2 className="size-3.5" />
           </Button>
         </div>
       </div>
-      <EditChannelDialog
-        channel={channel}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        onSave={async (patch) => {
-          await controller.update(channel.id, patch);
-        }}
-      />
+      {editOpen ? (
+        <EditChannelDialog
+          channel={channel}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSave={async (patch) => {
+            await controller.update(channel.id, patch);
+          }}
+        />
+      ) : null}
     </>
   );
 }
 
 export function ChannelList({ controller }: { controller: ForkSearchProvidersController }) {
   const { intl } = useZCodeIntl();
+  const [channelToDelete, setChannelToDelete] = useState<ForkSearchProviderChannel | null>(null);
+
+  // 基础 PointerSensor 配 4px 激活距离，避免与手柄普通点击冲突；
+  // 拖拽手柄独占绑定 listeners，行内开关/编辑/删除不排斥也不继承拖拽。
   const sensors = useSensors(
-    useSensor(InteractiveChannelPointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 4,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -187,17 +189,65 @@ export function ChannelList({ controller }: { controller: ForkSearchProvidersCon
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext
-        items={controller.channels.map((c) => c.id)}
-        strategy={verticalListSortingStrategy}
-      >
-        <div className="flex flex-col gap-2">
-          {controller.channels.map((channel) => (
-            <SortableChannelItem key={channel.id} channel={channel} controller={controller} />
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
+    <>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext
+          items={controller.channels.map((c) => c.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="flex flex-col gap-2">
+            {controller.channels.map((channel) => (
+              <SortableChannelItem
+                key={channel.id}
+                channel={channel}
+                controller={controller}
+                onDelete={() => setChannelToDelete(channel)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      {channelToDelete ? (
+        <AlertDialog
+          open={Boolean(channelToDelete)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setChannelToDelete(null);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {intl.formatMessage({ id: "settings.searchProviders.deleteConfirm" })}
+              </AlertDialogTitle>
+              {channelToDelete.label ? (
+                <AlertDialogDescription>{channelToDelete.label}</AlertDialogDescription>
+              ) : null}
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={controller.busy}>
+                {intl.formatMessage({ id: "settings.searchProviders.cancel" })}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={controller.busy}
+                onClick={async () => {
+                  try {
+                    await controller.remove(channelToDelete.id);
+                    setChannelToDelete(null);
+                  } catch {
+                    // 异常由 controller.error 记录展示，避免静默失败
+                  }
+                }}
+              >
+                {intl.formatMessage({ id: "settings.searchProviders.remove" })}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+    </>
   );
 }

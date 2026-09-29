@@ -30,6 +30,13 @@ test("栏目文案在两种语言里都有", async () => {
     "settings.searchProviders.unavailable",
     "settings.searchProviders.priorityHint",
     "settings.searchProviders.keySyncHint",
+    "settings.searchProviders.edit",
+    "settings.searchProviders.editTitle",
+    "settings.searchProviders.save",
+    "settings.searchProviders.cancel",
+    "settings.searchProviders.deleteConfirm",
+    "settings.searchProviders.labelPlaceholder",
+    "settings.searchProviders.apiKeyPlaceholder",
   ];
   for (const key of requiredKeys) {
     assert.ok(zh[key], `zh-CN 缺少 ${key}`);
@@ -48,6 +55,15 @@ test("组件与 hook 正常导出", async () => {
     await import("../src/fork/search-providers/SearchProvidersSection.js");
   const { useForkSearchProviders } =
     await import("../src/fork/search-providers/useForkSearchProviders.js");
+  const { ChannelList } = await import("../src/fork/search-providers/ChannelList.js");
+  const { AddChannelDialog, EditChannelDialog } =
+    await import("../src/fork/search-providers/ChannelDialogs.js");
+  const { ApiKeyInput } = await import("../src/settings/model-provider-section/ApiKeyInput.js");
+
   assert.equal(typeof SearchProvidersSection, "function");
   assert.equal(typeof useForkSearchProviders, "function");
+  assert.equal(typeof ChannelList, "function");
+  assert.equal(typeof AddChannelDialog, "function");
+  assert.equal(typeof EditChannelDialog, "function");
+  assert.equal(typeof ApiKeyInput, "function");
 });
