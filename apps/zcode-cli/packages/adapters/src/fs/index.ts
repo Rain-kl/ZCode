@@ -2,7 +2,7 @@
 // Node FileSystem Adapter
 // ============================================================
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto"; // FORK(edit-stale-guard): createHash 随哈希实现移入 fork 模块，见下方同标记区块
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, normalize, relative, sep } from "node:path";
@@ -47,6 +47,8 @@ import {
 } from "./text-metadata.js";
 import { readTextFileRangeFromNode } from "./text-range-reader.js";
 import { maybeThrowStorageFsFault } from "../storage/fs-fault-injection.js";
+// FORK(edit-stale-guard): 读、写与 range 三条路径必须共用同一套内容哈希，实现移到 fork 模块，避免各写一份 sha256 前缀后漂移
+import { hashBuffer } from "../fork/edit-stale-guard/content-hash.js";
 
 const DEFAULT_GLOB_MAX_RESULTS = 100;
 const DEFAULT_GREP_HEAD_LIMIT = 250;
@@ -787,9 +789,10 @@ function resolveAbsoluteRequestPath(path: string): string {
   return normalize(path);
 }
 
-function hashBuffer(buffer: Buffer): string {
-  return `sha256:${createHash("sha256").update(buffer).digest("hex")}`;
-}
+// FORK-BEGIN(edit-stale-guard)
+// 哈希实现整体移入 fork 模块（content-hash.ts），由上面的 import 提供，读写与 range 三处共用；
+// 上游若改这里，说明哈希算法换了口径，本 fork 的内容哈希判据必须跟着改。
+// FORK-END(edit-stale-guard)
 
 function formatByteCount(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;

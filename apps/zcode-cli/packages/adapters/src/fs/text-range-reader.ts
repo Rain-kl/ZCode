@@ -15,6 +15,8 @@ import {
   normalizeLineEndings,
   shouldNormalizeLineEndings,
 } from "./text-metadata.js";
+// FORK(edit-stale-guard): range 读取也要给 revision 补 hash，且必须与写路径、整文件读路径同一算法；见 FEATURES.md 的 edit-stale-guard 条目
+import { createContentHash, hashBuffer } from "../fork/edit-stale-guard/content-hash.js";
 
 const FAST_PATH_MAX_BYTES = 10 * 1024 * 1024;
 const ENCODING_SAMPLE_BYTES = 4096;
@@ -79,6 +81,11 @@ async function readRangeFast(
       id: revisionId(info.mtimeMs, info.size),
       mtimeMs: info.mtimeMs,
       sizeBytes: info.size,
+      // FORK-BEGIN(edit-stale-guard)
+      // hash 取整文件原始字节，不取上面 content：content 已被 offset/limit 切片、行尾也归一过，
+      // 拿它做哈希会让「只读了前几行」的 read-state 与整文件读/写路径永久对不上。
+      hash: hashBuffer(buffer),
+      // FORK-END(edit-stale-guard)
     },
   };
 }
@@ -93,6 +100,8 @@ async function readRangeStreaming(
   const selectedLines: string[] = [];
   const offsetLine = normalizeOffsetLine(request.offsetLine);
   const limitLines = normalizeLimitLines(request.limitLines);
+  // FORK(edit-stale-guard): 大文件走流式，拿不到整文件 buffer，只能边读边算整文件 hash；见 FEATURES.md 的 edit-stale-guard 条目
+  const contentHash = createContentHash();
   let carry = "";
   let lineIndex = 0;
   let bytesRead = 0;
@@ -112,6 +121,7 @@ async function readRangeStreaming(
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       sawAnyBytes = sawAnyBytes || buffer.byteLength > 0;
       bytesRead += buffer.byteLength;
+      contentHash.update(buffer);
       const text = decoder.write(buffer);
       const parts = `${carry}${text}`.split("\n");
       carry = parts.pop() ?? "";
@@ -156,6 +166,8 @@ async function readRangeStreaming(
       id: revisionId(info.mtimeMs, info.size),
       mtimeMs: info.mtimeMs,
       sizeBytes: info.size,
+      // FORK(edit-stale-guard): 与快速路径同为整文件原始字节 hash；见 FEATURES.md 的 edit-stale-guard 条目
+      hash: contentHash.digest(),
     },
   };
 }

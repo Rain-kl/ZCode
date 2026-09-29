@@ -214,6 +214,8 @@ export interface ReadFileStateEntry {
   revisionId?: string;
   mtimeMs?: number;
   sizeBytes?: number;
+  // FORK(edit-stale-guard): 读取时整文件的 adapter 内容哈希，Edit/Write 的 stale 判据优先用它，缺省回落 mtime/size；见 FEATURES.md 的 edit-stale-guard 条目
+  contentHash?: string;
 }
 
 export type ReadFileStateMap = Map<string, ReadFileStateEntry>;

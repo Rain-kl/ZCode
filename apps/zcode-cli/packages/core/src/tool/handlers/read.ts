@@ -376,6 +376,8 @@ function updateReadFileState(
     revisionId: revision?.id,
     mtimeMs: normalizeReadFileStateMtimeMs(revision?.mtimeMs ?? input.stat.mtimeMs),
     sizeBytes: input.stat.sizeBytes,
+    // FORK(edit-stale-guard): range 读的 revision 也带整文件 hash，Edit/Write 才能不靠 mtime/size 判 stale；见 FEATURES.md 的 edit-stale-guard 条目
+    contentHash: revision?.hash,
   });
 }
 

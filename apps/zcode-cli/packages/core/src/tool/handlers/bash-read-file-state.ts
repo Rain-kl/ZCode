@@ -153,6 +153,8 @@ async function backfillReadFileStateFromBash(input: BashReadFileStateEffectsInpu
             read.revision?.mtimeMs ?? stat.revision?.mtimeMs ?? stat.mtimeMs,
           ),
           sizeBytes: read.revision?.sizeBytes ?? stat.revision?.sizeBytes ?? stat.sizeBytes,
+          // FORK(edit-stale-guard): 这里的 read 是整文件读（truncated 已在上面返回），hash 可直接作为 stale 判据；见 FEATURES.md 的 edit-stale-guard 条目
+          contentHash: read.revision?.hash,
         };
         readFileState.set(
           createReadFileStateKey(resolvedPath, selected.offset ?? 1, selected.limit),
