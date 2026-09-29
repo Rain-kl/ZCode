@@ -43,7 +43,8 @@ import {
   cronListToolEntry,
   cronUpdateToolEntry,
 } from "./cron.js";
-import { offPeakCreateToolEntry, offPeakListToolEntry } from "./off-peak.js";
+// FORK(offpeak-removal): 闲时工具（off-peak）不再注册——它需要云端取号与 Coding Plan 连接，本 fork 不接云账号；
+// 保留 `./off-peak.js` 为死代码，只是没有任何注册路径再引用它。见 FEATURES.md 的 offpeak-removal 条目
 import {
   createEnterPlanModeToolEntry,
   enterPlanModeToolEntry,
@@ -89,8 +90,7 @@ export const builtInTools: ToolEntry[] = [
   cronListToolEntry,
   cronUpdateToolEntry,
   cronDeleteToolEntry,
-  offPeakCreateToolEntry,
-  offPeakListToolEntry,
+  // FORK(offpeak-removal): 两个闲时工具（创建 / 列表）原先在此注册；见 FEATURES.md 的 offpeak-removal 条目
   enterPlanModeToolEntry,
   exitPlanModeToolEntry,
   askUserQuestionToolEntry,
@@ -172,8 +172,7 @@ interface RegisterBuiltInToolsOptions {
   includeEscalate?: boolean;
   includeWorkflow?: boolean;
   includeAutomation?: boolean;
-  /** Off-Peak 会话内创建工具面；由 host 的 offPeakToolEnabled flag（灰度/远程门）驱动。 */
-  includeOffPeak?: boolean;
+  // FORK(offpeak-removal): 闲时工具开关随条目一并移除（条目已不在数组，留着只是假门）；见 FEATURES.md 的 offpeak-removal 条目
   /**
    * 动态工作流灰度门。**只有显式 false
    * 才下架** DYNAMIC_WORKFLOW_TOOL_NAMES：缺席代表调用方不参与灰度（TUI、headless、
@@ -247,12 +246,7 @@ export function registerBuiltInTools(
     ) {
       continue;
     }
-    if (
-      (entry.metadata.name === "OffPeakCreate" || entry.metadata.name === "OffPeakList") &&
-      options.includeOffPeak !== true
-    ) {
-      continue;
-    }
+    // FORK(offpeak-removal): 原先这里按开关过滤两个闲时工具；条目已下架，过滤随之删除。见 FEATURES.md 的 offpeak-removal 条目
     if (
       options.includeDynamicWorkflow === false &&
       DYNAMIC_WORKFLOW_TOOL_NAMES.has(entry.metadata.name)

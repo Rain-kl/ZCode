@@ -46,6 +46,22 @@
 - **影响的上游标记**：无新增上游文件——改的是 fork 自有文件（`packages/shared/src/fork/webdav-contract.ts`、`packages/desktop/src/host/fork/webdav/{backup-archive,local-snapshot,sync-engine,service}.ts`）与一处宿主装配（`packages/desktop/src/host/index.ts` 的 `FORK(identity-preset)` 标记）。
 - **验收**：`packages/desktop/test/forkWebdavPresets.test.ts`（7 个用例：往返、旧包不产生字段、哈希敏感、越界条目名被拒、本地只收合法 id、恢复旧包不动本地、整目录覆盖）。
 
+## 移除闲时任务入口 (offpeak-removal)
+
+- **状态**：已实现（2026-09-29）：工具面与创建路径两处入口撤掉，其余实现保留为死代码。
+- **需求背景**：闲时任务（off-peak）要云端取号服务 + 账号上的 Coding Plan 连接才能用。本 fork 正在去云账号与 Coding Plan 体系（见 `local-mode`），用户只用自定义服务提供商，于是这个功能**永远无法创建**，却仍留在模型上下文里：宿主下发的灰度开关一旦为真，两个工具（描述 + 每个 8 条模型指令 + JSON Schema）就会进入**每一次**模型请求（实测本机会话的工具面里就有它们），token 买来的是一个必然失败的工具，模型也可能去调它并拿到「没有可用连接」这类无用失败。
+- **修改内容**：掐掉两个入口，让功能在模型与执行两侧都不可达：
+  1. **工具面**：两个闲时工具从工具注册表下架，因此不进入 provider 契约（模型请求的 `tools`）。这个保证与云端灰度开关无关——不是「开关关了所以没有」，而是没有能被打开的门。
+  2. **创建路径**：协议宿主不再创建/注入闲时端口，创建整体不可达（协议字段保留，老宿主下发开关现在是无效果）。
+  3. **开关清理**：`includeOffPeak` 选项与运行时推导一并删除，不留「看起来还能开」的假门。
+- **修改文件**：上游接线 3 个文件、7 处 `FORK(offpeak-removal)`；移除守卫规则登记在 `scripts/fork-removal-rules.mjs`（该文件由扫描器 `scripts/check-fork-removals.mjs` 拆出，同时新增 `absentPatternsInFile` 规则类型）——`apps/zcode-cli/packages/core/src/tool/handlers/index.ts`（import、条目、选项、过滤分支）、`apps/zcode-cli/packages/core/src/runtime/helpers/runtime-tools.ts`（装配开关）、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts`（端口注入与 import）。新增 `apps/zcode-cli/packages/core/test/forkOffPeakRemoval.test.ts`（5 例）、`docs/features/offpeak-removal/**`。
+- **上游改动标记**：3 个上游文件、7 处（详见实现文档）。
+- **设计文档**：`docs/features/offpeak-removal/design.md`
+- **实现文档**：`docs/features/offpeak-removal/implementation.md`
+- **已知边界（保留为死代码，逐项写明为什么已是死路）**：`core` 的 off-peak handler 与 contracts schema、`OffPeakPort` 类型与上下文透传、协议字段（`offPeakTaskId` / `offPeakRunType` / `offPeakToolEnabled`）与 `off-peak-tool-policy.ts`、UI 的闲时区块与 store/hook、服务层（service/repo/server client/gateway）、桌面调度器的领号/派发/结算、运行时里的闲时轮身份与 denylist。**不删除的理由**：本仓库对上游能力一贯「入口屏蔽，不删除代码」（local-mode 同款），且该功能横跨 6 个包 50+ 文件，全删会把协议 schema 与整个 UI 卷进来。**不做数据迁移**：库里已有的闲时任务记录保持原样。
+- **上游收敛**：上游若把闲时任务的开关/工具改成默认关闭或移除，本条目可整体退场（摘除范围见实现文档 §2）；若上游继续演进该功能，保持移除即可，同步时按守卫报错逐处取舍。
+- **上游同步记录**：暂无。
+
 ## 系统指令：用户自定义提示词 (identity-preset)
 
 - **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步

@@ -107,7 +107,7 @@ import { createWorkspaceZCodeApp, ensureSessionModelAvailable } from "./workspac
 import { buildAppUsageSnapshot, resolveTzOffsetMs } from "./usage-stats-builder.js";
 import { createProtocolInteractionBroker } from "./interaction-broker.js";
 import { createProtocolAutomationPort } from "./automation-port.js";
-import { createProtocolOffPeakPort } from "./offpeak-port.js";
+// FORK(offpeak-removal): 不再引入闲时任务的端口工厂（不注入闲时端口）；见 FEATURES.md 的 offpeak-removal 条目
 import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
@@ -3376,12 +3376,10 @@ async function createRecord(
     // 这里把阻塞交互转换成 server-to-client JSON-RPC request，由 app 通过 response 释放 runtime。
     permissionBroker: createProtocolInteractionBroker(context),
     automationPort: createProtocolAutomationPort(context, () => ownSessionRecord),
-    // 只接入 Host 已开放的工具面；缺省不注入。复用现行异步工厂，
-    // 不恢复旧 deferred ModelAdapter/Registry overlay，也不改变 Session Selection。
-    ...(("offPeakToolEnabled" in params && params.offPeakToolEnabled === true) ||
-    context.appRuntimePreferences.offPeakToolEnabled === true
-      ? { offPeakPort: createProtocolOffPeakPort(context, () => ownSessionRecord) }
-      : {}),
+    // FORK(offpeak-removal): 原先按 Host 下发的 offPeakToolEnabled 注入 offPeakPort。闲时任务要求云端取号
+    // 服务与 Coding Plan 连接，本 fork 不接云账号，故端口与工具面一并撤掉——工具已不在注册表里，注入也没有出口。
+    // 仍是「Host 已开放的工具面才接入、缺省不注入」的既有做法，不恢复旧 deferred ModelAdapter/Registry overlay。
+    // 见 FEATURES.md 的 offpeak-removal 条目
     resolveInitialBashShellSelection: startupPreferences.resolveInitialBashShellSelection,
     // browser-use：agent.browsers.* 经此把命令转成 interaction/browserExecute 反向请求。
     browserControlPort: createProtocolBrowserControlBroker(context),

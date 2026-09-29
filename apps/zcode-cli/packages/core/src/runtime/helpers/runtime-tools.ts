@@ -65,9 +65,8 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     includeEscalate: Boolean(deps.workflowEscalatePort),
     includeWorkflow: Boolean(deps.workflowPort),
     includeAutomation: Boolean(deps.automationPort) && runtime.config.taskType !== "subagent_child",
-    // offPeakPort 只在 host 下发 offPeakToolEnabled 时注入（灰度/远程门在 host 端），
-    // 端口存在即代表曝光允许；subagent 子会话与 automation 同规则不暴露。
-    includeOffPeak: Boolean(deps.offPeakPort) && runtime.config.taskType !== "subagent_child",
+    // FORK(offpeak-removal): 原先这里按闲时端口的在场与否推导该工具开关；闲时工具已从注册表下架，
+    // 开关随之移除（协议侧的闲时灰度开关不再有下游）。见 FEATURES.md 的 offpeak-removal 条目
     // 动态工作流灰度门：与 off-peak 相反，
     // 这里不能用端口在场做判据——十个工具的端口在任何 CLI 里都装配齐全，灰度是 Host 的决定。
     // 取值收在 tool-allowlist.ts，与分支刷新那个入口共用同一个推导。

@@ -21,6 +21,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { REGISTRY } from "./fork-removal-rules.mjs";
 import { join, relative, resolve, sep } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
@@ -47,175 +48,10 @@ const MAX_FILE_BYTES = 5 * 1024 * 1024;
  * 检查器自身必须排除：REGISTRY 里以字面量形式写着被移除的符号名，
  * 不排除的话它每次都会命中自己。这不削弱检查——它不属于产品代码。
  */
-const IGNORED_FILES = new Set(["scripts/check-fork-removals.mjs"]);
-
-/**
- * 规则类型：
- * - absentFiles：这些路径必须不存在（被删除的文件不许复活）。
- * - absentPatterns：这些正则不许在任何被扫描文件中命中（被移除的符号/接口/端点不许复活）。
- * - requiredFiles：这些路径必须存在（我们的实现不许被上游版本挤掉）。
- * - requiredPatterns：在指定文件里必须命中（我们那版接线不许被上游版本覆盖）。
- */
-const REGISTRY = [
-  {
-    // 见 FEATURES.md 的 github-update 条目与 docs/features/github-update/design.md
-    featureId: "github-update",
-    absentFiles: [
-      {
-        path: "packages/desktop/src/main/manifestUpdateProvider.ts",
-        reason: "上游服务端 manifest 更新 provider，已由 GitHub Release feed 取代",
-      },
-      {
-        path: "packages/desktop/src/main/forceUpdateGuard.ts",
-        reason: "启动强更 gate，二开版本不接入上游强制下线",
-      },
-      {
-        path: "packages/desktop/src/main/forceUpdatePrompt.ts",
-        reason: "强更原生对话框，随强更 gate 一并移除",
-      },
-      { path: "packages/shared/src/forceUpdate.ts", reason: "强更最低版本比较，已无消费方" },
-    ],
-    absentPatterns: [
-      { pattern: /\bmaybeBlockStartupForForceUpdate\b/, reason: "启动强更 gate 调用入口" },
-      { pattern: /\brequestForceAutoUpdate\b/, reason: "强更触发的自动升级入口" },
-      { pattern: /\bForceAutoUpdateState\b/, reason: "强更状态类型" },
-      { pattern: /\bManifestUpdateProvider\b/, reason: "上游服务端 manifest provider" },
-      { pattern: /\bgetForceUpdateConfig\b/, reason: "强更配置的 RPC 服务方法" },
-      { pattern: /\bgetForceUpdateMinimalVersionFromConfig\b/, reason: "强更最低版本解析" },
-      { pattern: /\bresolveForceUpdateRequirement\b/, reason: "强更判定" },
-      { pattern: /\bForceUpdateConfig\b/, reason: "强更配置类型" },
-      { pattern: /configs\.forceUpdate\b/, reason: "client/configs 的强更字段" },
-      { pattern: /forceUpdate\.minimalVersion/, reason: "强更最低版本字段" },
-      {
-        pattern: /\/api\/v1\/releases\/electron\/manifest/,
-        reason: "上游 Electron 更新 manifest 端点",
-      },
-    ],
-    requiredFiles: [
-      {
-        path: "packages/desktop/src/main/fork/github-update/feed.ts",
-        reason: "GitHub Release feed 解析（本 fork 更新源）",
-      },
-      {
-        path: "packages/desktop/test/forkGithubUpdateFeed.test.ts",
-        reason: "feed 单测",
-      },
-    ],
-    requiredPatterns: [
-      {
-        path: "packages/desktop/src/main/autoUpdater.ts",
-        // 必须匹配调用点而不是 import：只写符号名的话，光靠 import 行就能满足规则，
-        // 上游版本把接线换掉也照样「通过」。
-        pattern: /applyForkGithubUpdateFeed\(\s*autoUpdater\b/,
-        reason:
-          "autoUpdater 必须仍由 fork 的 GitHub feed 接线（上游版本胜出会退回服务端 manifest）",
-      },
-      {
-        path: "packages/desktop/src/main/autoUpdater.ts",
-        pattern: /resolveUpdateReleaseChannel\(\s*options\.settingService\s*\)/,
-        reason: "初始化时必须按持久化的 preview 设置解析通道，否则 feed 基址与 channel 会对不上",
-      },
-      {
-        path: "packages/desktop/electron-builder.config.js",
-        pattern: /detectUpdateChannel:\s*true/,
-        reason: "关掉它会让 dev 包写 latest*.yml，顶掉稳定通道的更新元数据",
-      },
-      {
-        path: ".github/workflows/release.yml",
-        pattern: /latest-mac\.yml/,
-        reason: "发布流水线必须上传 macOS 更新元数据，否则客户端报找不到 channel 文件",
-      },
-      {
-        path: ".github/workflows/release.yml",
-        // 独立匹配赋值语句：只匹配 canary-build 的话，注释里的字样就能满足规则。
-        pattern: /pointer_tag="canary-build"/,
-        reason: "preview 通道的固定指针 Release",
-      },
-    ],
-  },
-  {
-    // 见 FEATURES.md 的 webfetch-direct-passthrough 条目与 docs/features/webfetch-direct-passthrough/design.md。
-    // 本功能没有「移除」，只有接线：判定 + 剩余预算透传是 8 个上游文件各 1 行。
-    // 上游同步时若某个文件取了上游版本，透传就从那一层断掉，而产品表现只是「又变回总结」——
-    // 不报错、不影响类型检查，属于最典型的静默失效，所以逐层钉住。
-    featureId: "webfetch-direct-passthrough",
-    absentFiles: [],
-    absentPatterns: [],
-    requiredFiles: [
-      {
-        path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/policy.ts",
-        reason: "直通判定与字数口径",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/fork/webfetch-direct-passthrough/remaining-tokens.ts",
-        reason: "剩余上下文预算投影",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/test/forkWebfetchDirectPassthrough.test.ts",
-        reason: "判定边界与处理器接线单测",
-      },
-    ],
-    requiredPatterns: [
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
-        // 匹配调用而不是 import：只写符号名的话，光靠 import 行就能满足规则。
-        pattern: /decideForkWebfetchDirectPassThrough\(\s*\{/,
-        reason: "WebFetch 必须仍走 fork 的直通判定（上游版本胜出会退回无条件总结）",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-processing.ts",
-        pattern: /remainingContextTokens:\s*context\.remainingContextTokens/,
-        reason: "判定必须读 runtime 透传的预算，不能退化成常量或自行估算",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
-        pattern: /resolveForkRemainingContextTokens\(\s*\{/,
-        reason: "剩余预算的唯一计算点",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-model-step.ts",
-        pattern: /^\s*remainingContextTokens,\s*$/m,
-        reason: "算出的预算必须送进工具执行参数",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "runtime → executor 的透传字段",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/tools.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason: "executeTools 必须转发预算",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/runtime/methods/turn-tools.ts",
-        pattern: /remainingContextTokens:\s*options\.remainingContextTokens/,
-        reason: "工具步必须把预算交给 executeTools",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "执行参数类型里的透传字段",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/call-runner.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason: "执行参数必须落进 ToolExecutionContext",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/executor/batch-runner.ts",
-        pattern: /remainingContextTokens:\s*options\?\.remainingContextTokens/,
-        reason:
-          "批量/调度层是白名单式重建 options，漏一行就静默丢字段（第一版实现正是在这里断的）；见同目录测试里的接线不变量用例",
-      },
-      {
-        path: "apps/zcode-cli/packages/core/src/tool/types.ts",
-        pattern: /remainingContextTokens\?: number;/,
-        reason: "handler 唯一的预算输入通道",
-      },
-    ],
-  },
-];
+const IGNORED_FILES = new Set([
+  "scripts/check-fork-removals.mjs",
+  "scripts/fork-removal-rules.mjs",
+]);
 
 function* walkFiles(directory) {
   let entries;
@@ -305,6 +141,28 @@ function checkFeature(feature, files) {
     }
     if (exists) {
       violations.push({ location: rule.path, reason: rule.reason, detail: "文件已复活" });
+    }
+  }
+
+  for (const rule of feature.absentPatternsInFile ?? []) {
+    let content;
+    try {
+      content = readFileSync(join(REPO_ROOT, rule.path), "utf8");
+    } catch {
+      // 文件读不到就无从确认「入口仍缺席」；上游重命名/删除该文件时按违规上报，交由人判断。
+      violations.push({
+        location: rule.path,
+        reason: rule.reason,
+        detail: "文件缺失，无法确认被移除的接线仍然缺席",
+      });
+      continue;
+    }
+    if (rule.pattern.test(content)) {
+      violations.push({
+        location: rule.path,
+        reason: rule.reason,
+        detail: "被移除的接线重新出现",
+      });
     }
   }
 
