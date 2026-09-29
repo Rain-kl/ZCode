@@ -106,7 +106,7 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 流水线还需要把元数据与 blockmap 一起上传（当前只上传安装包本体）：
 
 - stable（tag 构建）→ tag Release 额外包含 `latest.yml` / `latest-mac.yml` + `*.blockmap`；
-- dev（canary 构建）→ 保留原有 `dev-<sha>` 预发布，额外把同一批资产 `--clobber` 到 `canary-build` 指针 Release。
+- dev（canary 构建）→ 只把同一批资产 `--clobber` 到固定 tag `canary-build` 的指针 Release；自 2026-09-29 起不再建 dev-<sha8> 发布（见 `docs/specs/desktop-release.md`）。
 
 ## 验收场景
 

@@ -4,10 +4,10 @@
 
 ## 通道与触发
 
-| 通道     | 触发条件                              | 版本                                | Release                 |
-| -------- | ------------------------------------- | ----------------------------------- | ----------------------- |
-| `stable` | 推送 `v*.*.*` tag                     | tag 去掉 `v` 前缀（如 `3.14.3`）    | `v3.14.3`，正式 Release |
-| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | `dev-<sha8>`，预发布    |
+| 通道     | 触发条件                              | 版本                                | Release                                               |
+| -------- | ------------------------------------- | ----------------------------------- | ----------------------------------------------------- |
+| `stable` | 推送 `v*.*.*` tag                     | tag 去掉 `v` 前缀（如 `3.14.3`）    | `v3.14.3`，正式 Release                               |
+| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | 固定 tag `canary-build` 的指针发布（不建 dev-<sha8>） |
 
 手动 dispatch 只能选 `dev`；`stable` 必须由 tag 触发，否则流水线在 `resolve` 阶段直接失败，避免出现「人工填版本 + 无 tag」的稳定版本。
 
@@ -50,12 +50,11 @@
 ## 验收场景
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
-2. **dev 通道不污染稳定通道**：`dev-<sha8>` 以 `--prerelease --latest=false` 发布，`releases/latest` 仍指向稳定版本。
+2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
 3. **半套产物不发布**：`publish` 的显式条件要求两个平台构建都 `success`，任一平台失败则整体不创建 Release；tag 渠道下 `verify` 失败会先让两个构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
-5. **dev 通道只保留最新一份**：发布 `dev-<sha8>` 成功后，publish 步骤删除其它 `dev-*` 发布并连同 tag 清理（`gh release delete --cleanup-tag`）；清理是 best-effort，失败不影响本次发布，下一轮再试。
+5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，包只更新到 `canary-build`；指针上的资产每次只保留本次集成的一套（先上传本次资产、再删掉不属于本次的文件），因此 Releases 里始终只有一份 dev 包。
    - **指针发布 `canary-build` 只保留本次集成的资产**：资产名带版本号（`ZCode-<version>-<platform>-<arch>`），`gh release upload --clobber` 只覆盖同名文件，所以 publish 在「先上传本次资产、再删掉不属于本次的文件」。不清理时实测堆到 18 个资产 / 3 个版本（`dev.yml` / `dev-mac.yml` / `SHA256SUMS.txt` 名字固定，靠 `--clobber` 覆盖）。
-   - **清理范围必须限定在 `dev-*`**：`canary-build` 是 preview 更新通道的固定 tag 入口（客户端读它资产里的 `dev.yml` / `dev-mac.yml`，见「更新通道」），stable tag 发布是正式版本——放宽成「所有 prerelease」会让预览通道的更新检查直接失效。
 
 ## 边界与已知缺口
 

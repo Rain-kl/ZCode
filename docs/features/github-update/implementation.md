@@ -55,7 +55,7 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 
 - `electron-builder.config.js`：`detectUpdateChannel: false → true`。稳定版产出 `latest.yml` / `latest-mac.yml`，`3.14.3-dev.<sha>` 产出 `dev.yml` / `dev-mac.yml`。不打开时两种版本都写 `latest*.yml`，dev 包会顶掉稳定通道的元数据。
 - `release.yml`：macOS / Windows 的 artifact 上传列表补上 `*.blockmap` 与两个候选 yml 文件名（stable 与 dev 只会命中一个，`if-no-files-found: error` 只在全都没命中时触发）。
-- `release.yml` publish job：dev 构建在写完 `dev-<sha>` 预发布后，把同一批资产 `--clobber` 到固定 tag `canary-build` 的指针 Release（只覆盖资产、不移动 tag，因此不需要 force push）。
+- `release.yml` publish job：dev 构建把本次资产 `--clobber` 到固定 tag `canary-build` 的指针 Release（只覆盖资产、不移动 tag，因此不需要 force push）；不再创建 dev-<sha8> 发布。
 
 ### 2.4 防回归守卫：`pnpm fork:check-removals`
 

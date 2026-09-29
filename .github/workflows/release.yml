@@ -5,7 +5,8 @@ name: Release Desktop
 # 触发与产物（规则、验收场景与缺口清单见 docs/specs/desktop-release.md）
 # - 推送 `v*.*.*` tag：稳定发布。打包前用 tag 版本改写根 package.json，使程序内版本
 #   （app.getVersion()、About、遥测）、产物文件名与 Release tag 三者一致。
-# - 推送到 canary 分支：集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，发布为 `dev-<sha8>` 预发布。
+# - 推送到 canary 分支：集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，只更新固定 tag 的指针发布
+#   （`Dev channel (latest canary)`）——不建 dev-<sha> 发布，避免 Releases 堆成一串历史构建。
 # - workflow_dispatch：手动按 dev 通道跑一次；stable 通道必须在 vX.Y.Z tag 上触发。
 #
 # 仓库既有约定（改这条流水线前先读对应实现）
@@ -387,39 +388,33 @@ jobs:
             return 1
           }
 
-          if [[ "${PRERELEASE}" == "true" ]]; then
-            title="Dev build ${COMMIT:0:8}"
-            summary="canary 通道自动集成构建，非稳定版本。"
-          else
+          # 只有 stable 通道建 tag 发布。dev 通道不建 dev-<sha> 发布：客户端只认固定 tag 的
+          # 指针发布（见下方 FORK-BEGIN(github-update) 段），一提交一个 Release 只会把 Releases
+          # 页面堆成一串历史构建。
+          if [[ "${PRERELEASE}" != "true" ]]; then
             title="ZCode ${VERSION}"
             summary="稳定发布。"
-          fi
+            notes=$(printf '%s\n' \
+              "${summary}" \
+              "" \
+              "版本：${VERSION}" \
+              "提交：${COMMIT}" \
+              "构建流水线：${RUN_URL}" \
+              "" \
+              "macOS 安装包未公证，首次打开需右键“打开”，或在“系统设置 → 隐私与安全性”中放行；" \
+              "产物校验见 SHA256SUMS.txt。")
 
-          notes=$(printf '%s\n' \
-            "${summary}" \
-            "" \
-            "版本：${VERSION}" \
-            "提交：${COMMIT}" \
-            "构建流水线：${RUN_URL}" \
-            "" \
-            "macOS 安装包未公证，首次打开需右键“打开”，或在“系统设置 → 隐私与安全性”中放行；" \
-            "产物校验见 SHA256SUMS.txt。")
+            create_args=(--title "${title}" --notes "${notes}" --verify-tag)
+            edit_args=(--title "${title}" --notes "${notes}")
 
-          create_args=(--title "${title}" --notes "${notes}")
-          edit_args=(--title "${title}" --notes "${notes}")
-          if [[ "${PRERELEASE}" == "true" ]]; then
-            # dev 标签随提交创建；--latest=false 保证 releases/latest 仍指向稳定版本。
-            create_args+=(--prerelease --latest=false --target "${COMMIT}")
-            edit_args+=(--prerelease --latest=false)
+            # 先 edit 再回退 create：避免一次存在性探测失败（503）把已有 Release 误路由成 create(422)。
+            if ! retry gh release edit "${RELEASE_TAG}" "${edit_args[@]}"; then
+              retry gh release create "${RELEASE_TAG}" "${create_args[@]}"
+            fi
+            retry gh release upload "${RELEASE_TAG}" release-assets/* --clobber
           else
-            create_args+=(--verify-tag)
+            echo "dev 通道：跳过 dev-<sha> 发布，只更新指针发布"
           fi
-
-          # 先 edit 再回退 create：避免一次存在性探测失败（503）把已有 Release 误路由成 create(422)。
-          if ! retry gh release edit "${RELEASE_TAG}" "${edit_args[@]}"; then
-            retry gh release create "${RELEASE_TAG}" "${create_args[@]}"
-          fi
-          retry gh release upload "${RELEASE_TAG}" release-assets/* --clobber
 
           # FORK-BEGIN(github-update)
           # dev 通道还需要一份「固定地址」：客户端不知道下一次集成的提交号，无法按 tag 查询。
@@ -458,13 +453,13 @@ jobs:
               done <<< "${pointer_assets}"
             fi
 
-            # dev 通道只保留最新一份：每次推送都会产生一个 dev-<sha>，历史包没有保留价值，
-            # 留着只会让 Releases 变成流水账。best-effort——清理失败不影响本次发布，下一轮再试。
+            # 本流水线不再创建 dev-<sha> 发布；这里作为安全网清掉一切遗留或手工创建的 dev-*
+            # 发布（含 tag）——dev 通道的包只应存在于指针发布上。best-effort，失败不影响发布。
             # 只匹配 ^dev-：canary-build 是 preview 更新通道的固定 tag 入口（客户端读它资产里的
             # dev.yml / dev-mac.yml），stable 是正式发布——两者都不在「旧 prerelease」范围内，
             # 把这里放宽成「所有 prerelease」会直接断掉预览通道的更新检查。
             old_dev_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
-              | grep -E '^dev-' | grep -v -x "${RELEASE_TAG}" || true)
+              | grep -E '^dev-' || true)
             for old_dev_tag in ${old_dev_tags}; do
               gh release delete "${old_dev_tag}" --yes --cleanup-tag >/dev/null 2>&1 || true
             done
