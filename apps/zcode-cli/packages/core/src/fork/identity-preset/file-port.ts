@@ -86,7 +86,8 @@ async function loadActiveFromRoot(root: string): Promise<IdentityPresetLoadOutco
 }
 
 interface ReadProfilesResult {
-  profiles: Map<string, ResolvedIdentityPreset>;
+  // 内容层：注入开关属于功能状态（由 loadActive 注入），不属于每份配置。
+  profiles: Map<string, IdentityPresetContent>;
   /** 目录读不到时的 errno 码（EACCES / ENOTDIR / ENOENT…）；有值即表示「目录不可读」而非「配置不存在」。 */
   directoryErrorCode?: string;
 }
