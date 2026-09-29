@@ -443,5 +443,13 @@ jobs:
               fi
             fi
             retry gh release upload "${pointer_tag}" release-assets/* --clobber
+
+            # dev 通道只保留最新一份：每次推送都会产生一个 dev-<sha>，历史包没有保留价值，
+            # 留着只会让 Releases 变成流水账。best-effort——清理失败不影响本次发布，下一轮再试。
+            old_dev_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
+              | grep -E '^dev-' | grep -v -x "${RELEASE_TAG}" || true)
+            for old_dev_tag in ${old_dev_tags}; do
+              gh release delete "${old_dev_tag}" --yes --cleanup-tag >/dev/null 2>&1 || true
+            done
           fi
           # FORK-END(github-update)
