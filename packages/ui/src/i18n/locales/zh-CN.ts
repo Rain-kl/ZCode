@@ -1990,6 +1990,9 @@ const zhCN: Record<string, string> = {
   "settings.systemInstructions.title": "系统指令",
   "settings.systemInstructions.enable": "启用自定义系统指令",
   "settings.systemInstructions.enableHint": "关闭时使用 ZCode 默认提示词",
+  "settings.systemInstructions.injectDynamic": "注入动态提示词",
+  "settings.systemInstructions.injectDynamicHint":
+    "关闭后只注入你写的提示词；模型将不再收到环境信息、git 状态、沟通风格与上下文管理说明",
   "settings.systemInstructions.takesEffectOnNewSession":
     "保存与激活对新会话生效，正在进行的会话不受影响。",
   "settings.systemInstructions.profiles": "提示词配置",

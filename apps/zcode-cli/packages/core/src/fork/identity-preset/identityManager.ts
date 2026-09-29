@@ -9,10 +9,17 @@
 import type { ContextSection } from "../../context/types.js";
 import { estimateTokens } from "../../context/utils.js";
 
-export interface ResolvedIdentityPreset {
+/** 一份配置的内容（正文 + 展示名）。注入开关不属于内容：它是功能级状态，不随预设切换而变。 */
+export interface IdentityPresetContent {
   id: string;
   name: string;
   content: string;
+}
+
+/** 真正会被 builder 消费的配置：内容 + 本次生效的注入开关。 */
+export interface ResolvedIdentityPreset extends IdentityPresetContent {
+  /** 是否注入动态段（环境/git/风格指导/上下文管理）。false 时系统提示词只剩身份段与 Desktop Context。 */
+  injectDynamic: boolean;
 }
 
 export function buildIdentityPresetSection(preset: ResolvedIdentityPreset): ContextSection {
@@ -34,11 +41,13 @@ export function buildIdentityPresetSection(preset: ResolvedIdentityPreset): Cont
 export function resolveActiveIdentityPreset(input: {
   enabled: boolean;
   activeId: string | null;
-  profiles: ReadonlyMap<string, ResolvedIdentityPreset>;
+  injectDynamic: boolean;
+  profiles: ReadonlyMap<string, IdentityPresetContent>;
 }): ResolvedIdentityPreset | undefined {
   if (!input.enabled || input.activeId === null) return undefined;
   const preset = input.profiles.get(input.activeId);
   // 悬空 activeId 等同关闭：让会话回到系统默认，而不是让 agent 起不来。
   if (!preset || preset.content.trim().length === 0) return undefined;
-  return preset;
+  // 开关取自状态文件（功能级），不在配置正文里：切预设不该顺带改掉注入行为。
+  return { ...preset, injectDynamic: input.injectDynamic };
 }

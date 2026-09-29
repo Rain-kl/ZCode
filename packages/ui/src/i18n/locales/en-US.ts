@@ -2120,6 +2120,9 @@ const enUS: Record<string, string> = {
   "settings.systemInstructions.title": "System instructions",
   "settings.systemInstructions.enable": "Use custom system instructions",
   "settings.systemInstructions.enableHint": "Off keeps the ZCode default prompt",
+  "settings.systemInstructions.injectDynamic": "Inject dynamic prompt sections",
+  "settings.systemInstructions.injectDynamicHint":
+    "When off, only your prompt is injected — the model no longer receives environment info, git status, communication style, or context-management guidance",
   "settings.systemInstructions.takesEffectOnNewSession":
     "Saving and activating apply to new sessions; running sessions are unaffected.",
   "settings.systemInstructions.profiles": "Presets",

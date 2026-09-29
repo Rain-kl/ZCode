@@ -108,6 +108,9 @@ export class ContextBuilder {
     const candidateIdentity =
       isWorkflowActor || hasCustomSystemPrompt ? undefined : this.config.identityPreset;
     const customIdentity = candidateIdentity?.content.trim() ? candidateIdentity : undefined;
+    // 关闭「注入动态段」时整条 ③ 不发出：只剩身份段与 Desktop Context（它属 stable，不受此开关影响）。
+    // 功能未启用（customIdentity 缺席）时保持注入，行为与改动前一致。
+    const injectDynamic = customIdentity?.injectDynamic ?? true;
     // FORK-END(identity-preset)
 
     // 1. CLI / product prefix. Keep this as the short leading identity block.
@@ -144,7 +147,7 @@ export class ContextBuilder {
     // custom prompt 后仍会混入 Session Guidance / output style 等动态 system 段。
     // 工作流子代理跳过其中面向「与用户对话」的三段（desktop、Dynamic Behavior、session
     // guidance——契约里已把 Report outcomes faithfully 搬过去），保留 memory 与其后各段。
-    if (!hasCustomSystemPrompt) {
+    if (!hasCustomSystemPrompt && injectDynamic) {
       if (!isWorkflowActor && this.config.presentationSurface === "zcode_desktop") {
         sections.push(buildDesktopContextSection());
       }

@@ -90,8 +90,10 @@ name: 极简风格
 ### 5.3 `active.json`
 
 ```jsonc
-{ "schemaVersion": 1, "enabled": true, "activeId": "concise" }
+{ "schemaVersion": 1, "enabled": true, "activeId": "concise", "injectDynamic": true }
 ```
+
+`injectDynamic` 是**功能级**开关（不随预设切换而变，所以不进 `.md` 的 frontmatter）：缺省 `true`（注入动态段），`false` 时第 ③ 条整段不发出。旧状态文件没有该字段时按 `true` 处理，不能被判成「不认识」。
 
 - 缺失、损坏、`schemaVersion` 不认识 → 按 `{ enabled: false, activeId: null }` 处理并记 `warn` 日志；**不覆写文件**（避免把用户配置在一次读取失败中抹掉）。
 - `enabled: true` 但 `activeId` 为空或指向不存在的配置 → 等同关闭（回退系统默认），设置页给出提示。
@@ -113,12 +115,12 @@ name: 极简风格
 
 生效时替换系统提示词的**身份段**：
 
-| 系统消息       | 现状（默认）                                                                    | 启用自定义后                           |
-| -------------- | ------------------------------------------------------------------------------- | -------------------------------------- |
-| ① `cli_prefix` | `You are ZCode, an interactive coding agent`                                    | **不再发出**                           |
-| ② stable body  | 身份声明 + 安全行 + `# Harness`（+ Desktop 契约）                               | **换成用户配置正文**（+ Desktop 契约） |
-| ③ dynamic      | Communicating / Session guidance / Environment / Context management / gitStatus | 原样保留                               |
-| meta-user 附件 | skills 清单、`# agentsMd` + `# currentDate`                                     | 原样保留                               |
+| 系统消息       | 现状（默认）                                                                    | 启用自定义后                                                                              |
+| -------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| ① `cli_prefix` | `You are ZCode, an interactive coding agent`                                    | **不再发出**                                                                              |
+| ② stable body  | 身份声明 + 安全行 + `# Harness`（+ Desktop 契约）                               | **换成用户配置正文**（+ Desktop 契约）                                                    |
+| ③ dynamic      | Communicating / Session guidance / Environment / Context management / gitStatus | 由 `injectDynamic` 决定：`true` 原样保留；`false` 整段不发出（开关未开功能时恒为 `true`） |
+| meta-user 附件 | skills 清单、`# agentsMd` + `# currentDate`                                     | 原样保留                                                                                  |
 
 两个可预期的结构性后果，实现时按此验收：
 
@@ -180,6 +182,7 @@ fork 内部既有文件（自己新增、非上游）也要改的地方：`packa
 interface IForkIdentityPresetService {
   getState(): Promise<IdentityPresetState>; // { enabled, activeId, root, profiles: IdentityPresetSummary[] }
   setEnabled(enabled: boolean): Promise<IdentityPresetState>;
+  setInjectDynamic(injectDynamic: boolean): Promise<IdentityPresetState>;
   createProfile(input: {
     name: string;
     template: "default" | "skeleton";
@@ -235,6 +238,7 @@ function buildIdentityPresetSection(preset: ResolvedIdentityPreset): ContextSect
 2. 开启并激活某配置 → 新会话第一条 system 消息即用户内容，不再是 `cli_prefix`；第三条仍含 `# Environment` 与 `gitStatus`。
 3. 禁用 / 删除 / `active.json` 损坏 → 回退系统默认，应用可正常使用，日志有 `warn`。
 4. 工作流子代理与内置子代理的身份不因本功能改变。
+   4.1 关闭「注入动态提示词」后，新会话的 system 消息只剩一条（身份段 + Desktop Context）：不含 `# Environment`、`# Context management`、gitStatus；重新打开后恢复为两条。
 5. 设置 → Agent 能力 → 系统指令：可开关；列表显示全部配置及当前激活项。
 6. 新建配置选「默认」模板 → 编辑器预填当前身份段原文；保存后若未激活，提示词不变。
 7. 新建配置选「基础框架」模板 → 预填四小节骨架 + 安全行；可自由编辑保存。

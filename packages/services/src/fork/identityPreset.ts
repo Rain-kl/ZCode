@@ -18,6 +18,8 @@ import { createServiceDescriptor } from "../descriptors.js";
 export interface IForkIdentityPresetService {
   getState(): Promise<ForkIdentityPresetState>;
   setEnabled(enabled: boolean): Promise<ForkIdentityPresetState>;
+  /** 是否注入动态段（环境/git/风格指导/上下文管理）；关闭后系统提示词只剩身份段。 */
+  setInjectDynamic(injectDynamic: boolean): Promise<ForkIdentityPresetState>;
   createProfile(input: {
     name: string;
     template: ForkIdentityPresetTemplateId;

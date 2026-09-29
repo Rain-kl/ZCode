@@ -95,7 +95,12 @@ test("开关与激活项写入 active.json 并可读回", async () => {
 
   await store.setEnabled(true);
   await store.activate(id);
-  assert.deepEqual(await store.readState(), { schemaVersion: 1, enabled: true, activeId: id });
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: true,
+    activeId: id,
+    injectDynamic: true,
+  });
 });
 
 test("删除正在激活的配置会同时清空 activeId", async () => {
@@ -108,7 +113,12 @@ test("删除正在激活的配置会同时清空 activeId", async () => {
   await store.remove(id);
 
   assert.deepEqual(await store.list(), []);
-  assert.deepEqual(await store.readState(), { schemaVersion: 1, enabled: true, activeId: null });
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: true,
+    activeId: null,
+    injectDynamic: true,
+  });
 });
 
 test("原子写不留下临时文件", async () => {
@@ -125,7 +135,12 @@ test("目录不存在时按空配置处理，不报错", async () => {
   const store = createFileIdentityPresetStore({ root: join(tmpdir(), "identity-preset-absent") });
 
   assert.deepEqual(await store.list(), []);
-  assert.deepEqual(await store.readState(), { schemaVersion: 1, enabled: false, activeId: null });
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: false,
+    activeId: null,
+    injectDynamic: true,
+  });
 });
 
 test("active.json 损坏时降级为未启用且不覆写用户文件", async () => {
@@ -135,6 +150,28 @@ test("active.json 损坏时降级为未启用且不覆写用户文件", async ()
   await writeFile(statePath, "{ not json", "utf8");
 
   const store = createFileIdentityPresetStore({ root });
-  assert.deepEqual(await store.readState(), { schemaVersion: 1, enabled: false, activeId: null });
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: false,
+    activeId: null,
+    injectDynamic: true,
+  });
   assert.equal((await stat(statePath)).size, "{ not json".length);
+});
+
+test("动态段开关写入 active.json，且不影响开关与激活项", async () => {
+  const root = await createRoot();
+  const store = createFileIdentityPresetStore({ root });
+  const { id } = await store.create({ name: "concise", template: "skeleton" });
+  await store.setEnabled(true);
+  await store.activate(id);
+
+  await store.setInjectDynamic(false);
+
+  assert.deepEqual(await store.readState(), {
+    schemaVersion: 1,
+    enabled: true,
+    activeId: id,
+    injectDynamic: false,
+  });
 });

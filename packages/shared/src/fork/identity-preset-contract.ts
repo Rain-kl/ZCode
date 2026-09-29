@@ -62,6 +62,11 @@ export interface ForkIdentityPresetProfile {
 export interface ForkIdentityPresetState {
   enabled: boolean;
   activeId: string | null;
+  /**
+   * 是否注入「动态段」（# Environment、gitStatus、沟通风格、会话指导、上下文管理等）。
+   * 关闭后系统提示词只剩身份段与 Desktop Context——适合完全自己写提示词的人。
+   */
+  injectDynamic: boolean;
   /** enabled 为真但 activeId 指向不存在的配置；UI 据此提示「已回退系统默认」。 */
   activeMissing: boolean;
   /** 预设根目录绝对路径，便于用户排查「文件到底在哪」。 */
@@ -73,6 +78,8 @@ export interface ForkIdentityPresetStateFile {
   schemaVersion: number;
   enabled: boolean;
   activeId: string | null;
+  /** 缺省视为注入：旧状态文件没有这个字段，不能因此被判成「不认识」。 */
+  injectDynamic: boolean;
 }
 
 export function isValidForkIdentityPresetId(value: string): boolean {
@@ -144,22 +151,25 @@ export function parseForkIdentityPresetStateFile(raw: unknown): ForkIdentityPres
     schemaVersion: FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION,
     enabled: false,
     activeId: null,
+    injectDynamic: true,
   };
   if (typeof raw !== "object" || raw === null) return fallback;
   const record = raw as Record<string, unknown>;
   if (record.schemaVersion !== FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION) return fallback;
   if (typeof record.enabled !== "boolean") return fallback;
+  const injectDynamic = typeof record.injectDynamic === "boolean" ? record.injectDynamic : true;
   const activeId = record.activeId;
   if (activeId === null || activeId === undefined) {
-    return { ...fallback, enabled: record.enabled };
+    return { ...fallback, enabled: record.enabled, injectDynamic };
   }
   if (typeof activeId !== "string" || !isValidForkIdentityPresetId(activeId)) {
-    return { ...fallback, enabled: record.enabled };
+    return { ...fallback, enabled: record.enabled, injectDynamic };
   }
   return {
     schemaVersion: FORK_IDENTITY_PRESET_STATE_SCHEMA_VERSION,
     enabled: record.enabled,
     activeId,
+    injectDynamic,
   };
 }
 

@@ -725,6 +725,8 @@ export const TID_CONFIRM_DIALOG_CONFIRM = "confirm-dialog-confirm";
 // FORK(identity-preset): 设置 → Agent 能力 → 系统指令
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH = "settings-system-instructions-switch";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE = "settings-system-instructions-create";
+export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH =
+  "settings-system-instructions-dynamic-switch";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_TEMPLATE = "settings-system-instructions-template";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE = "settings-system-instructions-save";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT = "settings-system-instructions-edit";

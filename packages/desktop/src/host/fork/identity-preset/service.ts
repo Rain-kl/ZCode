@@ -24,6 +24,7 @@ export function createForkIdentityPresetService(input: {
     return {
       enabled: state.enabled,
       activeId: state.activeId,
+      injectDynamic: state.injectDynamic,
       // agent 侧遇到悬空 activeId 会静默回退系统默认；这里把它显式报给 UI，
       // 否则用户会以为「开着但没生效」是 bug。
       activeMissing:
@@ -45,6 +46,7 @@ export function createForkIdentityPresetService(input: {
   return {
     getState: buildState,
     setEnabled: (enabled) => mutate(() => store.setEnabled(enabled)),
+    setInjectDynamic: (injectDynamic) => mutate(() => store.setInjectDynamic(injectDynamic)),
     createProfile: (createInput) => mutate(() => store.create(createInput)),
     readProfile: (id) => store.read(id),
     saveProfile: (saveInput) => mutate(() => store.save(saveInput)),

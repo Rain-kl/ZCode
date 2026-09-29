@@ -2,7 +2,8 @@
  * 设置 → Agent 能力 → 系统指令。
  *
  * 总开关 + 多组提示词配置的增删改与激活。启用后，新会话的系统提示词「身份段」
- * （cli_prefix 与身份声明）被所选配置正文替换；环境、gitStatus、上下文管理等运行时事实段保留。
+ * （cli_prefix 与身份声明）被所选配置正文替换；「注入动态提示词」关闭时连第③条（环境、gitStatus、
+ * 沟通风格、上下文管理等）也整段不注入，只剩身份段与 Desktop Context。
  * 保存与激活都只写盘、不热切换，所以面板必须明说「对新会话生效」。
  *
  * 新建走标题右上角的小窗（只填名称与模板），创建后直接进编辑器手写正文：
@@ -39,6 +40,7 @@ import {
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_DIALOG,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_SUBMIT,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_DELETE,
+  TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH,
@@ -86,6 +88,8 @@ export function SystemInstructionsSection() {
 
   const state = controller.state;
   const enabled = state?.enabled ?? false;
+  // 缺省注入：旧 active.json 没有该字段，界面不能因为字段缺席就显示成关闭。
+  const injectDynamic = state?.injectDynamic ?? true;
   const profiles = state?.profiles ?? [];
   // state 为 null 是首次拉取（controller 订阅到位前），与「确实没有配置」区分开。
   const loading = state === null && controller.error === null;
@@ -132,6 +136,18 @@ export function SystemInstructionsSection() {
               disabled={controller.busy}
               onCheckedChange={(next: boolean) => void controller.setEnabled(next)}
               data-testid={TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH}
+            />
+          }
+        />
+        <SettingsRow
+          label={t("settings.systemInstructions.injectDynamic")}
+          description={t("settings.systemInstructions.injectDynamicHint")}
+          control={
+            <Switch
+              checked={injectDynamic}
+              disabled={controller.busy || !enabled}
+              onCheckedChange={(next: boolean) => void controller.setInjectDynamic(next)}
+              data-testid={TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH}
             />
           }
         />

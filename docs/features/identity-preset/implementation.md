@@ -285,3 +285,13 @@ messageCount: 5，role=system 2 条
 **验证记录**：`pnpm exec tsx --test packages/desktop/test/forkWebdavPresets.test.ts` → 7/7；全部 WebDAV 测试 33/33；本功能其余测试 41/41；`pnpm typecheck`、oxlint、oxfmt 均干净。设计第 10 节验收场景 11–13 分别对应用例「zip 往返保留系统指令配置」「恢复到旧备份（无 presets）时保持本地配置不动」「备份包内的越界预设文件名被拒绝」。
 
 **与设计的偏差**：无。
+
+## 8. 增强：是否注入动态段（injectDynamic）
+
+**需求**：写了完整自定义提示词的用户不希望内置的动态段（环境、gitStatus、沟通风格、会话指导、上下文管理）混进来；关闭后第 ③ 条整段不发出。
+
+**状态归属**：功能级开关，落在 `presets/active.json` 的 `injectDynamic`（缺省 `true`）。不放 `.md` 的 frontmatter——它不随预设切换而变；旧状态文件缺该字段时按 `true` 处理，且不因此被判成「不认识」（`describeUnhonoredState` 不检查这个字段）。
+
+**接线**：`IdentityPresetContent`（配置内容：id/name/content）与 `ResolvedIdentityPreset`（内容 + 本次生效的 `injectDynamic`）分成两层——开关来自状态而非配置正文，混在一个类型里会出现「字段必填但会被覆盖」的假象。builder 用 `customIdentity?.injectDynamic ?? true` 门控第 ③ 条；功能未启用时恒为 `true`，行为与改动前一致。
+
+**验证**：`forkIdentityPresetContract.test.ts`（缺省注入 / 显式 false / 非布尔回落）、`forkIdentityPresetStore.test.ts`（写入不影响开关与激活项）、`forkIdentityPresetContext.test.ts`（关闭后 system 消息只剩 1 条且不含 `# Environment`）。全量 84/84。

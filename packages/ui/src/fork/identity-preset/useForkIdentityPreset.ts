@@ -31,6 +31,8 @@ export interface ForkIdentityPresetController {
   refresh(): Promise<void>;
   loadProfile(id: string): Promise<ForkIdentityPresetProfile | null>;
   setEnabled(enabled: boolean): Promise<void>;
+  /** 是否注入动态段（环境/git/风格指导/上下文管理）。 */
+  setInjectDynamic(injectDynamic: boolean): Promise<void>;
   createProfile(input: {
     name: string;
     template: ForkIdentityPresetTemplateId;
@@ -108,6 +110,11 @@ export function useForkIdentityPreset(): ForkIdentityPresetController {
     setEnabled: async (enabled) => {
       if (!usable || !service) return;
       const next = await run(() => service.setEnabled(enabled));
+      if (next) setState(next);
+    },
+    setInjectDynamic: async (injectDynamic) => {
+      if (!service) return;
+      const next = await run(() => service.setInjectDynamic(injectDynamic));
       if (next) setState(next);
     },
     createProfile: async (input) => {

@@ -34,6 +34,12 @@
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录**：暂无。
 
+### 功能增强：是否注入动态提示词（2026-09-29）
+
+- **增强点**：系统指令栏目新增「注入动态提示词」开关。关闭后新会话的系统提示词第③条（`# Environment`、gitStatus、`# Communicating with the user`、`# Session-specific guidance`、`# Context management` 等）整段不注入，只剩身份段与 Desktop Context——适合完全自己写提示词的用法。开关是功能级状态（`presets/active.json` 的 `injectDynamic`，缺省注入），不随预设切换而变；模型将不再知道 cwd、平台、是否 git 仓库与对话会被压缩。
+- **影响的上游标记**：`apps/zcode-cli/packages/core/src/context/builder.ts` 的第③条门控条件（该文件的 `FORK(identity-preset)` 标记已计入）。
+- **验收**：`forkIdentityPresetContext.test.ts` 关闭后 system 消息只剩 1 条；`forkIdentityPresetContract.test.ts` / `forkIdentityPresetStore.test.ts` 覆盖缺省与落盘。
+
 ### 备份范围增强：同步范围改为 manifest 声明，并纳入子代理与命令（2026-09-29）
 
 - **增强点**：同步范围由 `packages/desktop/src/host/fork/webdav-sync/manifest.ts` 的清单声明，WebDAV 引擎不再包含业务逻辑；新增用户级子代理 `agents/`（`.md`/`.markdown`，递归）与自定义命令 `commands/`（`.md`，递归）两个同步条目——两者加载器都递归扫描，故条目显式声明 `recursive`，并新增「非递归条目拒收嵌套路径」规则。

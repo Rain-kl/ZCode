@@ -75,3 +75,22 @@ test("空白正文的自定义身份按未启用处理（公开配置边界也�
   assert.equal(result.systemMessages.length, 3);
   assert.equal(result.systemMessages[0]?.content, "You are ZCode, an interactive coding agent");
 });
+
+test("关闭动态段注入后，system 提示词只剩身份段", () => {
+  const result = build({
+    identityPreset: {
+      id: "pure",
+      name: "纯提示词",
+      content: "你是我的私人助理。",
+      injectDynamic: false,
+    },
+  });
+
+  // 第①条（cli_prefix）已被替换、第③条整段不发出 → 只剩 stable 那一条。
+  assert.equal(result.systemMessages.length, 1);
+  const only = String(result.systemMessages[0]?.content);
+  assert.equal(only, "你是我的私人助理。");
+  assert.doesNotMatch(only, /# Environment/);
+  assert.doesNotMatch(only, /# Context management/);
+  assert.doesNotMatch(only, /You are ZCode, an interactive coding agent/);
+});

@@ -18,7 +18,11 @@ import {
   parseForkIdentityPresetStateFile,
 } from "@zcode/shared";
 
-import { resolveActiveIdentityPreset, type ResolvedIdentityPreset } from "./identityManager.js";
+import {
+  resolveActiveIdentityPreset,
+  type IdentityPresetContent,
+  type ResolvedIdentityPreset,
+} from "./identityManager.js";
 import { parseIdentityPresetFile } from "./profile-file.js";
 
 export interface IdentityPresetLoadOutcome {
@@ -88,7 +92,7 @@ interface ReadProfilesResult {
 }
 
 async function readProfiles(root: string, activeId: string): Promise<ReadProfilesResult> {
-  const profiles = new Map<string, ResolvedIdentityPreset>();
+  const profiles = new Map<string, IdentityPresetContent>();
   const dir = join(root, FORK_IDENTITY_PRESET_PROFILES_DIRNAME);
   let fileNames: string[];
   try {

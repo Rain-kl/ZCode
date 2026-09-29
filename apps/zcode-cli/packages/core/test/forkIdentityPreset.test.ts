@@ -93,19 +93,32 @@ test("「默认」模板与 cli_prefix + identity 的当前原文逐字节一致
 test("激活项解析：关闭、悬空 id、命中", () => {
   const profiles = new Map([["concise", { id: "concise", name: "极简", content: "x" }]]);
   assert.equal(
-    resolveActiveIdentityPreset({ enabled: false, activeId: "concise", profiles }),
+    resolveActiveIdentityPreset({ enabled: false, activeId: "concise", injectDynamic: true, profiles }),
     undefined,
   );
-  assert.equal(resolveActiveIdentityPreset({ enabled: true, activeId: null, profiles }), undefined);
   assert.equal(
-    resolveActiveIdentityPreset({ enabled: true, activeId: "missing", profiles }),
+    resolveActiveIdentityPreset({ enabled: true, activeId: null, injectDynamic: true, profiles }),
     undefined,
   );
-  assert.deepEqual(resolveActiveIdentityPreset({ enabled: true, activeId: "concise", profiles }), {
-    id: "concise",
-    name: "极简",
-    content: "x",
-  });
+  assert.equal(
+    resolveActiveIdentityPreset({ enabled: true, activeId: "missing", injectDynamic: true, profiles }),
+    undefined,
+  );
+  assert.deepEqual(
+    resolveActiveIdentityPreset({
+      enabled: true,
+      activeId: "concise",
+      injectDynamic: false,
+      profiles,
+    }),
+    {
+      id: "concise",
+      name: "极简",
+      content: "x",
+      // 开关取自状态而非配置正文：同一份配置在开关变化时得到不同结果。
+      injectDynamic: false,
+    },
+  );
 });
 
 async function writePresetRoot(input: {
@@ -137,7 +150,12 @@ test("端口按 activeId 载入对应配置", async () => {
     profiles: { concise: "---\nname: 极简\n---\n\n只给结论。\n" },
   });
   const outcome = await createFileIdentityPresetPort({ root }).loadActive();
-  assert.deepEqual(outcome.preset, { id: "concise", name: "极简", content: "只给结论。" });
+  assert.deepEqual(outcome.preset, {
+    id: "concise",
+    name: "极简",
+    content: "只给结论。",
+    injectDynamic: true,
+  });
 });
 
 test("activeId 悬空时返回诊断且不生效", async () => {
