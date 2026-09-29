@@ -106,3 +106,4 @@
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
 - 2026-09-29：亮色主题配色——对话/主区域底色改纯白 `#ffffff`，侧边栏改 `#f7f8f9`。侧边栏此前不铺底色、直接透出窗口底色（`bg-background-alt`），现改为消费设计系统里原本闲置的 `--color-sidebar`（展开态 aside 与折叠态轨道都铺底色）。暗色主题 `theme-zai-dark` 本次未改；`packages/ui/src/styles.css`、`packages/ui/src/app-shell/WorkspaceShellLayout.tsx`、`packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx`。
+- 2026-09-29：首次启动默认值调整——界面字号 14px → 12px，颜色主题 `zai-dark` → 跟随系统（`system`）。只影响没有 localStorage 偏好的首次启动，已有偏好不被覆盖。字号必须同时改 JS 默认值与 CSS 变量，否则首屏先按 14px 渲染再跳；主题必须同时改 Zustand store 与 `useTheme` hook 的兜底值，否则两个主题入口分叉；`packages/ui/src/{lib/uiFontSize.ts,styles.css,store/index.ts,useTheme.ts}`。

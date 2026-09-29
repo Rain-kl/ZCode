@@ -55,7 +55,8 @@ body,
 }
 
 :root {
-  --ui-font-size: 14px;
+  /* FORK(其他更新): 首屏默认字号与 lib/uiFontSize.ts 的默认值保持一致，避免 JS 应用前先按 14px 渲染一跳；见 FEATURES.md 的 其他更新 条目 */
+  --ui-font-size: 12px;
 }
 
 body {
