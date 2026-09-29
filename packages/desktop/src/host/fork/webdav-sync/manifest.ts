@@ -24,8 +24,8 @@ import {
 const FORK_IDENTITY_PRESET_ROOT = FORK_IDENTITY_PRESET_ROOT_NAME;
 const FORK_IDENTITY_PRESET_PROFILES_DIR = `${FORK_IDENTITY_PRESET_ROOT}/${FORK_IDENTITY_PRESET_PROFILES_DIRNAME}`;
 
-/** 本地根：app 配置目录（`~/.zcode/v2`）或 storage root（`~/.zcode`）。 */
-export type ForkSyncBase = "appConfigDir" | "storageRoot";
+/** 本地根：app 配置目录（`~/.zcode/v2`）或 storage root（`~/.zcode`）或 CLI 配置目录（`~/.zcode/cli`）。 */
+export type ForkSyncBase = "appConfigDir" | "storageRoot" | "cliConfigDir";
 
 export type ForkSyncSource =
   | { type: "setting-service"; keys: readonly string[] }
@@ -127,6 +127,15 @@ export const FORK_WEBDAV_SYNC_MANIFEST: readonly ForkSyncEntry[] = [
       path: "commands",
       fileExtensions: [".md"],
       recursive: true,
+    },
+  },
+  {
+    // 网络搜索渠道：`~/.zcode/cli/fork/settings.json`（见 docs/features/search-providers/design.md §6.5）
+    archiveName: "cli-fork/settings.json",
+    source: {
+      type: "file-json",
+      base: "cliConfigDir",
+      path: "fork/settings.json",
     },
   },
 ];

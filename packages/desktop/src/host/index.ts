@@ -81,6 +81,9 @@ import { createForkWebdavService } from "./fork/webdav/index.js";
 import { createForkIdentityPresetService } from "./fork/identity-preset/index.js";
 // FORK(search-providers): 网络搜索渠道服务工厂；见 FEATURES.md 的 search-providers 条目
 import { createForkSearchProvidersService } from "./fork/search-providers/index.js";
+// FORK(search-providers): 渠道文件在 CLI 配置目录，同步解析依赖 homedir 与运行时常量；见 FEATURES.md 的 search-providers 条目
+import { homedir } from "node:os";
+import { ZCODE_AGENT_RUNTIME } from "@zcode/shared";
 // FORK(local-mode): 同步范围清单与按清单读写快照（引擎不认识具体资源）
 import {
   createManifestSnapshotApplier,
@@ -2915,8 +2918,13 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
           const forkStorageRoot = await resolveZCodeStorageRoot();
           // FORK(local-mode): 同步哪些资源由 webdav-sync 的清单声明；引擎只消费「条目名 → 文本」快照。
           const forkSyncOptions = {
+            // FORK(search-providers): 渠道文件在 CLI 配置目录，不在 appConfigDir/storageRoot；不得用 getDataBaseDir/getZCodeDataRootDir/getAppConfigDir/resolveZCodeStorageRoot，避免隔离 home 或下发环境变量时分叉；两侧解析必须一致，见 docs/features/search-providers/design.md §6.2
             resolveBase: (base: ForkSyncBase) =>
-              base === "appConfigDir" ? forkAppConfigDir : forkStorageRoot,
+              base === "appConfigDir"
+                ? forkAppConfigDir
+                : base === "cliConfigDir"
+                  ? join(homedir(), ZCODE_AGENT_RUNTIME.nativeConfigDir)
+                  : forkStorageRoot,
             settingService,
           };
           const forkWebdavService = createForkWebdavService({

@@ -187,6 +187,7 @@ test("扩展点：清单加一行即可同步新资源，webdav/ 引擎目录零
         "presets/profiles",
         "agents",
         "commands",
+        "cli-fork/settings.json",
       ],
     );
     assert.equal(
