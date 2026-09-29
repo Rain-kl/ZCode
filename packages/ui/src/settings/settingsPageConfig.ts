@@ -85,13 +85,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.configSync.title",
     groupId: "basics",
   },
-  // FORK(search-providers): 设置页新增「搜索」栏目；见 FEATURES.md 的 search-providers 条目
-  {
-    id: "searchProviders",
-    icon: Search,
-    titleId: "settings.searchProviders.title",
-    groupId: "basics",
-  },
   // FORK(identity-preset): 系统指令栏目；见 FEATURES.md 的 identity-preset 条目
   {
     id: "systemInstructions",
@@ -121,6 +114,15 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "mcp",
     icon: Cable,
     titleId: "settings.mcpTitle",
+    groupId: "agentCapabilities",
+  },
+  // FORK(search-providers): 网络搜索栏目；见 FEATURES.md 的 search-providers 条目
+  // 放在 agentCapabilities（紧随 mcp）而不是 basics：它配置的是 agent 的外部能力来源，
+  // 与「MCP 服务器」同类；待在 basics 里会与工作区文件搜索（.zcodeignore）混为一谈。
+  {
+    id: "searchProviders",
+    icon: Search,
+    titleId: "settings.searchProviders.title",
     groupId: "agentCapabilities",
   },
   {

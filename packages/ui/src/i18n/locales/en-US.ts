@@ -2200,8 +2200,8 @@ const enUS: Record<string, string> = {
   "settings.configSync.conflictDialogBody":
     'Choose a side: "Keep local and back up" uploads your current setup as a new snapshot; "Restore remote" overwrites this machine with the newest remote snapshot (the current local state is backed up first).',
   "settings.configSync.conflictLater": "Later",
-  // FORK(search-providers): Settings → Basics → Search; see FEATURES.md search-providers entry
-  "settings.searchProviders.title": "Search",
+  // FORK(search-providers): Settings → Agent capabilities → Web Search; see FEATURES.md search-providers entry
+  "settings.searchProviders.title": "Web Search",
   "settings.searchProviders.serverChannel": "Server-side search (decided by model config)",
   "settings.searchProviders.serverChannelEnabled": "Enabled",
   "settings.searchProviders.serverChannelDisabled": "Disabled",

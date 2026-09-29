@@ -1985,7 +1985,7 @@ const zhCN: Record<string, string> = {
   "settings.uiFontSizeDescription": "调整应用界面的文字大小，图标和布局尺寸不受影响。",
   "settings.systemTitle": "常规",
   // FORK(local-mode): 设置 → 基础设置 → 同步（WebDAV 备份恢复）
-  "settings.configSync.title": "同步",
+  "settings.configSync.title": "备份与恢复",
   // FORK(identity-preset): 设置 → Agent 能力 → 系统指令
   "settings.systemInstructions.title": "系统指令",
   "settings.systemInstructions.enable": "启用自定义系统指令",
@@ -2067,8 +2067,8 @@ const zhCN: Record<string, string> = {
   "settings.configSync.conflictDialogBody":
     "选择保留哪一侧：选「以本地为准备份」会把你当前的配置上传为新备份；选「用远端最新恢复」会用远端最新备份覆盖本机（当前本地状态会先自动备份）。",
   "settings.configSync.conflictLater": "稍后再说",
-  // FORK(search-providers): 设置 → 基础设置 → 搜索；见 FEATURES.md 的 search-providers 条目
-  "settings.searchProviders.title": "搜索",
+  // FORK(search-providers): 设置 → Agent 能力 → 网络搜索；见 FEATURES.md 的 search-providers 条目
+  "settings.searchProviders.title": "网络搜索",
   "settings.searchProviders.serverChannel": "服务端搜索（由模型配置决定）",
   "settings.searchProviders.serverChannelEnabled": "已启用",
   "settings.searchProviders.serverChannelDisabled": "未启用",
