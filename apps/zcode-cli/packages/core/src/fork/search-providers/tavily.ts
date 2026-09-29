@@ -44,33 +44,54 @@ export function buildTavilySearchRequest(input: {
   };
 }
 
+interface NormalizedTavilyEntry {
+  url: string;
+  title?: string;
+  pageAge?: string;
+  content: string;
+}
+
+/**
+ * 校验并规范化单条 Tavily 结果。
+ * URL 必须为非空字符串；标题若为空串则回退到 undefined（便于 items 表达与 text 回退到 url）。
+ */
+function normalizeTavilyEntry(entry: unknown): NormalizedTavilyEntry | undefined {
+  if (!isRecord(entry) || typeof entry.url !== "string" || entry.url === "") {
+    return undefined;
+  }
+  return {
+    url: entry.url,
+    title: typeof entry.title === "string" && entry.title !== "" ? entry.title : undefined,
+    pageAge:
+      // 实测：真实响应默认不含 published_date（只在显式请求或 topic=news 时出现）。
+      // 这里保持宽容读取、但不为了它加 include_published_date（beta 且无消费方）。
+      typeof entry.published_date === "string" && entry.published_date !== ""
+        ? entry.published_date
+        : undefined,
+    content: typeof entry.content === "string" ? entry.content.trim() : "",
+  };
+}
+
 export function mapTavilyResponse(payload: unknown): { items: TavilyResultItem[]; text: string } {
   if (!isRecord(payload) || !Array.isArray(payload.results)) {
     throw new Error("Tavily response has no results array");
   }
 
-  const items = payload.results.flatMap((entry): TavilyResultItem[] => {
-    if (!isRecord(entry) || typeof entry.url !== "string" || entry.url === "") return [];
-    return [
-      {
-        url: entry.url,
-        title: typeof entry.title === "string" && entry.title !== "" ? entry.title : undefined,
-        pageAge:
-          // 实测：真实响应默认不含 published_date（只在显式请求或 topic=news 时出现）。
-          // 这里保持宽容读取、但不为了它加 include_published_date（beta 且无消费方）。
-          typeof entry.published_date === "string" && entry.published_date !== ""
-            ? entry.published_date
-            : undefined,
-      },
-    ];
+  const entries: NormalizedTavilyEntry[] = payload.results.flatMap((entry) => {
+    const normalized = normalizeTavilyEntry(entry);
+    return normalized !== undefined ? [normalized] : [];
   });
 
-  const text = payload.results
-    .flatMap((entry) => {
-      if (!isRecord(entry) || typeof entry.url !== "string") return [];
-      const title = typeof entry.title === "string" ? entry.title : entry.url;
-      const content = typeof entry.content === "string" ? entry.content.trim() : "";
-      return [`- ${title} (${entry.url})${content ? `: ${content}` : ""}`];
+  const items: TavilyResultItem[] = entries.map((entry) => ({
+    url: entry.url,
+    title: entry.title,
+    pageAge: entry.pageAge,
+  }));
+
+  const text = entries
+    .map((entry) => {
+      const displayTitle = entry.title ?? entry.url;
+      return `- ${displayTitle} (${entry.url})${entry.content ? `: ${entry.content}` : ""}`;
     })
     .join("\n");
 

@@ -109,7 +109,29 @@ test("published_date 缺席时 pageAge 为 undefined（真实响应默认不含�
     query: "q",
     results: [{ url: "https://a.com", title: "T", content: "c", score: 0.5, raw_content: null }],
   });
-  assert.equal(mapped.items[0]?.pageAge, undefined);
+  const [firstItem] = mapped.items;
+  assert.ok(firstItem, "期望至少解析出一条结果");
+  assert.equal(firstItem.pageAge, undefined);
+});
+
+test("mapTavilyResponse 过滤空 url 并将空 title 回退到 url（items 与 text 语义一致）", () => {
+  const mapped = mapTavilyResponse({
+    query: "q",
+    results: [
+      { title: "", url: "https://fallback.com", content: "snippet 1" },
+      { title: "有标题无 URL", url: "", content: "snippet 2" },
+      { title: "正常条目", url: "https://normal.com", content: "snippet 3" },
+    ],
+  });
+  assert.equal(mapped.items.length, 2);
+  assert.deepEqual(mapped.items, [
+    { url: "https://fallback.com", title: undefined, pageAge: undefined },
+    { url: "https://normal.com", title: "正常条目", pageAge: undefined },
+  ]);
+  assert.match(mapped.text, /- https:\/\/fallback\.com \(https:\/\/fallback\.com\): snippet 1/);
+  assert.match(mapped.text, /- 正常条目 \(https:\/\/normal\.com\): snippet 3/);
+  assert.ok(!mapped.text.includes("有标题无 URL"), "空 url 条目不应出现在 text 中");
+  assert.ok(!mapped.text.includes("()"), "不应拼出空 url 的括号");
 });
 
 test("渠道：HTTP 错误转成带状态码的失败，超时转成超时失败", async () => {
@@ -162,9 +184,13 @@ test("渠道：成功响应产出中立结果，且不发 egressPolicy（代理�
     },
   });
   const result = await channel.search({ query: "q", maxResults: 2 });
-  assert.equal(seen?.egressPolicy, undefined);
+  assert.ok(seen, "期望捕获到发出的 HTTP 请求");
+  assert.equal(seen.egressPolicy, undefined);
   assert.equal(result.finishReason, "stop");
-  assert.deepEqual(result.toolResults?.[0]?.output, [
+  assert.ok(result.toolResults, "期望工具调用结果存在");
+  const [firstToolResult] = result.toolResults;
+  assert.ok(firstToolResult, "期望存在首个工具调用结果");
+  assert.deepEqual(firstToolResult.output, [
     { url: "https://a.com", title: "T", pageAge: undefined },
   ]);
 });
@@ -248,6 +274,8 @@ test("渠道：透传自定义 timeoutMs 与 signal", async () => {
     },
   });
   await channel.search({ query: "q", signal: controller.signal });
+  assert.ok(seenRequest, "期望捕获到请求对象");
+  assert.ok(seenOptions, "期望捕获到请求选项");
   assert.equal((seenRequest as { timeoutMs?: number }).timeoutMs, 15_000);
   assert.equal((seenOptions as { signal?: AbortSignal }).signal, controller.signal);
 });
