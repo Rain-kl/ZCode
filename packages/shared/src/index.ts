@@ -247,6 +247,8 @@ export * from "./fork/webdav-contract.js";
 export * from "./fork/search-providers-contract.js";
 // FORK(identity-preset): 系统指令——用户自定义身份段的文件契约与模板；见 FEATURES.md 的 identity-preset 条目
 export * from "./fork/identity-preset-contract.js";
+// FORK(tool-modes): 功能组——工具模式与工具注入开关的契约；见 FEATURES.md 的 tool-modes 条目
+export * from "./fork/tool-modes-contract.js";
 export * from "./model-provider-family.js";
 export * from "./provider-family-connection-selection.js";
 export * from "./provider-provisioning.js";
