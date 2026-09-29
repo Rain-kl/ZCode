@@ -444,6 +444,20 @@ jobs:
             fi
             retry gh release upload "${pointer_tag}" release-assets/* --clobber
 
+            # 指针发布只保留本次集成的资产。资产名里带版本号（ZCode-<version>-<platform>-<arch>），
+            # `--clobber` 只覆盖同名文件，因此不显式清理就会把每个历史版本的包一直堆在
+            # 「Dev channel (latest canary)」上（实测堆到 18 个资产 / 3 个版本）。
+            # 顺序是先传后清，避免出现指针没有任何资产的窗口。best-effort，失败不影响发布。
+            keep_assets=$(cd release-assets && printf '%s\n' *)
+            pointer_assets=$(gh release view "${pointer_tag}" --json assets --jq '.assets[].name' 2>/dev/null || true)
+            if [[ -n "${pointer_assets}" ]]; then
+              while IFS= read -r pointer_asset; do
+                if ! printf '%s\n' "${keep_assets}" | grep -qxF "${pointer_asset}"; then
+                  gh release delete-asset "${pointer_tag}" "${pointer_asset}" --yes >/dev/null 2>&1 || true
+                fi
+              done <<< "${pointer_assets}"
+            fi
+
             # dev 通道只保留最新一份：每次推送都会产生一个 dev-<sha>，历史包没有保留价值，
             # 留着只会让 Releases 变成流水账。best-effort——清理失败不影响本次发布，下一轮再试。
             # 只匹配 ^dev-：canary-build 是 preview 更新通道的固定 tag 入口（客户端读它资产里的
