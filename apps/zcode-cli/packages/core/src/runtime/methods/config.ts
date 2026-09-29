@@ -141,7 +141,7 @@ export function getTools(this: AgentRuntimeInternal, model?: Model): ModelToolCo
     this.cachedTools = filterRuntimeVisibleTools.call(this, this.registry.toContracts());
   }
   return this.cachedTools
-    .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch.call(this, model))
+    .filter((tool) => tool.name !== "WebSearch" || shouldExposeWebSearch(model))
     .map((tool) =>
       projectToolModelContract(tool, this.registry.get(tool.name), {
         model,
@@ -272,13 +272,13 @@ function filterRuntimeVisibleTools(
 // 导出该函数只为可测（原本是模块私有），判定语义的改动见下一行标记；
 // 见 FEATURES.md 的 search-providers 条目与 docs/features/search-providers/design.md §5.2
 export function shouldExposeWebSearch(
-  this: { homeDir?: string; sessionId?: unknown },
   model?: Model,
+  options?: { homeDir?: string },
   // FORK-BEGIN(search-providers)
 ): boolean {
   // 无 Model 的调用只枚举完整注册表，供持久化和 UI 元数据使用；真实执行始终传入活动模型。
   if (!model) return true;
-  return countAvailableSearchChannels({ model, ...(this.homeDir ? { homeDir: this.homeDir } : {}) }) > 0;
+  return countAvailableSearchChannels({ model, ...(options?.homeDir ? { homeDir: options.homeDir } : {}) }) > 0;
   // FORK-END(search-providers)
 }
 import { resolveExecutionState } from "@zcode/shared";
