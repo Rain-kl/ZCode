@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import {
   ZCODE_AGENT_RUNTIME,
   resolveForkSearchProvidersFilePath,
@@ -26,6 +26,17 @@ test("cliConfigDir 拼接后与 resolveForkSearchProvidersFilePath 解析到同�
     const home = homedir();
     const resolvedCliBase = join(home, ZCODE_AGENT_RUNTIME.nativeConfigDir);
     const fullPath = join(resolvedCliBase, entry.source.path);
-    assert.equal(fullPath, resolveForkSearchProvidersFilePath(home));
+    // 跨平台比对前用 resolve 归一化，避免 Windows 下斜杠与反斜杠混合导致字符串全等失败
+    assert.equal(resolve(fullPath), resolve(resolveForkSearchProvidersFilePath(home)));
   }
+});
+
+test("Windows 路径分隔符下归一化后指向同一个绝对路径（模拟 Windows 跨平台契约）", () => {
+  const winHome = "C:\\Users\\testuser";
+  const winCliBase = win32.join(winHome, ZCODE_AGENT_RUNTIME.nativeConfigDir);
+  const winFullPath = win32.join(winCliBase, "fork/settings.json");
+  const winSharedPath = resolveForkSearchProvidersFilePath(winHome);
+  // resolveForkSearchProvidersFilePath 内部使用 "/" 拼接以兼容浏览器环境
+  assert.notEqual(winFullPath, winSharedPath, "未经 resolve 归一化时在 Windows 语义下混合分隔符不直接字符串相等");
+  assert.equal(win32.resolve(winFullPath), win32.resolve(winSharedPath), "经 resolve 归一化后路径语义完全一致");
 });
