@@ -8,6 +8,8 @@ import {
   type ModelRequest,
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
+// FORK(nonstream-via-stream): 非流式调用改走流式通道，见 FEATURES.md 的 nonstream-via-stream 条目
+import { withNonStreamingViaStream } from "../../fork/nonstream-via-stream/model.js";
 import type { RuntimeModelFactoryInput } from "../types.js";
 import { resolveModelRetryBudgetFromTaskType } from "./model-request-session-type.js";
 
@@ -23,10 +25,15 @@ export function createRuntimeModel(
       recoverable: true,
     });
   }
-  return withRuntimeInvocationLayer(
-    runtime,
-    runtime.modelFactory({ ...input, selection: input.selection }),
+  // FORK-BEGIN(nonstream-via-stream)
+  // 这里是全部 Model 的唯一出口（全仓库只有本函数调用 runtime.modelFactory），因此在本层适配
+  // 即可覆盖主对话、子代理、压缩、标题与 WebFetch 处理等所有调用方。
+  // 必须放在 invocation layer 的**外层**：适配器要调用「带调用上下文的 streamText」，
+  // 让重试预算与准入闸门作用在真正发出的那次请求上，而不是依赖环境继承。
+  return withNonStreamingViaStream(
+    withRuntimeInvocationLayer(runtime, runtime.modelFactory({ ...input, selection: input.selection })),
   );
+  // FORK-END(nonstream-via-stream)
 }
 
 /**

@@ -102,6 +102,20 @@
 - **已知边界**：判据是字节级的，只改行尾（CRLF↔LF）或 BOM 的重写也算 stale，模型需重新 Read；`Read` 的 `file_unchanged` 短路（`read.ts` 的 `isCachedReadFresh`）仍按 mtime+size，属同族残留但不在本次范围。
 - **上游同步记录**：暂无。
 
+## 非流式走流式通道 (nonstream-via-stream)
+
+- **状态**：已实现（2026-09-29），未做真实 provider 端到端验证（见实现文档 §4）
+- **需求背景**：应用对 provider 有两条请求通道——流式（主对话/子代理）与非流式（会话标题、上下文压缩、WebFetch 内容处理、子代理汇总）。第三方中转存在只把流式做对的情况：非流式返回的响应体不符合 OpenAI 兼容协议（实测 `{"data":{"choices":[...]}}`，`choices` 未在顶层 → AI SDK 校验失败），或该通道直接不可用（500 `empty response content`）。后果是所有非流式调用方一起失效，而流式正常。
+- **修改内容**：新增 `Model` 端口层的 stream→non-stream 适配器——非流式调用改为发起**流式**请求，在本地把流事件汇总成一次性结果；流式行为原样透传，`bind()` 递归包装。汇总语义逐条对齐 core 流式分支（reasoning 按 id 分桶、工具调用按 id 去重、`finish` 提供 finishReason/usage/providerMetadata、`error` 经 `normalizeStreamError` 抛出），复用 `getOrCreateReasoningBlock` 与 `normalizeStreamError`，不复制归并规则。接线点在 `createRuntimeModel`——全仓库唯一调用 `runtime.modelFactory` 的位置，因此一处覆盖主对话、子代理、压缩、标题与 WebFetch 处理。
+- **修改文件**：
+  - 新增 `apps/zcode-cli/packages/core/src/fork/nonstream-via-stream/model.ts`、`apps/zcode-cli/packages/core/test/forkNonstreamViaStream.test.ts`（7 例）、`docs/features/nonstream-via-stream/**`。
+  - 上游接线：`apps/zcode-cli/packages/core/src/runtime/methods/runtime-model.ts`（1 个单点标记 + 1 对 `FORK-BEGIN/END`）。
+- **上游改动标记**：1 个上游文件、2 处 `FORK(nonstream-via-stream)`。
+- **设计文档**：`docs/features/nonstream-via-stream/design.md`
+- **实现文档**：`docs/features/nonstream-via-stream/implementation.md`
+- **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
+- **上游同步记录**：暂无。
+
 ## 其他更新
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
