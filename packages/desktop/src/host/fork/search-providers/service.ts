@@ -24,7 +24,7 @@ export function createForkSearchProvidersService(options?: {
   store?: ForkSearchProvidersFileStore;
   logger?: { warn(message: string, detail?: unknown): void };
 }): IForkSearchProvidersService {
-  // FORK(search-providers): 路径的唯一真源是 CLI 配置目录（homedir + nativeConfigDir）。
+  // 路径的唯一真源是 CLI 配置目录（homedir + nativeConfigDir）。
   // 刻意不用 getDataBaseDir()/getZCodeDataRootDir()：它们在隔离 home / ZCODE_DATA_BASE_DIR
   // 下会与 CLI 的解析分叉，症状是「UI 配了、模型用不到」。见 design.md §6.2。
   const store =

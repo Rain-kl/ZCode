@@ -8,7 +8,7 @@
 
 ## 1. 落地位置与职责划分
 
-本特性遵循二开规范优先级：**共享契约在 `@zcode/shared`，服务接口在 `@zcode/services`，桌面 Host 实现在 `packages/desktop/src/host/fork/`，渲染层在 `packages/ui/src/fork/`，CLI 运行逻辑在 `apps/zcode-cli/packages/core/src/fork/`**。所有新增文件均自成边界。
+本特性遵循二开规范优先级：**共享契约在 `@zcode/shared`，服务接口在 `@zcode/services`，桌面 Host 实现在 `packages/desktop/src/host/fork/`，渲染层在 `packages/ui/src/fork/`，CLI 运行逻辑在 `apps/zcode-cli/packages/core/src/fork/`**。所有新增文件均自成边界；消费者直接按需精准引用具体模块文件（如 `channels.js`、`router.js`），不设多余聚合 index。
 
 ### 1.1 模块与文件清单（新增文件，无需上游标记）
 
@@ -23,12 +23,10 @@
 | `packages/ui/src/fork/search-providers/SearchProvidersSection.tsx` | `@zcode/ui` | 设置页「搜索」栏目主视图（拆分至 ≤400 行），负责展示只读服务端搜索首行、装配渠道列表与说明文案、调度弹窗。 |
 | `packages/ui/src/fork/search-providers/ChannelList.tsx` | `@zcode/ui` | 基于 `@dnd-kit` 的可拖拽排序列表与单渠道卡片（支持拖拽把手、启用开关、Key 掩码、编辑/删除操作触发）。 |
 | `packages/ui/src/fork/search-providers/ChannelDialogs.tsx` | `@zcode/ui` | 添加与编辑渠道弹窗表单组件，包含渠道类型选择（当前固定 Tavily）、标签输入、基于 `ApiKeyInput` 的密钥掩码输入及表单验证。 |
-| `packages/ui/src/fork/search-providers/index.ts` | `@zcode/ui` | UI 模块公开入口，导出 `SearchProvidersSection` 与 `useForkSearchProviders`。 |
 | `apps/zcode-cli/packages/core/src/fork/search-providers/channel.ts` | `@zcode/core` | 搜索渠道抽象契约。定义 `SearchChannelRequest`（并集入参）、`SearchChannelFailure`（结构化失败信息）、`SearchChannel` 接口与 `SearchChannelOutcome`（包含命中渠道与此前失败记录）。 |
 | `apps/zcode-cli/packages/core/src/fork/search-providers/router.ts` | `@zcode/core` | 渠道路由器 `runSearchChannels`。自上而下按序执行渠道链，首个成功即返回；聚合前置渠道失败详情；全渠道耗尽时抛出 `SearchChannelsExhaustedError`；检测 `signal` 中断立即退出且不降级。 |
 | `apps/zcode-cli/packages/core/src/fork/search-providers/tavily.ts` | `@zcode/core` | Tavily 外部搜索渠道适配器 `createTavilyChannel`。封装请求体映射（入参黑白名单转换、`max_results` 映射与钳制）、`Authorization: Bearer <key>` 鉴权头注入、通过 `context.httpClientPort` 出网（继承用户代理且不设 public 限制）、HTTP 状态码分类（400/401/422/429/432/433/500）与多形态 `detail` 解析。 |
 | `apps/zcode-cli/packages/core/src/fork/search-providers/channels.ts` | `@zcode/core` | 渠道加载器与链组装器。`loadForkSearchChannels` 负责读取配置文件并基于 `mtime` 内存缓存；`createServerSearchChannel` 包装原生服务端搜索；`buildSearchChannelChain` 按顺序组装「服务端搜索 + 用户 Tavily 渠道」；`countAvailableSearchChannels` 供暴露门高效判定可用渠道总数。 |
-| `apps/zcode-cli/packages/core/src/fork/search-providers/index.ts` | `@zcode/core` | CLI 模块公开入口，导出渠道链构建与执行相关函数。 |
 
 ### 1.2 单元与契约测试文件
 
@@ -41,7 +39,7 @@
 | `apps/zcode-cli/packages/core/test/forkSearchProvidersExposure.test.ts` | 暴露门单测：渠道数为 0 时不暴露 `WebSearch`；服务端或 Tavily 任意存在时暴露；无 model 枚举不过滤；生产形态不传 options 安全降级。 |
 | `apps/zcode-cli/packages/core/test/forkSearchProvidersHandler.test.ts` | 工具处理器单测：原生搜索封装、参数过滤（服务端忽略 `max_results`、Tavily 忽略 `maxUses`）、降级控制台留痕（`console.warn`）、输出 schema 包含 `channel` 字段。 |
 | `packages/desktop/test/forkSearchProvidersFileStore.test.ts` | 存储引擎单测：配置初始化读写、文件锁互斥、写操作并发串行化、文件权限收紧到 `0o600`、增删改排操作落盘正确性。 |
-| `packages/desktop/test/forkWebdavManifestSearchProvidersContract.test.ts` | WebDAV 同步契约：Manifest 包含 `cli-fork/settings.json`、`cliConfigDir` base 变体正确解析为 `homedir + nativeConfigDir`、跨平台路径比对归一化契约断言。 |
+| `packages/desktop/test/forkSearchProvidersSyncEntry.test.ts` | WebDAV 同步契约：Manifest 包含 `cli-fork/settings.json`、`cliConfigDir` base 变体正确解析为 `homedir + nativeConfigDir`、跨平台路径比对归一化契约断言。 |
 | `packages/ui/test/forkSearchProvidersSection.test.ts` | UI 栏目单测：`searchProviders` 在 `basics` 组成功注册且可导航、中英文双语 23 个 i18n 键名完全对齐、无活动模型时安全降级、组件及 hook 规范导出。 |
 
 ---
@@ -106,40 +104,40 @@
 
 ## 3. 上游接线点与标记清单
 
-本项目对上游代码的所有修改均严格遵守成对与单点标记规范。经 `rg` 检索确认，共涉及 **13 个上游文件**，清单如下：
+本项目对上游代码的所有修改均严格遵守成对与单点标记规范。通过以下**可复现检索命令**生成当前清单：
 
-| 文件路径 | 改动位置与形式 | 为什么必须改上游 / 标记内容 |
-| --- | --- | --- |
-| `apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts` | 行 28–36 (`FORK-BEGIN/END`) | 引入渠道链与路由依赖。**注：上游行 24 的原有 import 保持零 diff**。 |
-|  | 行 38 (`FORK`) | 导出 `WEBSEARCH_TOOL_NAME` 常量供单元测试断言。 |
-|  | 行 59–70 (`FORK-BEGIN/END`) | 导出 `buildWebSearchProviderDescription` 并去除描述中的 `US-only`（多渠道场景下不再仅限服务端）。 |
-|  | 行 72–185 (`FORK-BEGIN/END`) | 处理器主体改为接入渠道链，封装 `executeProviderNativeSearch`，降级留痕与追加 `channel` 输出。 |
-| `apps/zcode-cli/packages/core/src/runtime/methods/config.ts` | 行 39 (`FORK`) | 导入 `countAvailableSearchChannels` 渠道计数方法。 |
-|  | 行 271 (`FORK`) | 导出 `shouldExposeWebSearch` 函数供单元测试。 |
-|  | 行 277–282 (`FORK-BEGIN/END`) | 暴露门实现从模型能力硬判改为可用渠道数 `countAvailableSearchChannels(...) > 0`。 |
-| `apps/zcode-cli/packages/contracts/src/tools/websearch.ts` | 行 23 (`FORK`) | `WebSearchProviderInputSchema` 新增可选参数 `max_results: z.number().int().min(1).max(20).optional()`。 |
-|  | 行 119 (`FORK`) | `WebSearchOutputSchema` 新增可选字段 `channel: z.object({ kind: z.string(), label: z.string() }).strict().optional()`。 |
-| `packages/shared/src/index.ts` | 行 246 (`FORK`) | 公开导出 `fork/search-providers-contract.js` 契约及工具函数。 |
-| `packages/services/src/index.ts` | 行 34 (`FORK`) | 公开导出 `fork/search-providers.js` 服务接口类型。 |
-| `packages/services/src/accessor.ts` | 行 94 (`FORK`) | `IServiceAccessor` 接口声明可选属性 `forkSearchProvidersService?: IForkSearchProvidersService`。 |
-| `packages/client/src/remoteServiceAccess.ts` | 行 4 (`FORK`) | 导入协议通道常量 `FORK_SEARCH_PROVIDERS_CHANNEL`。 |
-|  | 行 51 (`FORK`) | `RemoteServiceMap` 映射表注册服务通道与接口。 |
-|  | 行 107 (`FORK`) | `RemoteWorkspaceServices` 接口添加 `forkSearchProvidersService?: IForkSearchProvidersService`。 |
-|  | 行 237 (`FORK`) | 客户端访问器装配 `ProxyChannel.toService<IForkSearchProvidersService>`。 |
-| `packages/desktop/src/host/index.ts` | 行 52 (`FORK`) | 导入 `IForkSearchProvidersService` 服务接口。 |
-|  | 行 82 (`FORK`) | 导入 `createForkSearchProvidersService` 服务工厂。 |
-|  | 行 84 (`FORK`) | 导入 `ZCODE_AGENT_RUNTIME` 运行时常量。 |
-|  | 行 2921 (`FORK`) | `resolveBase` 中增加 `cliConfigDir` 分支，使用 `join(homedir(), ZCODE_AGENT_RUNTIME.nativeConfigDir)` 解析。 |
-|  | 行 2952 (`FORK`) | 桌面 host 初始化中注册 `IForkSearchProvidersService` 实例。 |
-| `packages/ui/src/settings/settingsPageConfig.ts` | 行 24 (`FORK`) | 导入 `Search` 图标。 |
-|  | 行 88 (`FORK`) | `BASE_SETTINGS_SECTIONS` 中注册 `searchProviders` 栏目。 |
-| `packages/ui/src/lib/settingsNavigation.ts` | 行 27 (`FORK`) | `SettingsSectionId` 联合类型追加 `"searchProviders"`。 |
-|  | 行 67 (`FORK`) | 导出 `isSettingsSectionId` 类型守卫。 |
-|  | 行 92 (`FORK`) | `isSettingsSectionId` 守卫中包含 `searchProviders` 分支，保证页面重载后可恢复所在栏目。 |
-| `packages/ui/src/SettingsPage.tsx` | 行 74 (`FORK`) | 导入 `SearchProvidersSection` 组件。 |
-|  | 行 1934 (`FORK`) | `activeSection === "searchProviders"` 分支渲染 `SearchProvidersSection`。 |
-| `packages/ui/src/i18n/locales/zh-CN.ts` | 行 2070 (`FORK`) | 注册 `settings.searchProviders.*` 双语翻译（简体中文，23 个键）。 |
-| `packages/ui/src/i18n/locales/en-US.ts` | 行 2203 (`FORK`) | 注册 `settings.searchProviders.*` 双语翻译（美式英文，23 个键）。 |
+```bash
+rg -n "FORK\(search-providers\)|FORK-BEGIN\(search-providers\)|FORK-END\(search-providers\)" \
+  --glob '!AGENTS.md' --glob '!FEATURES.md' --glob '!docs/**' --glob '!.superpowers/**'
+```
+
+### 3.1 统计口径说明
+1. **口径 1：匹配行数（Token 行数）**：
+   按上述 `rg` 命令直接输出的匹配行数统计。实测命中 **14 个上游文件，共 36 行标记**。
+2. **口径 2：逻辑改动处（修改点数）**：
+   单点标记计为 1 处，成对标记块（`FORK-BEGIN` 与 `FORK-END` 成对包围的代码块）计为 1 处。实测共计 **14 个上游文件，共 32 处改动点**（包含 28 处单点标记与 4 对成对块：`websearch.ts` 3 对，`config.ts` 1 对）。
+
+> 注：此前 `packages/desktop/src/host/fork/search-providers/service.ts:27` 与 `packages/ui/src/fork/search-providers/SearchProvidersSection.tsx:1` 中的 2 处 `FORK` 标记位于 fork 专属自有目录下，按 AGENTS.md 规范（新增文件无需标记）已于本轮修复中移除 token，保留中文说明。
+
+### 3.2 逐文件清单与标记位置
+
+| 文件路径 | 改动位置与形式 | 统计 (处 / 行) | 为什么必须改上游 / 标记内容 |
+| --- | --- | --- | --- |
+| `apps/zcode-cli/packages/contracts/src/tools/websearch.ts` | 行 23 (`FORK`)<br>行 119 (`FORK`) | 2 处 / 2 行 | `WebSearchProviderInputSchema` 新增可选参数 `max_results`；`WebSearchOutputSchema` 新增可选字段 `channel`。 |
+| `apps/zcode-cli/packages/core/src/runtime/methods/config.ts` | 行 39 (`FORK`)<br>行 271 (`FORK`)<br>行 277–282 (`FORK-BEGIN/END`) | 3 处 / 4 行 | 导入 `countAvailableSearchChannels`；导出 `shouldExposeWebSearch`；暴露门实现从模型能力硬判改为可用渠道数 `countAvailableSearchChannels(...) > 0`（含 1 对成对块）。 |
+| `apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts` | 行 28–36 (`FORK-BEGIN/END`)<br>行 38 (`FORK`)<br>行 59–70 (`FORK-BEGIN/END`)<br>行 72–185 (`FORK-BEGIN/END`) | 4 处 / 7 行 | 引入渠道链与路由依赖（**注：上游行 24 的原有 import 保持绝对零 diff**）；导出 `WEBSEARCH_TOOL_NAME`；导出 `buildWebSearchProviderDescription` 并去除 `US-only`；处理器主体接入渠道链与降级留痕（含 3 对成对块）。 |
+| `packages/client/src/remoteServiceAccess.ts` | 行 4 (`FORK`)<br>行 51 (`FORK`)<br>行 107 (`FORK`)<br>行 237 (`FORK`) | 4 处 / 4 行 | 导入服务通道常量 `FORK_SEARCH_PROVIDERS_CHANNEL`；注册服务映射；添加客户端访问器接口属性与代理装配。 |
+| `packages/desktop/src/host/index.ts` | 行 52 (`FORK`)<br>行 82 (`FORK`)<br>行 84 (`FORK`)<br>行 2921 (`FORK`)<br>行 2952 (`FORK`) | 5 处 / 5 行 | 导入服务接口、工厂与运行时常量；`resolveBase` 中增加 `cliConfigDir` 分支；桌面 host 初始化中注册 `IForkSearchProvidersService` 实例。 |
+| `packages/services/src/accessor.ts` | 行 94 (`FORK`) | 1 处 / 1 行 | `IServiceAccessor` 接口声明可选属性 `forkSearchProvidersService?: IForkSearchProvidersService`。 |
+| `packages/services/src/index.ts` | 行 34 (`FORK`) | 1 处 / 1 行 | 公开导出 `fork/search-providers.js` 服务接口类型。 |
+| `packages/shared/src/index.ts` | 行 246 (`FORK`) | 1 处 / 1 行 | 公开导出 `fork/search-providers-contract.js` 契约及工具函数。 |
+| `packages/ui/src/SettingsPage.tsx` | 行 74 (`FORK`)<br>行 1934 (`FORK`) | 2 处 / 2 行 | 导入 `SearchProvidersSection` 组件；`activeSection === "searchProviders"` 分支渲染该栏目。 |
+| `packages/ui/src/i18n/locales/en-US.ts` | 行 2203 (`FORK`) | 1 处 / 1 行 | 注册 `settings.searchProviders.*` 双语翻译（美式英文，23 个键）。 |
+| `packages/ui/src/i18n/locales/zh-CN.ts` | 行 2070 (`FORK`) | 1 处 / 1 行 | 注册 `settings.searchProviders.*` 双语翻译（简体中文，23 个键）。 |
+| `packages/ui/src/lib/settingsNavigation.ts` | 行 27 (`FORK`)<br>行 67 (`FORK`)<br>行 92 (`FORK`) | 3 处 / 3 行 | `SettingsSectionId` 联合类型追加 `"searchProviders"`；导出 `isSettingsSectionId` 类型守卫；守卫中包含 `searchProviders` 分支。 |
+| `packages/ui/src/settings/model-provider-section/ApiKeyInput.tsx` | 行 12 (`FORK`)<br>行 24 (`FORK`) | 2 处 / 2 行 | 支持外部自定义 `placeholder` 传入（参数解构与 Props 接口定义，Task 9 修复轮新增）。 |
+| `packages/ui/src/settings/settingsPageConfig.ts` | 行 24 (`FORK`)<br>行 88 (`FORK`) | 2 处 / 2 行 | 导入 `Search` 图标；`BASE_SETTINGS_SECTIONS` 中注册 `searchProviders` 栏目。 |
+| **合计** | **14 个上游文件** | **32 处改动点** | **36 行标记（含 28 处单点标记与 4 对成对块）** |
 
 ---
 
@@ -196,7 +194,7 @@ Tavily 错误响应状态码及对应的含义分类如下：
    Host 进程中的 `resolveBase` 处理 `cliConfigDir` 时，使用的是 Node 的 `path.join(homedir(), nativeConfigDir)`，在 Windows 操作系统下会生成带反斜杠 `\` 的路径。
 3. **物理同源性与比对约束**：
    在 Windows 上，POSIX 正斜杠 `/` 与 Windows 反斜杠 `\` 在传递给 Node.js `fs` API 时被等价解析，两侧操作的是**同一个文件**。
-   **契约要求**：任何跨模块、跨环境对两侧路径进行相等性测试或逻辑比对时，**严禁使用简单的字符串全等（`===`）**，必须先通过 `node:path.resolve`（或做跨平台归一化）消除斜杠差异。此规则已固化在 `forkWebdavManifestSearchProvidersContract.test.ts` 中。
+   **契约要求**：任何跨模块、跨环境对两侧路径进行相等性测试或逻辑比对时，**严禁使用简单的字符串全等（`===`）**，必须先通过 `node:path.resolve`（或做跨平台归一化）消除斜杠差异。此规则已固化在 `forkSearchProvidersSyncEntry.test.ts` 中。
 
 ---
 
@@ -217,8 +215,8 @@ Tavily 错误响应状态码及对应的含义分类如下：
 | 9 | 渠道文件损坏 → 应用正常启动、日志有 warn、Tavily 渠道按 0 条处理 | 单测覆盖：`forkSearchProvidersContract.test.ts` 与 `forkSearchProvidersChannels.test.ts` 覆盖容错降级与问题汇总。 | PASS |
 | 10 | 代理已配置的用户调用 Tavily → 正常出网，不出现 `egress_blocked` | 单测覆盖：`forkSearchProvidersTavily.test.ts` 断言请求对象未附加 `egressPolicy: "public"` 限制。 | PASS |
 | 11 | 模型传 `max_results` 给服务端 / 传 `maxUses` 给 Tavily → 不报错，按忽略处理 | 单测覆盖：`forkSearchProvidersTavily.test.ts` 与 `forkSearchProvidersHandler.test.ts` 验证各渠道参数提取与忽略机制。 | PASS |
-| 12 | 桌面隔离 home 运行时：设置页写入的路径与 CLI 读取的路径是同一个文件 | 契约单测覆盖：`forkWebdavManifestSearchProvidersContract.test.ts` 断言两侧解析出的路径归一化后一致。 | PASS（单测）/ 待集成实测 |
-| 13 | WebDAV 备份 → 远端包含 `cli-fork/settings.json`；恢复到干净环境后渠道表一致 | 契约单测覆盖：Manifest 条目断言通过；端到端网络同步待手工验收。 | PASS（契约）/ 待集成实测 |
+| 12 | 桌面隔离 home 运行时：设置页写入的路径与 CLI 读取的路径是同一个文件 | 契约单测覆盖：`forkSearchProvidersSyncEntry.test.ts` 断言两侧解析出的路径归一化后一致。 | PASS（单测）/ 待集成实测 |
+| 13 | WebDAV 备份 → 远端包含 `cli-fork/settings.json`；恢复到干净环境后渠道表一致 | 契约单测覆盖：`forkSearchProvidersSyncEntry.test.ts` 验证 Manifest 条目声明与路径解析；端到端网络同步待手工验收。 | PASS（契约）/ 待集成实测 |
 | 14 | 设置页拖拽排序 → 下一次调用按新顺序尝试 | 单测覆盖：`forkSearchProvidersFileStore.test.ts` 验证重排落盘，`forkSearchProvidersChannels.test.ts` 验证按序加载。 | PASS（单测）/ 待交互实测 |
 
 ---

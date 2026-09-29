@@ -1,4 +1,4 @@
-// FORK(search-providers): 设置页「搜索」栏目；见 FEATURES.md 的 search-providers 条目
+// 设置页「搜索」栏目；见 FEATURES.md 的 search-providers 条目
 import type { ReactNode } from "react";
 import { Globe, Lock } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";

@@ -160,22 +160,23 @@
   4. **设置页「搜索」栏目**：设置 → 基础设置 → 搜索，呈现活动模型服务端搜索只读状态，支持 Tavily 渠道的添加、启用/禁用、Key 掩码显示、拖拽排序与删除。
   5. **存储与 WebDAV 同步**：渠道配置以 `0o600` 权限安全保存在 `<homedir>/.zcode/cli/fork/settings.json`（原子写与文件锁）；新增 `cliConfigDir` base 变体并纳入 WebDAV 同步清单。
 - **修改文件**：
-  - 新增文件：`packages/shared/src/fork/search-providers-contract.ts`、`packages/services/src/fork/search-providers.ts`、`packages/desktop/src/host/fork/search-providers/{file-store,service,index}.ts`、`packages/ui/src/fork/search-providers/{useForkSearchProviders.ts,SearchProvidersSection.tsx,ChannelList.tsx,ChannelDialogs.tsx,index.ts}`、`apps/zcode-cli/packages/core/src/fork/search-providers/{channel,router,tavily,channels,index}.ts`、`packages/shared/test/forkSearchProvidersContract.test.ts`、`apps/zcode-cli/packages/core/test/forkSearchProviders{Router,Tavily,Channels,Exposure,Handler}.test.ts`、`packages/desktop/test/forkSearchProvidersFileStore.test.ts`、`packages/desktop/test/forkWebdavManifestSearchProvidersContract.test.ts`、`packages/ui/test/forkSearchProvidersSection.test.ts`、`docs/features/search-providers/**`。
-  - 上游接线文件：`apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/config.ts`、`apps/zcode-cli/packages/contracts/src/tools/websearch.ts`、`packages/shared/src/index.ts`、`packages/services/src/{index.ts,accessor.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/desktop/src/host/fork/webdav-sync/manifest.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
-- **上游改动标记**：13 个上游文件、共 24 处标记（含 5 对 `FORK-BEGIN/END` 块）：
-  - `core/src/tool/handlers/websearch.ts`（4 处：import 块保持上游第 24 行零 diff、工具名常量导出、描述函数导出与去掉 US-only、处理器主体接线与降级留痕）
-  - `core/src/runtime/methods/config.ts`（3 处：计数方法 import、守卫函数导出、渠道数暴露门判据）
-  - `contracts/src/tools/websearch.ts`（2 处：`max_results` 入参字段、`channel` 可选输出字段）
-  - `shared/src/index.ts`（1 处：契约导出）
-  - `services/src/index.ts`（1 处：服务面导出）
-  - `services/src/accessor.ts`（1 处：服务访问器属性）
-  - `client/src/remoteServiceAccess.ts`（4 处：通道常量、映射表、服务接口、工厂方法）
-  - `desktop/src/host/index.ts`（5 处：服务接口导入、工厂导入、运行时导入、`resolveBase` 的 `cliConfigDir` 分支、服务注册）
-  - `ui/src/settings/settingsPageConfig.ts`（2 处：图标导入、栏目注册）
-  - `ui/src/lib/settingsNavigation.ts`（3 处：分区 ID 类型、守卫导出、守卫分支）
-  - `ui/src/SettingsPage.tsx`（2 处：组件导入、渲染分支）
-  - `ui/src/i18n/locales/zh-CN.ts`（1 处：中文翻译区块）
-  - `ui/src/i18n/locales/en-US.ts`（1 处：英文翻译区块）
+  - 新增文件：`packages/shared/src/fork/search-providers-contract.ts`、`packages/services/src/fork/search-providers.ts`、`packages/desktop/src/host/fork/search-providers/{file-store,service,index}.ts`、`packages/ui/src/fork/search-providers/{useForkSearchProviders.ts,SearchProvidersSection.tsx,ChannelList.tsx,ChannelDialogs.tsx}`、`apps/zcode-cli/packages/core/src/fork/search-providers/{channel,router,tavily,channels}.ts`、`packages/shared/test/forkSearchProvidersContract.test.ts`、`apps/zcode-cli/packages/core/test/forkSearchProviders{Router,Tavily,Channels,Exposure,Handler}.test.ts`、`packages/desktop/test/forkSearchProvidersFileStore.test.ts`、`packages/desktop/test/forkSearchProvidersSyncEntry.test.ts`、`packages/ui/test/forkSearchProvidersSection.test.ts`、`docs/features/search-providers/**`。
+  - 上游接线文件（14 个）：`apps/zcode-cli/packages/core/src/tool/handlers/websearch.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/config.ts`、`apps/zcode-cli/packages/contracts/src/tools/websearch.ts`、`packages/shared/src/index.ts`、`packages/services/src/{index.ts,accessor.ts}`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/settings/model-provider-section/ApiKeyInput.tsx`、`packages/ui/src/lib/settingsNavigation.ts`、`packages/ui/src/SettingsPage.tsx`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`（注：`packages/desktop/src/host/fork/webdav-sync/manifest.ts` 为 fork 自有清单文件，无上游标记）。
+- **上游改动标记**：按可复现命令 `rg -n "FORK\(search-providers\)|FORK-BEGIN\(search-providers\)|FORK-END\(search-providers\)" --glob '!AGENTS.md' --glob '!FEATURES.md' --glob '!docs/**' --glob '!.superpowers/**'` 检索，当前实况为 **14 个上游文件，共 36 行标记**；按逻辑改动处口径（单点 1 处，成对块 1 处）统计为 **32 处**（包含 28 处单点标记与 4 对 `FORK-BEGIN/END` 块），分项之和与总计严格一致：
+  - `contracts/src/tools/websearch.ts`（2 处 / 2 行：`max_results` 入参字段、`channel` 可选输出字段）
+  - `core/src/runtime/methods/config.ts`（3 处 / 4 行：计数方法 import、守卫函数导出、渠道数暴露门判据 [含 1 对成对块]）
+  - `core/src/tool/handlers/websearch.ts`（4 处 / 7 行：import 块保持上游第 24 行零 diff [1 对成对块]、工具名常量导出、描述函数导出与去掉 US-only [1 对成对块]、处理器主体接线与降级留痕 [1 对成对块]）
+  - `client/src/remoteServiceAccess.ts`（4 处 / 4 行：通道常量、映射表、服务接口、工厂方法）
+  - `desktop/src/host/index.ts`（5 处 / 5 行：服务接口导入、工厂导入、运行时导入、`resolveBase` 的 `cliConfigDir` 分支、服务注册）
+  - `services/src/accessor.ts`（1 处 / 1 行：服务访问器属性）
+  - `services/src/index.ts`（1 处 / 1 行：服务面导出）
+  - `shared/src/index.ts`（1 处 / 1 行：契约导出）
+  - `ui/src/SettingsPage.tsx`（2 处 / 2 行：组件导入、渲染分支）
+  - `ui/src/i18n/locales/en-US.ts`（1 处 / 1 行：英文翻译区块）
+  - `ui/src/i18n/locales/zh-CN.ts`（1 处 / 1 行：中文翻译区块）
+  - `ui/src/lib/settingsNavigation.ts`（3 处 / 3 行：分区 ID 类型、守卫导出、守卫分支）
+  - `ui/src/settings/model-provider-section/ApiKeyInput.tsx`（2 处 / 2 行：支持外部自定义 placeholder）
+  - `ui/src/settings/settingsPageConfig.ts`（2 处 / 2 行：图标导入、栏目注册）
 - **设计文档**：`docs/features/search-providers/design.md`
 - **实现文档**：`docs/features/search-providers/implementation.md`
 - **已知边界**：见实现文档 §8（测试替身 `as never`、`statSync` 异常粒度、`createServerSearchChannel` 缺乏独立单测、测试临时目录清理、host 装配内联路径风格）。
