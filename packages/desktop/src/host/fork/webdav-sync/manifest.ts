@@ -15,6 +15,7 @@
  */
 import {
   FORK_IDENTITY_PRESET_PROFILE_EXTENSION,
+  FORK_TOOL_MODE_STATE_FILENAME,
   FORK_IDENTITY_PRESET_PROFILES_DIRNAME,
   FORK_IDENTITY_PRESET_ROOT_NAME,
   isValidForkIdentityPresetId,
@@ -81,6 +82,11 @@ export const FORK_WEBDAV_SYNC_MANIFEST: readonly ForkSyncEntry[] = [
   {
     archiveName: "setting.json",
     source: { type: "setting-service", keys: FORK_WEBDAV_SYNCED_SETTING_KEYS },
+  },
+  {
+    // 功能组：工具模式与注入开关（单文件 JSON，缺省即标准档）
+    archiveName: FORK_TOOL_MODE_STATE_FILENAME,
+    source: { type: "file-json", base: "storageRoot", path: FORK_TOOL_MODE_STATE_FILENAME },
   },
   {
     archiveName: "provider_config.json",

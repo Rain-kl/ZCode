@@ -11,6 +11,8 @@ export * from "./context/index.js";
 // FORK-BEGIN(identity-preset)
 // 系统指令——用户自定义身份段；见 FEATURES.md 的 identity-preset 条目
 export * from "./fork/identity-preset/index.js";
+// FORK(tool-modes): 功能组——三档工具分类；见 FEATURES.md 的 tool-modes 条目
+export * from "./fork/tool-modes/index.js";
 // FORK-END(identity-preset)
 
 // Compact helpers

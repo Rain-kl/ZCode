@@ -182,6 +182,7 @@ test("扩展点：清单加一行即可同步新资源，webdav/ 引擎目录零
       FORK_WEBDAV_SYNC_MANIFEST.map((entry) => entry.archiveName),
       [
         "setting.json",
+        "tool-groups.json",
         "provider_config.json",
         "presets/active.json",
         "presets/profiles",
