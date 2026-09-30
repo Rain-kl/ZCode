@@ -73,6 +73,8 @@ import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
+// FORK(tool-modes): 工具档位落盘解析；见 FEATURES.md 的 tool-modes 条目
+import { resolveForkToolMode } from "../fork/tool-modes.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
@@ -263,6 +265,24 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         workingDirectory,
         workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
       });
+    // FORK(tool-modes): 用户选定的工具档位落到 runtimeConfig.toolAllowlist；
+    // 与宿主下发的既有名单取交集（档位只让工具面更小）。见 FEATURES.md 的 tool-modes 条目
+    {
+      const forkToolMode = await resolveForkToolMode({
+        storageRoot,
+        hostAllowlist: runtimeConfig.toolAllowlist,
+        log: (message, detail) => logger.info(message, detail),
+      });
+      if (forkToolMode.toolAllowlist !== undefined) {
+        runtimeConfig.toolAllowlist = forkToolMode.toolAllowlist;
+      }
+      logger.info("Fork tool mode resolved", {
+        event: "fork.tool_mode.resolved",
+        mode: forkToolMode.mode,
+        injectTools: forkToolMode.injectTools,
+        toolCount: forkToolMode.toolAllowlist?.length ?? null,
+      });
+    }
     const browserControlPort = options.browserControlPort;
     if (
       browserControlPort &&
