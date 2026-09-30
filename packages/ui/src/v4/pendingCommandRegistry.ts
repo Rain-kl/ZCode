@@ -241,7 +241,13 @@ class PendingCommandRegistry {
       if (row.kind === "userInput" && row.sourceCommandId) {
         settled.add(row.sourceCommandId);
       }
-      if (row.kind === "timelineMarker" && row.marker.type === "compact" && row.sourceCommandId) {
+      if (
+        row.kind === "timelineMarker" &&
+        // FORK(reload-command): reload 与 compact 同为不产生 user row 的维护命令，
+        // timeline marker 是其已执行的权威证据。
+        (row.marker.type === "compact" || row.marker.type === "reload") &&
+        row.sourceCommandId
+      ) {
         // compact 不产生 user row；timeline marker 是该维护命令已开始执行的权威证据。
         settled.add(row.sourceCommandId);
       }

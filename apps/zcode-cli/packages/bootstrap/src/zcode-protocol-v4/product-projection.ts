@@ -13,6 +13,7 @@ import {
 } from "./product-projection-bash-progress.js";
 import type {
   CompactLifecyclePayload,
+  ForkReloadCompletedPayload,
   AssistantFeedbackUpdatedPayload,
   DynamicWorkflowRunProgressPayload,
   HookRunLifecyclePayload,
@@ -1418,6 +1419,9 @@ export class ProductProjection {
       case SessionEventType.CompactCompleted:
       case SessionEventType.CompactFailed:
         return this.onCompactLifecycle(event);
+      // FORK(reload-command): /reload 的转录回执（与 compact marker 同形的分隔线）。
+      case SessionEventType.ForkReloadCompleted:
+        return this.onForkReloadCompleted(event);
       case SessionEventType.TargetChanged:
         return this.onTargetChanged(event);
       case SessionEventType.TargetCompletionVerification:
@@ -4556,6 +4560,23 @@ export class ProductProjection {
     // ModelComplete 是缺少 network completed 事件时的成功兜底，不能让重试提示悬挂。
     deltas.push(...retryClearDeltas);
     return deltas;
+  }
+
+  // ── FORK(reload-command): /reload marker（命令效果回执）──
+  // 与 compact marker 同形的分隔线；落事件到达时的行尾，客户端零归属逻辑。
+
+  private onForkReloadCompleted(event: SessionEvent): ConversationDelta[] {
+    const payload = event.payload as ForkReloadCompletedPayload | undefined;
+    const sourceCommandId =
+      payload && typeof payload.sourceCommandId === "string" ? payload.sourceCommandId : undefined;
+    const row: TimelineMarkerRow = {
+      ...this.rowBase(event, this.turnIdOf(event)),
+      kind: "timelineMarker",
+      lane: "assistantWork",
+      marker: { type: "reload" },
+      ...(sourceCommandId ? { sourceCommandId } : {}),
+    };
+    return [{ op: "row.appended", row }];
   }
 
   // ── compact marker（compact 命令效果）──

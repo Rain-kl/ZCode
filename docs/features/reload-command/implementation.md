@@ -14,7 +14,8 @@
 | `apps/zcode-cli/packages/core/src/runtime/helpers/commands.ts` | `parseReloadCommand`（只接受整条 `/reload`） |
 | `apps/zcode-cli/packages/core/src/runtime/methods/turn.ts` | 分流：命中 `/reload` → `executeForkReload`（空闲派发与队列排空同一入口） |
 | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts` | v4 原生命令：空闲 `submitPrompt("/reload")`；忙碌与 compact 一致入 FIFO（`commandKind: "reload"`） |
-| `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` | `/` 菜单解析 `kind: "reload"`、派发信封、成功/排队/失败 toast、队列项不参与 Composer 回填 |
+| `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` | `/` 菜单解析 `kind: "reload"`、派发信封、排队/失败 toast、队列项不参与 Composer 回填；成功回执由转录标记承担 |
+| 事件与投影链 | `contracts` 新增 `ForkReloadCompleted` 事件（payload 带 `sourceCommandId`）→ `product-projection` 落 `timelineMarker`（`reload` 型）→ `rows.ts` schema → `ConversationRowView` 灰字分隔线（「已重载提示词与工具面」，刷新图标）；分享面（公开投影 + 只读时间线）同步透出 |
 | `packages/ui/src/v4/pendingCommand{Registry,Replay}.ts` | `reload` 与 compact 同为可回放输入命令（刷新后仍有重放线索） |
 | `packages/shared/src/zcode-protocol-v4/{command,input-intent}.ts` 等 | 命令信封 `reload`（空 payload）、intent kind、steer kind、`activeTurnKind`、内置帮助目录 |
 | 删除 | `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口） |
@@ -22,26 +23,29 @@
 ## 2. 关键改动
 
 - **创建期与重载单点化**：原 `bootstrap` 的一次性 `resolveForkToolMode` 迁入 core 的 `createFileForkToolModePort`，`create-app` 创建端口 → 解析 → 注入 runtime deps；`/reload` 经同一端口重读。端口返回**终值**（标准档 = 宿主名单本身），否则 `/reload` 从极简切回标准会把宿主约束一并丢掉。
-- **执行路径唯一**：空闲时 v4 handler `submitPrompt("/reload")`，队列排空时 `executeTurnCommand("/reload")`，两条都落到 `turn.ts` 的 `parseReloadCommand` 分流 → `executeForkReload`。维护轮 `TurnStarted` 标 `inputVisibility: "model-only"`（不渲染用户气泡、模型也读不到 `/reload` 文本），`TurnComplete` 空 response。
+- **执行路径唯一**：空闲时 v4 handler `submitPrompt("/reload")`，队列排空时 `executeTurnCommand("/reload")`，两条都落到 `turn.ts` 的 `parseReloadCommand` 分流 → `executeForkReload`。维护轮 `TurnStarted` 标 `inputVisibility: "model-only"` + `executionKind: "controlOnly"`（不渲染用户气泡、模型也读不到 `/reload` 文本、0ms 轮不进 Agent 工时），`TurnComplete` 空 response。
 - **工具面差量**：内置先按 `resolveBuiltInToolAllowlist(config)` 显式注销被排除项（注册表不会回收旧项），再走**完整选项集的整体重注册**（含 embedded-search 联动与 deps 侧的门；不能复用分支刷新的精简集，它省略了 `includeNodeRepl` 等门）。MCP 注销上次注册名后按启动快照重新过滤（不重连；服务器配置变更仍需新会话）。`cachedTools` 清空后 `rebuildContextPrefix` 重建前缀——顺序有约束：builder 的 `guidanceToolNames` 从当前注册表取。
 - **缓存语义**：`/reload` 是「前缀在会话内不可变」的显式例外，一次性前缀失效是目的；设置无变化时重建结果逐字节相同，缓存不失效。
-- **回执（v1 边界）**：toast 三种（已重载 / 已排队 / 失败），复用 compact 通道；不做转录内持久标记（新增 row 类型要动 rows/投影/hydration/渲染四处，见 design 第 2 节）。
+- **回执**：成功后追加 `ForkReloadCompleted` 事件 → 投影成 `timelineMarker`（`reload` 型，lane `assistantWork`，与 `/compact` 同款分隔线），UI 灰字「已重载提示词与工具面」，带 `sourceCommandId`（pending command 据此结算，不再弹恢复提示）。排队与失败仍走 toast——成功 toast 已移除，避免双份回执。
 - **让位与短路**：`subagent_child` 运行时不承接（`reloadForkOverrides` 直接返回 `skipped`）；workflow actor / `customSystemPrompt` 沿用 builder 既有让位规则。
 - **kind 扩展**：`"reload"` 进入 steer/intent/activeTurn 四个联合类型与两处 zod schema；`steering.ts` 的两处 inline-guide 排除同步加上（控制命令不得被当作 guide 消费）。
 
 ## 3. 上游接线点
 
-共 27 个上游文件、43 行 `FORK(reload-command)` 标记（口径见 FEATURES 条目）。分布：
+共 33 个上游文件、54 行 `FORK(reload-command)` 标记（口径见 FEATURES 条目）。分布：
 core 运行时 10 文件（`runtime/{types,internal,internal-turn-methods,agent-runtime}.ts`、`methods/{turn,steering,index,mcp}.ts`、`helpers/{commands,runtime-tools}.ts`）、
-bootstrap 4 文件（`app/{create-app,types}.ts`、`slash-command-surface.ts`、`v4 handlers/index.ts`）、
-contracts 1、shared 6、ui 6（`v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandReplay}.ts` + 两个 locale）。
+bootstrap 5 文件（`app/{create-app,types}.ts`、`slash-command-surface.ts`、`v4 handlers/index.ts`、`v4 product-projection.ts`）、
+contracts 2（`interfaces/session.port.ts`、`events/session.events.ts`）、
+shared 7（`zcode-protocol/{index,legacy-types}.ts`、`zcode-protocol-v4/{command,input-intent,rows}.ts`、`zcode-task-types-core.ts`、`zcode-slash-command-help.ts`）、
+services 1（分享公开投影）、
+ui 8（`v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandReplay,ConversationRowView,ConversationShareReadonlyTimeline}` + 两个 locale）。
 
 ## 4. 验证记录
 
 - `pnpm exec tsx --test apps/zcode-cli/packages/core/test/forkToolModePort.test.ts` → 8/8
 - `pnpm exec tsx --test apps/zcode-cli/packages/core/test/forkReload.test.ts` → 7/7（轻量假运行时：端口与注册表用真实实现；覆盖 极简↔标准双向、注入关闭清空、坏文件诊断回退、身份重读+诊断、子代理短路）
-- `pnpm exec tsx --test ...forkToolModeTools.test.ts`（回归）→ 2/2；三条合计 17/17
-- `pnpm typecheck`（根，含 ui/shared/desktop host）→ exit 0；`pnpm --dir apps/zcode-cli typecheck` → 27/27
+- 两条合计 15/15；`forkToolModeTools.test.ts` 分类回归 2/2
+- `pnpm typecheck`（根，含 ui/shared/desktop host）→ exit 0；`pnpm --dir apps/zcode-cli typecheck` → exit 0
 - `pnpm lint` → 0 errors（71 条 warning 均为存量，与本次改动无关）
 - `pnpm architecture:check --changed` → OK，0 violations
 
@@ -50,6 +54,7 @@ contracts 1、shared 6、ui 6（`v4/{slashCommands,SessionPane,pendingCommandReg
 | 项 | 原因 | 验证方法 |
 | --- | --- | --- |
 | `executeForkReload` 的 turn 边界（TurnStarted/Complete、投影） | 需要完整 runtime 装配，超出单测成本；形状照抄 `executeManualCompact` | 运行实例：执行 `/reload` 后查 `fork.reload.started/completed` 与 `fork.reload.turn.completed` 日志，UI 无用户气泡 |
+| 转录回执（marker 落位与分享面渲染） | 需要真实投影消费与 UI | 运行实例：执行 `/reload` 后对话里出现灰字分隔线「已重载提示词与工具面」；冷恢复后仍在；分享会话里同样可见 |
 | MCP 工具面差量的真实重注册 | 单测里 MCP 端口缺席（`mcpRegistered` 为空） | 运行实例：标准→极简→标准 各执行一次 `/reload`，对比 MCP 工具在注册表/请求里的出现与消失（`mcp.tools.refreshed` 日志） |
 | 排队路径（忙碌时 `/reload` → 回合结束执行） | 需要真实 busy 会话 | 运行实例：任务运行中发送 `/reload`，观察「已排队」toast 与随后日志 |
 | 请求前缀的实际变化（含缓存） | 需要抓包 | 运行实例：改设置 → `/reload` → 抓下一轮请求对比 system prompt 与 tools 列表 |

@@ -160,6 +160,8 @@ export const SessionEventType = {
   CompactFailed: "compact_failed",
   CompactBoundary: "compact_boundary",
   MicrocompactBoundary: "microcompact_boundary",
+  // FORK(reload-command): /reload 完成事件（投影成 timelineMarker 灰字回执）。
+  ForkReloadCompleted: "fork_reload_completed",
   RewindTriggered: "rewind_triggered",
   CheckpointCreated: "checkpoint_created",
   TargetChanged: "target_changed",
@@ -215,6 +217,12 @@ export interface SessionCompactedPayload {
 }
 
 export type CompactLifecyclePayload = CompactTimelinePayload;
+
+/** FORK(reload-command): /reload 完成的转录回执（投影成 timelineMarker）。 */
+export interface ForkReloadCompletedPayload {
+  /** 发起该命令的 sourceCommandId（客户端 pending command 对账用）。 */
+  sourceCommandId?: string;
+}
 
 export type MicrocompactBoundaryEventPayload = MicrocompactBoundaryPayload;
 
@@ -1232,6 +1240,7 @@ export type SessionEventPayload =
   | WorkspaceHookAdmissionUpdatedPayload
   | HookRunLifecyclePayload
   | CompactLifecyclePayload
+  | ForkReloadCompletedPayload
   | MicrocompactBoundaryEventPayload
   | CheckpointCreatedPayload
   | RewindTriggeredPayload

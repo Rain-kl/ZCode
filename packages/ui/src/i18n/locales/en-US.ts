@@ -4950,7 +4950,7 @@ const enUS: Record<string, string> = {
   "chat.compact.queued": "Compaction queued and will run in order.",
   "chat.compact.duplicateBlocked": "A compaction is already running or queued.",
   // FORK(reload-command): /reload receipts (see the reload-command entry in FEATURES.md)
-  "chat.reload.applied": "Prompt and tool settings reloaded; effective from the next turn.",
+  "chat.reload.marker": "Prompt and tool settings reloaded",
   "chat.reload.queued": "Reload queued; it will run after the current task finishes.",
   "chat.reload.failed": "Reload failed. Check the logs.",
   "chat.modelSwitch.contextWindowGuard.title": "Compress context before switching models",

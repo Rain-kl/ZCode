@@ -242,6 +242,9 @@ function projectTimelineMarker(
       return { ...row.marker };
     case "retryNotice":
       return { ...row.marker };
+    // FORK(reload-command): /reload 回执原样透出（无敏感信息）。
+    case "reload":
+      return { ...row.marker };
     case "forkNotice":
     case "forkCreated":
     case "checkpointRestored":

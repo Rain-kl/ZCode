@@ -2523,12 +2523,11 @@ export function SessionPane({
       } else if (command.kind === "compact" && compactExpectedToQueue) {
         toast(intl.formatMessage({ id: "chat.compact.queued" }));
       } else if (command.kind === "reload") {
-        // FORK(reload-command): ACK 到达即区分「已重载」与「已排队」，与 compact 同一回执通道。
-        toast(
-          intl.formatMessage({
-            id: reloadExpectedToQueue ? "chat.reload.queued" : "chat.reload.applied",
-          }),
-        );
+        // FORK(reload-command): 成功回执落在转录里（timelineMarker 灰字「已重载提示词与工具面」）；
+        // 这里只提示排队，避免双份回执。
+        if (reloadExpectedToQueue) {
+          toast(intl.formatMessage({ id: "chat.reload.queued" }));
+        }
       } else if (heldQueueDisposition === "clearQueueAndSend") {
         settleCurrentQueueInputs(targetSessionId);
       }

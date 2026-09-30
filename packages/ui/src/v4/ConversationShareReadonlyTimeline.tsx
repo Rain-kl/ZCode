@@ -123,6 +123,8 @@ interface ReadonlyLabels {
   artifactPreview: string;
   markerCompact: string;
   markerModelChange: string;
+  // FORK(reload-command): /reload 只读回执文案。
+  markerReload: string;
   unsupportedRows: string;
 }
 
@@ -143,6 +145,9 @@ function resolveReadonlyMarkerLabel(
       return marker.status === "success" ? labels.markerCompact : null;
     case "modelChange":
       return labels.markerModelChange;
+    // FORK(reload-command): /reload 的只读回执。
+    case "reload":
+      return labels.markerReload;
     default:
       return null;
   }
@@ -1105,6 +1110,7 @@ export function ConversationShareReadonlyTimeline({
           artifactPreview: "下载文件",
           markerCompact: "上下文已压缩",
           markerModelChange: "模型已切换",
+          markerReload: "已重载提示词与工具面",
           unsupportedRows: "部分内容需要更新 ZCode 查看",
         }
       : {
@@ -1116,6 +1122,7 @@ export function ConversationShareReadonlyTimeline({
           artifactPreview: "Download file",
           markerCompact: "Context compacted",
           markerModelChange: "Model switched",
+          markerReload: "Prompt and tool settings reloaded",
           unsupportedRows: "Some content requires a newer version of ZCode",
         };
   const artifactOpenContext = useMemo<ArtifactOpenContextValue | null>(() => {

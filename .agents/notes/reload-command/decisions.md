@@ -34,7 +34,9 @@
   本身必须经 `executeTurnCommand`，绕开它意味着第二条执行路径；②`submitPrompt` 自带
   admission/边界处理，直接调 runtime 方法要另造一遍；③唯一执行点保证「输入被消费必有 turn
   边界」（control-only-turn 的教训）。TurnStarted 用 `model-only` 旗标：事件留 raw input 供
-  排查/恢复，但投影不渲染用户气泡，模型也读不到该文本。
+  排查/恢复，但投影不渲染用户气泡，模型也读不到该文本；并带 `executionKind: "controlOnly"`
+  （0ms 维护轮：`conversationTurnRenderUnits` 与投影的工时/时长推导都会跳过它，否则旧 UI 会把
+  duration=0 显示成「已工作」）。
 
 ### 2.3 收窄靠显式注销；内置重注册用完整选项集
 
@@ -54,12 +56,21 @@
   record」），增删服务器本来就要求新会话；`/reload` 的职责只是让**可见性档位**对已发现工具生效，
   重连会把一个亚秒级维护动作变成网络动作。
 
-### 2.5 回执用 toast，v1 不做转录内标记
+### 2.5 回执：转录内灰字分隔线（首版 toast 方案已被用户否决）
 
-- **决策**：成功/排队/失败三种 toast，复用 `chat.compact.*` 同一条通道；不新增 timeline row 类型。
-- **理由**：转录标记要动 rows schema、产品投影、cold hydration、渲染四处（跨协议与 UI 两层），
-  成本与命令本身不成比例。代价：`/reload` 不在转录里留痕，事后只能靠 `fork.reload.completed`
-  日志回溯——已在设计第 2 节声明为 v1 边界。
+- **决策（用户确认）**：成功回执 = 转录内 `timelineMarker`（`reload` 型），样式对齐 `/compact`
+  的「上下文已压缩」——两侧细线 + 居中灰字「已重载提示词与工具面」；排队与失败仍用 toast。
+- **背景**：首版按「成本不成比例」的判断只做了 toast（要动 rows schema、产品投影、cold hydration、
+  渲染四处）。用户明确要求对齐 compact 的转录样式后按四处逐一落地：
+  ①`contracts` 新增 `ForkReloadCompleted` 事件（payload 带 `sourceCommandId`）；
+  ②`product-projection` 新增 handler 落 `timelineMarker`（lane `assistantWork`，与 compact 同泳道）；
+  ③`rows.ts` 的 marker 联合新增 `{ type: "reload" }`；④`ConversationRowView` 加分隔线分支（刷新图标 +
+  `chat.reload.marker` 文案）。分享面（公开投影 allow-list + 只读时间线标签）同步补齐——
+  公开投影的穷尽 switch 没有 default，新增行类型会编译失败，这正是它设计的闸门。
+- **顺带**：`pendingCommandRegistry` 的结算条件加入 `reload`（marker 带 `sourceCommandId` =
+  命令已执行的权威证据，替代恢复提示）；成功 toast 移除（避免与标记双份回执）。
+- **代价与边界**：cold 恢复不需要额外 hydration 代码——v4 投影按事件重放，事件持久化后标记自然重建
+  （与 compact marker 同机制）；运行期渲染仍是未单测项，列在 implementation.md 的未验证清单。
 
 ### 2.6 队列 kind 扩为 "reload" 并纳入既有的控制命令排除
 

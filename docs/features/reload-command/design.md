@@ -18,9 +18,8 @@
 
 - 不重读工作区内容：skills 发现、AGENTS.md/用户指令、memory 索引都不在范围内（它们是内容不是设置，
   各自有刷新路径）。
-- 不改 MCP 服务器配置本身（`runtimeConfig.mcp` 仍是会话创建期配置；增删/修改服务器仍需新会话）。
+- 不做 MCP 服务器配置本身的改动（`runtimeConfig.mcp` 仍是会话创建期配置；增删/修改服务器仍需新会话）。
   `/reload` 只按新档位重新过滤**已发现**的 MCP 工具。
-- 不做转录内的持久标记行（新增 row 类型要动 rows/投影/hydration/渲染四处，成本不成比例；v1 回执 = toast + 日志）。
 - 不穿透子代理（沿用 tool-modes 的既有边界）。
 - 不做 TUI 专属命令面（核心文本路径天然支持 `/reload`，菜单不另做）。
 
@@ -28,13 +27,15 @@
 
 | 决策点 | 结论 |
 | --- | --- |
-| 执行回执 | toast（复用 compact 的命令反馈通道：成功 / 已排队 / 拒绝三种），不做转录标记 |
+| 执行回执 | **转录内灰字分隔线**（`timelineMarker` 的 `reload` 型，与 `/compact` 同款样式，文案「已重载提示词与工具面」）；排队与失败仍用 toast（与 compact 的排队/被拒提示同通道） |
 | 忙碌时 | 排队到回合边界（与 compact 一致）：deferred input「`/reload`」入队，回合结束后由排空路径执行 |
 | 菜单位置 | 进 App 的 `/` 菜单（`APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES`）与帮助目录 |
 
 - 空闲执行是一条 **kind = `"reload"` 的维护轮**：`beginActiveTurn("reload")` → `TurnStarted`
-  （`inputVisibility: "model-only"`，不渲染用户气泡；沿用 `/compact` 的既有旗标）→ 重读两端口 →
-  工具面差量 → `rebuildContextPrefix` → `TurnComplete`（空 response）。形状照抄 `executeManualCompact`。
+  （`inputVisibility: "model-only"` + `executionKind: "controlOnly"`——0ms 维护轮，不渲染用户气泡、
+  模型读不到文本、也不产生 Agent 工时）→ 重读两端口 → 工具面差量 → `rebuildContextPrefix` →
+  `TurnComplete`（空 response）。形状照抄 `executeManualCompact`。
+- **回执**：维护轮成功后追加一条 `ForkReloadCompleted` 会话事件，投影落成 `timelineMarker`（`reload` 型，lane `assistantWork`，与 compact marker 同形），UI 渲染为分隔线灰字「已重载提示词与工具面」；带 `sourceCommandId` 供客户端 pending command 对账。失败与排队提示仍走 toast。
 - **缓存例外**：本命令显式打破「前缀在会话内不可变」——一次性 prompt cache 前缀失效是它的**目的**，
   不是回归。设置在两次执行之间没有变化时，重建出的前缀逐字节相同，缓存不会失效。日志记录前后值便于确认。
 - 让位规则照抄 identity-preset：workflow actor / `customSystemPrompt` 会话里身份段本就不投影
@@ -62,8 +63,9 @@ executeForkReload（core/src/runtime/methods/reload.ts）：
                MCP：注销上次注册名，按启动期描述符快照以新名单重注册（不重连）
    4. cachedTools = null
    5. rebuildContextPrefix（新提示词 + 新 guidanceToolNames）
-   6. fork.reload.completed 日志（mode / injectTools / toolCount / identity / added / removed）
-   7. TurnComplete（空 response）
+   6. 发 ForkReloadCompleted 事件（→ 投影成 timelineMarker 灰字回执）
+   7. fork.reload.completed 日志（mode / injectTools / toolCount / identity / added / removed）
+   8. TurnComplete（空 response）
 ```
 
 **为什么用端口 + 维护轮，而不是直接改 `config`**：创建期与重载必须共用同一份读盘/交集逻辑
@@ -107,8 +109,7 @@ interface ForkToolModeOutcome {
 3. **embedded-search 联动**：Bash 进出 allowlist 会翻转 Glob/Grep 的存在。重注册必须走完整选项集
    （`registerRuntimeBuiltInTools` 的 deps 门齐备），不能复用 `refreshBranchAwareBuiltInTools` 的精简集合
    （它有意省略 `includeNodeRepl` 等门，只适用于「不新增」的分支刷新）。
-4. **上游漂移面**：新增约 10 处 `FORK(reload-command)` 标记（v4 handler 注册表、命令 schema、intent kind、
-   UI 解析与派发、surface/help、core 的 types/internal/agent-runtime、steering 的控制命令排除）。
+4. **上游漂移面**：33 个上游文件、54 行 `FORK(reload-command)` 标记（含事件/投影/分享面；口径见 FEATURES 条目）。
 5. **缓存成本**：一次性前缀失效属于命令目的；无变化时不失效（见第 3 节）。命令日志记录 before/after。
 6. **版本偏斜**：v4 binder 对未原生化的命令回落旧桥；旧 CLI 收到 `reload` 会按其默认路径拒绝/忽略。
    fork 的 UI 与 CLI 同版本发布，属可接受。

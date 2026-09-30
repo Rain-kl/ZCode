@@ -193,6 +193,8 @@ export async function executeForkReload(
         // /reload 是维护命令，不是用户真实 query：事件保留 raw input 供恢复/排查，
         // 但 v4 投影不渲染成 user bubble（与 /compact 同一旗标）。
         inputVisibility: "model-only",
+        // 0ms 控制轮：不产生 Agent 工时；缺这个旗标旧 UI 会把 duration=0 渲染成「已工作」。
+        executionKind: "controlOnly",
       },
       turnTraceContext,
     );
@@ -202,6 +204,15 @@ export async function executeForkReload(
     try {
       throwIfTurnAborted(abortSignal);
       await reloadForkOverrides.call(this, turnTraceContext);
+      // FORK(reload-command): 转录内灰字回执（/compact 同形 timelineMarker）；
+      // sourceCommandId 供客户端 pending command 对账。
+      const reloadNoticeEvent = this.createEvent(
+        SessionEventType.ForkReloadCompleted,
+        { ...(inputId ? { sourceCommandId: inputId } : {}) },
+        turnTraceContext,
+      );
+      await this.appendEvent(reloadNoticeEvent, turnTraceContext);
+      events.push(reloadNoticeEvent);
       throwIfTurnAborted(abortSignal);
 
       const completeEvent = this.createEvent(

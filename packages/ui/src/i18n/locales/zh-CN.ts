@@ -4642,7 +4642,7 @@ const zhCN: Record<string, string> = {
   "chat.compact.queued": "已加入队列，将按顺序压缩上下文。",
   "chat.compact.duplicateBlocked": "已有压缩任务正在运行或排队。",
   // FORK(reload-command): /reload 回执（见 FEATURES.md 的 reload-command 条目）
-  "chat.reload.applied": "已重载提示词与工具面，下一轮生效。",
+  "chat.reload.marker": "已重载提示词与工具面",
   "chat.reload.queued": "已加入队列，当前任务结束后重载提示词与工具面。",
   "chat.reload.failed": "重载失败，请查看日志。",
   "chat.modelSwitch.contextWindowGuard.title": "需要压缩上下文后再切换模型",

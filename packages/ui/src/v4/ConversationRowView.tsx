@@ -11,6 +11,7 @@ import {
   GitBranchIcon,
   GoalIcon,
   PencilIcon,
+  RefreshCwIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
   TrendingUpDownIcon,
@@ -1660,6 +1661,13 @@ const MARKER_MODEL_ICON = (
     className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
   />
 );
+// FORK(reload-command): /reload 的转录回执图标。
+const MARKER_RELOAD_ICON = (
+  <RefreshCwIcon
+    aria-hidden="true"
+    className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)]"
+  />
+);
 
 /**
  * 系统标记分隔线壳：两侧细横线 + 居中「图标 + 文案」pill，视觉对齐旧版
@@ -1785,6 +1793,13 @@ const TimelineMarkerRowView = memo(function TimelineMarkerRowView({
           running,
         };
       }
+      // FORK(reload-command): /reload 的转录回执（与 compact 同款分隔线；成功即静态文案）。
+      case "reload":
+        return {
+          icon: MARKER_RELOAD_ICON,
+          label: intl.formatMessage({ id: "chat.reload.marker" }),
+          running: false,
+        };
       case "forkNotice":
         return {
           icon: MARKER_FORK_ICON,

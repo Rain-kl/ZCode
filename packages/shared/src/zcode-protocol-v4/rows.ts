@@ -338,6 +338,10 @@ export const timelineMarkerPayloadSchema = z.union([
     tokensAfter: z.number().optional(),
     summaryRef: z.string().optional(),
   }),
+  // FORK(reload-command): /reload 的转录内灰字回执（"已重载提示词与工具面"）。
+  z.object({
+    type: z.literal("reload"),
+  }),
   // 出现在 child 会话首部（forkTimelineIsBoundary）。
   z.object({
     type: z.literal("forkNotice"),
