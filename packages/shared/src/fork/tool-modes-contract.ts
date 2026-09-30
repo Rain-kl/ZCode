@@ -88,20 +88,28 @@ export function resolveForkToolModeToolNames(mode: ForkToolMode): readonly strin
 }
 
 /**
- * 由「档位 + 注入开关」算出要下发的工具禁用名单。
+ * 由「档位 + 注入开关」算出要下发的工具白名单。
  *
- * 用 denylist 而不是 allowlist：allowlist 是 fail-closed，未分类的新工具与名字在创建时才知的
- * MCP 工具都会被一并砍掉；denylist 只关用户明确排除的部分，「标准」档天然等价于不下发。
+ * 返回 `undefined` = **不下发**（标准档且注入开启）= 不加任何约束 = 与改动前一致；
+ * 返回空数组 = 一条工具都不注册（注入关闭）。
+ *
+ * 为什么是 allowlist：极简/基础的工具集是**已知固定**的，白名单能精确表达「就这些」——
+ * denylist 表达不了：MCP 工具名在会话创建时不可知，会漏进极简档，也会在关闭注入时照旧下发。
+ * 白名单同时覆盖 MCP（`runtime/methods/mcp.ts` 把同一份 allowlist 传给 MCP 注册），
+ * 所以不需要去动 `mcpServers`。代价是上游新增内置工具不会自动进入极简/基础档——那是
+ * 「极简就是这几个」的本意，另有断言测试在注册表变动时提醒做显式决定。
  */
-export function resolveForkToolModeDenylist(input: {
+export function resolveForkToolModeAllowlist(input: {
   mode: ForkToolMode;
   injectTools: boolean;
-}): readonly string[] {
+}): readonly string[] | undefined {
   if (!input.injectTools) {
-    return [...FORK_TOOL_MODE_ALL_BUILTIN_TOOL_NAMES];
+    return [];
   }
-  const enabled = new Set(resolveForkToolModeToolNames(input.mode));
-  return FORK_TOOL_MODE_ALL_BUILTIN_TOOL_NAMES.filter((name) => !enabled.has(name));
+  if (input.mode === "standard") {
+    return undefined;
+  }
+  return resolveForkToolModeToolNames(input.mode);
 }
 
 export interface ForkToolModeStateFile {
@@ -117,7 +125,7 @@ export interface ForkToolModeState extends ForkToolModeStateFile {
   enabledToolNames: readonly string[];
   /** 当前档位不下发的内置工具名（UI 展示）。 */
   disabledToolNames: readonly string[];
-  /** 极简 / 基础档不下发 MCP 工具；UI 据此提示。 */
+  /** 标准档含全部 MCP 与插件工具；其余档位不下发（白名单覆盖 MCP 注册）。UI 据此提示。 */
   mcpEnabled: boolean;
 }
 
