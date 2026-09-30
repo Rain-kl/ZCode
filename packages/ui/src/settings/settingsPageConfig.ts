@@ -19,6 +19,8 @@ import {
   Keyboard,
   FileSearch,
   Cloud,
+  // FORK(tool-modes): 功能组栏目图标
+  Wrench,
   // FORK(identity-preset): 系统指令栏目图标
   ScrollText,
   // FORK(search-providers): 搜索栏目图标；见 FEATURES.md 的 search-providers 条目
@@ -84,6 +86,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: Cloud,
     titleId: "settings.configSync.title",
     groupId: "basics",
+  },
+  // FORK(tool-modes): 功能组栏目；见 FEATURES.md 的 tool-modes 条目
+  {
+    id: "toolGroups",
+    icon: Wrench,
+    titleId: "settings.toolGroups.title",
+    groupId: "agentCapabilities",
   },
   // FORK(identity-preset): 系统指令栏目；见 FEATURES.md 的 identity-preset 条目
   {

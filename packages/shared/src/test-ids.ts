@@ -727,6 +727,9 @@ export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH = "settings-system-instruct
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE = "settings-system-instructions-create";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH =
   "settings-system-instructions-dynamic-switch";
+// FORK(tool-modes): 设置 → Agent 能力 → 功能组
+export const TID_SETTINGS_TOOL_GROUPS_INJECT_SWITCH = "settings-tool-groups-inject-switch";
+export const TID_SETTINGS_TOOL_GROUPS_MODE_SELECT = "settings-tool-groups-mode-select";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SKILLS_SWITCH =
   "settings-system-instructions-skills-switch";
 export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_TEMPLATE = "settings-system-instructions-template";

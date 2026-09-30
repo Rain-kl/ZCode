@@ -24,6 +24,8 @@ export type SettingsSectionId =
   | "configSync"
   // FORK(identity-preset): 设置 → Agent 能力 → 系统指令；见 FEATURES.md 的 identity-preset 条目
   | "systemInstructions"
+  // FORK(tool-modes): 设置 → Agent 能力 → 功能组；见 FEATURES.md 的 tool-modes 条目
+  | "toolGroups"
   // FORK(search-providers): 设置页新增「搜索」栏目；见 FEATURES.md 的 search-providers 条目
   | "searchProviders";
 
@@ -89,6 +91,8 @@ export function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "configSync" ||
     // FORK(identity-preset): 同上，新增栏目必须一并入 guard
     value === "systemInstructions" ||
+    // FORK(tool-modes): 同上
+    value === "toolGroups" ||
     // FORK(search-providers): 搜索栏目入 guard，保证「上次所在栏目」可恢复
     value === "searchProviders"
   );

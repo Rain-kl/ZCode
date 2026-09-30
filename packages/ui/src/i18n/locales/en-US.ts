@@ -2123,6 +2123,24 @@ const enUS: Record<string, string> = {
   "settings.systemInstructions.injectDynamic": "Inject dynamic prompt sections",
   "settings.systemInstructions.injectDynamicHint":
     "When off, only your prompt is injected — the model no longer receives environment info, git status, communication style, or context-management guidance",
+  // FORK(tool-modes): Settings → Agent capabilities → Tool groups
+  "settings.toolGroups.title": "Tool groups",
+  "settings.toolGroups.injectTools": "Inject tools",
+  "settings.toolGroups.injectToolsHint":
+    "Off sends no tool definitions at all — the model answers in plain text only, MCP tools included",
+  "settings.toolGroups.mode": "Tool mode",
+  "settings.toolGroups.mode.minimal": "Minimal",
+  "settings.toolGroups.mode.basic": "Basic",
+  "settings.toolGroups.mode.standard": "Standard",
+  "settings.toolGroups.hintNoTools": "Tool injection is off",
+  "settings.toolGroups.hintStandard":
+    "Every built-in tool plus MCP and plugin tools (the current default)",
+  "settings.toolGroups.hintRestricted":
+    "Only this mode's fixed tool set; MCP and plugin tools are not sent",
+  "settings.toolGroups.takesEffectOnNewSession": "When it applies",
+  "settings.toolGroups.takesEffectOnNewSessionHint":
+    "Applies to new sessions; running sessions are unaffected",
+  "settings.toolGroups.unavailable": "Tool groups are not available in this environment.",
   "settings.systemInstructions.injectSkills": "Inject the skills listing",
   "settings.systemInstructions.injectSkillsHint":
     "When off, available skills are no longer listed — the model will not know them unless you list them in your prompt",

@@ -1993,6 +1993,21 @@ const zhCN: Record<string, string> = {
   "settings.systemInstructions.injectDynamic": "注入动态提示词",
   "settings.systemInstructions.injectDynamicHint":
     "关闭后只注入你写的提示词；模型将不再收到环境信息、git 状态、沟通风格与上下文管理说明",
+  // FORK(tool-modes): 设置 → Agent 能力 → 功能组
+  "settings.toolGroups.title": "功能组",
+  "settings.toolGroups.injectTools": "注入工具",
+  "settings.toolGroups.injectToolsHint":
+    "关闭后请求不带任何工具，模型只能纯文本回答；MCP 工具一并关闭",
+  "settings.toolGroups.mode": "工具模式",
+  "settings.toolGroups.mode.minimal": "极简",
+  "settings.toolGroups.mode.basic": "基础",
+  "settings.toolGroups.mode.standard": "标准",
+  "settings.toolGroups.hintNoTools": "已关闭工具注入",
+  "settings.toolGroups.hintStandard": "全部内置工具与 MCP / 插件工具（当前默认行为）",
+  "settings.toolGroups.hintRestricted": "只下发该档位的固定工具集；MCP 与插件工具不下发",
+  "settings.toolGroups.takesEffectOnNewSession": "生效时机",
+  "settings.toolGroups.takesEffectOnNewSessionHint": "对新会话生效，正在进行的会话不受影响",
+  "settings.toolGroups.unavailable": "当前环境不支持功能组配置。",
   "settings.systemInstructions.injectSkills": "注入 skills 清单",
   "settings.systemInstructions.injectSkillsHint":
     "关闭后不再列出可用技能；除非你在提示词里自己列，模型不会知道有哪些技能",

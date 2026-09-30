@@ -75,6 +75,8 @@ import { ConfigSyncPanel } from "@/fork/local-mode/ConfigSyncPanel.js";
 import { SearchProvidersSection } from "@/fork/search-providers/SearchProvidersSection.js";
 // FORK(identity-preset): 设置 → Agent 能力 → 系统指令；见 FEATURES.md 的 identity-preset 条目
 import { SystemInstructionsSection } from "@/fork/identity-preset/SystemInstructionsSection.js";
+// FORK(tool-modes): 设置 → Agent 能力 → 功能组；见 FEATURES.md 的 tool-modes 条目
+import { ToolGroupsSection } from "@/fork/tool-modes/ToolGroupsSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
 import { ComputerUseSection } from "@/settings/ComputerUseSection.js";
@@ -1936,6 +1938,8 @@ export function SettingsPage({
                           <SearchProvidersSection />
                         ) : activeSection === "systemInstructions" ? (
                           <SystemInstructionsSection />
+                        ) : activeSection === "toolGroups" ? (
+                          <ToolGroupsSection />
                         ) : activeSection === "browser" ? (
                           <BrowserSettingsSection
                             isDesktop={Boolean(isDesktop)}
