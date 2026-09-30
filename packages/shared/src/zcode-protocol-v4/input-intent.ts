@@ -41,8 +41,9 @@ export const conversationInputIntentSchema = z
     sourceCommandId: z.string().min(1),
     queueItemId: z.string().min(1),
     clientId: z.string().min(1),
-    // compact 是可排队的维护意图；消费时走 compact lifecycle，不投影为 user row。
-    kind: z.enum(["sendText", "sendGoalCommand", "compact"]),
+    // compact / reload（FORK(reload-command)）是可排队的维护意图；消费时走各自 lifecycle，
+    // 不投影为 user row。
+    kind: z.enum(["sendText", "sendGoalCommand", "compact", "reload"]),
     text: z.string(),
     attachments: z.array(attachmentRefSchema).default([]),
     // optional 只服务旧 snapshot hydration；新 admission 必须填入完整 Submission。

@@ -40,6 +40,16 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
       summary: "Compact the current conversation with optional instructions.",
       usage: "/compact [instructions]",
     },
+    // FORK(reload-command): 覆盖设置热重载（见 FEATURES.md 的 reload-command 条目）
+    {
+      details: [
+        "Re-reads the identity preset and tool-mode settings for this conversation and applies them from the next turn on.",
+        "Conversation history is unchanged; the next request rebuilds the prompt prefix.",
+      ],
+      name: "reload",
+      summary: "Reload prompt and tool settings for this conversation.",
+      usage: "/reload",
+    },
     {
       details: [
         "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",

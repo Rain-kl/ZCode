@@ -3,7 +3,8 @@ import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
 export type PendingCommandReplay =
   | {
       kind: "input";
-      type: "sendText" | "sendGoalCommand" | "compact" | "createSession";
+      // FORK(reload-command): "reload" 与 compact 同为可回放的输入型维护命令。
+      type: "sendText" | "sendGoalCommand" | "compact" | "reload" | "createSession";
       payload: Record<string, unknown>;
       baseRevision?: number;
     }
@@ -21,7 +22,9 @@ export function pendingCommandReplayFor(envelope: CommandEnvelope): PendingComma
   if (
     envelope.type === "sendText" ||
     envelope.type === "sendGoalCommand" ||
-    envelope.type === "compact"
+    envelope.type === "compact" ||
+    // FORK(reload-command): 队列中的 /reload 也要有刷新后的重放线索。
+    envelope.type === "reload"
   ) {
     return {
       kind: "input",

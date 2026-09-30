@@ -3,3 +3,4 @@
  * 见 FEATURES.md 的 tool-modes 条目与 docs/features/tool-modes/design.md 第 4 节。
  */
 export * from "./mode-tools.js";
+export * from "./file-port.js";

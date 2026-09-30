@@ -455,7 +455,8 @@ function resolveQueuedComposerRestore(
   queueItemId: string,
 ): QueuedComposerRestoreTarget | null {
   const item = snapshot.queue.items.find((candidate) => candidate.queueItemId === queueItemId);
-  if (!item || item.kind === "compact") return null;
+  // FORK(reload-command): reload 与 compact 同为维护命令，不能回填进 Composer 当普通文本重发。
+  if (!item || item.kind === "compact" || item.kind === "reload") return null;
   const config = {
     ...(item.mode ? { mode: item.mode } : {}),
     ...(typeof item.planEnabled === "boolean" ? { planEnabled: item.planEnabled } : {}),
@@ -2453,9 +2454,18 @@ export function SessionPane({
         command.kind === "compact" &&
         currentRoutingMode !== undefined &&
         currentRoutingMode !== "startNow";
+      // FORK(reload-command): 与 compact 同一预测口径（非 startNow 路由即会入队）。
+      const reloadExpectedToQueue =
+        command.kind === "reload" &&
+        currentRoutingMode !== undefined &&
+        currentRoutingMode !== "startNow";
       switch (command.kind) {
         case "compact":
           type = "compact";
+          break;
+        // FORK(reload-command): /reload 原生命令（空闲立即执行、忙碌入 FIFO）。
+        case "reload":
+          type = "reload";
           break;
         case "sendGoalCommand":
           type = "sendGoalCommand";
@@ -2506,9 +2516,19 @@ export function SessionPane({
         } else if (command.kind === "compact" && ack.reasonCode === "activeTurn") {
           // 兼容尚未升级的 CLI：旧端仍会返回 activeTurn，不能再次无声清空命令。
           toast(intl.formatMessage({ id: "chat.compact.runningBlocked" }));
+        } else if (command.kind === "reload") {
+          // FORK(reload-command): 拒绝（恢复未就绪 / 入队被拒）时给出回执。
+          toast(intl.formatMessage({ id: "chat.reload.failed" }));
         }
       } else if (command.kind === "compact" && compactExpectedToQueue) {
         toast(intl.formatMessage({ id: "chat.compact.queued" }));
+      } else if (command.kind === "reload") {
+        // FORK(reload-command): ACK 到达即区分「已重载」与「已排队」，与 compact 同一回执通道。
+        toast(
+          intl.formatMessage({
+            id: reloadExpectedToQueue ? "chat.reload.queued" : "chat.reload.applied",
+          }),
+        );
       } else if (heldQueueDisposition === "clearQueueAndSend") {
         settleCurrentQueueInputs(targetSessionId);
       }

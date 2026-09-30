@@ -135,6 +135,9 @@ export async function initializeMcp(
 
   try {
     const snapshot = await startup;
+    // FORK(reload-command): 描述符快照与本次注册名单留在 runtime 上——/reload 收窄时需要
+    // 显式注销这份名单（注册表不会自动回收），放宽时按同一份快照重新过滤（不重连 MCP）。
+    this.mcpToolDescriptors = snapshot.tools;
     const registered = registerMcpTools(this.registry, mcpPort, snapshot.tools, {
       allowedTools: this.config.toolAllowlist,
       disallowedTools: this.config.toolDisallowlist,
@@ -143,6 +146,7 @@ export async function initializeMcp(
         new Set(this.config.mcp?.trustedOfficialCuaServerNames ?? []),
       ),
     });
+    this.mcpRegisteredToolNames = registered;
     if (registered.length > 0) {
       this.invalidateToolCache();
     }
@@ -165,4 +169,51 @@ export async function initializeMcp(
     });
   }
   this.mcpToolsRegistered = true;
+}
+
+/**
+ * FORK(reload-command): 按当前 `config.toolAllowlist` 重新过滤 MCP 工具（`/reload` 的工具面差量）。
+ *
+ * 不重连：复用启动期描述符快照（MCP 服务器配置本身是会话创建期配置，增删/改服务器仍需新会话）；
+ * 先把上一次注册的名字显式注销，再按新名单重新注册——收窄方向注册表不会自动回收，
+ * 放宽方向也只有重注册才会把被过滤掉的工具加回来。
+ */
+export async function refreshForkMcpToolRegistrations(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+): Promise<{ removed: string[]; registered: string[] }> {
+  const removed = this.mcpRegisteredToolNames ?? [];
+  for (const name of removed) {
+    if (this.registry.has(name)) {
+      this.registry.unregister(name);
+    }
+  }
+  this.mcpRegisteredToolNames = [];
+
+  const mcpPort = this.mcpPort;
+  const descriptors = this.mcpToolDescriptors;
+  if (!mcpPort || !descriptors || descriptors.length === 0) {
+    return { removed, registered: [] };
+  }
+
+  const registered = registerMcpTools(this.registry, mcpPort, descriptors, {
+    allowedTools: this.config.toolAllowlist,
+    disallowedTools: this.config.toolDisallowlist,
+    officialCuaServerNames: computeOfficialCuaServerNames(
+      this.config.mcp?.servers ?? {},
+      new Set(this.config.mcp?.trustedOfficialCuaServerNames ?? []),
+    ),
+  });
+  this.mcpRegisteredToolNames = registered;
+  if (registered.length > 0 || removed.length > 0) {
+    this.invalidateToolCache();
+  }
+  this.logger?.debug("MCP tool registrations refreshed", {
+    ...traceContextToLogContext(traceContext),
+    event: "mcp.tools.refreshed",
+    module: "core.runtime",
+    registeredToolCount: registered.length,
+    removedToolCount: removed.length,
+  });
+  return { removed, registered };
 }

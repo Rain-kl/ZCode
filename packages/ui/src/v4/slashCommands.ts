@@ -3,6 +3,11 @@ export type V4VisibleSlashCommand =
       kind: "compact";
       displayText: string;
     }
+  // FORK(reload-command): /reload —— 重读系统指令与工具档位并就地生效（见 FEATURES.md 的 reload-command 条目）
+  | {
+      kind: "reload";
+      displayText: string;
+    }
   | {
       kind: "planShortcut";
       task: string;
@@ -78,6 +83,10 @@ export function parseV4VisibleSlashCommand(
 
   if (commandName === "compact" || commandName === "compress") {
     return { kind: "compact", displayText };
+  }
+  // FORK(reload-command): 只接受命令本身；带参数或附件时随 sendText 直发。
+  if (commandName === "reload") {
+    return { kind: "reload", displayText };
   }
   if (commandName !== "goal" && commandName !== "target") {
     return null;

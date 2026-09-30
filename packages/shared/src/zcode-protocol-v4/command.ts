@@ -148,6 +148,9 @@ export const commandPayloadSchemas = {
   // compact 是输入型维护命令：idle 时立即执行，busy/held 时进入 FIFO。
   // 因为 admission 与当前 revision 无关，不走 CAS；sourceCommandId 提供幂等边界。
   compact: z.object({}),
+  // FORK(reload-command): /reload —— 空闲立即执行、忙碌进入 FIFO 的维护命令（重读系统指令与
+  // 工具档位并就地重建提示词与工具面）；payload 为空对象。
+  reload: z.object({}),
   // running 时对稳定 assistant row 可用。
   forkAssistant: z.object({ target: conversationRowTargetSchema }),
   applyFileRewind: z.object({ target: conversationRowTargetSchema }),

@@ -35,7 +35,8 @@ export interface PendingCommandEntry {
 }
 
 interface PendingCommandReplayRequest {
-  type: "sendText" | "sendGoalCommand" | "compact" | "createSession";
+  // FORK(reload-command): "reload" 与 compact 同为可回放的输入型维护命令。
+  type: "sendText" | "sendGoalCommand" | "compact" | "reload" | "createSession";
   payload: Record<string, unknown>;
   sessionId: string | null;
   baseRevision?: number;

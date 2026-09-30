@@ -129,6 +129,7 @@ import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
 import { cloneModelSelection } from "./model-selection.js";
 // FORK(identity-preset): 自定义身份段端口；与 contextSourcePort 同款私有字段
 import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
+import type { ForkToolModePort } from "../fork/tool-modes/file-port.js";
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
 export class AgentRuntime {
@@ -170,6 +171,8 @@ export class AgentRuntime {
   private contextSourcePort?: ContextSourcePort;
   // FORK(identity-preset): 端口在 deps，故与 contextSourcePort 同处声明
   private identityPresetPort?: IdentityPresetPort;
+  // FORK(reload-command): 同上，/reload 复用同一份档位端口
+  private forkToolModePort?: ForkToolModePort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
   private mcpStartupPromise?: Promise<McpConnectionSnapshot>;
@@ -285,6 +288,8 @@ export class AgentRuntime {
     this.contextSourcePort = deps.contextSourcePort;
     // FORK(identity-preset): 与同区端口一样只做一次性转存；唯一的消费点是 ensureContextInitialized
     this.identityPresetPort = deps.identityPresetPort;
+    // FORK(reload-command): 创建期解析与 /reload 共用的档位端口
+    this.forkToolModePort = deps.forkToolModePort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;
     this.runtimeTaskRegistry = deps.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();

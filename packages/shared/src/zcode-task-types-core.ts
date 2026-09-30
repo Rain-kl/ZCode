@@ -439,7 +439,8 @@ export type ZCodeStreamEvent = (
   | ZCodeTaskSnapshotUpdated
 ) & { inputId?: InputId };
 export type ZCodeTurnSteerSource = "plan_approval_feedback" | "workflow_refine_feedback";
-export type ZCodeTurnSteerCommandKind = "sendText" | "sendGoalCommand" | "compact";
+// FORK(reload-command): 与 compact 并列的维护命令 kind。
+export type ZCodeTurnSteerCommandKind = "sendText" | "sendGoalCommand" | "compact" | "reload";
 export interface ZCodeTurnSteerQueued {
   type: "turn_steer_queued";
   taskId: string;

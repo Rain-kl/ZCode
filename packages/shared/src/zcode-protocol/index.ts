@@ -1186,7 +1186,8 @@ export const zcodeTurnStartedEventPayloadSchema = z
   })
   .strict();
 const zcodeTurnSteerSourceSchema = z.enum(["plan_approval_feedback", "workflow_refine_feedback"]);
-const zcodeTurnSteerCommandKindSchema = z.enum(["sendText", "sendGoalCommand", "compact"]);
+// FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind。
+const zcodeTurnSteerCommandKindSchema = z.enum(["sendText", "sendGoalCommand", "compact", "reload"]);
 const zcodeTurnSteerDeliverySchema = z.enum(["queue", "guide"]);
 
 export const zcodeTurnSteerQueuedEventPayloadSchema = z

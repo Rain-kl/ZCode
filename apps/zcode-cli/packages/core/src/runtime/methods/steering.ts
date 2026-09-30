@@ -449,7 +449,9 @@ function firstInlineGuideIndex(activeTurn: ActiveTurnSteeringState): number {
   return activeTurn.pendingInputs.findIndex(
     (pendingInput) =>
       pendingInput.commandKind !== "sendGoalCommand" &&
+      // FORK(reload-command): reload 与 compact 同为控制命令，不得被消费为 inline guide。
       pendingInput.commandKind !== "compact" &&
+      pendingInput.commandKind !== "reload" &&
       pendingInputDelivery(pendingInput) === "guide",
   );
 }
@@ -466,7 +468,9 @@ export function hasInlineGuidePendingInput(
     !this.queueExternalDrainActive &&
     !this.pendingInputReservations.has(pendingInput?.id ?? "") &&
     pendingInput?.commandKind !== "sendGoalCommand" &&
+    // FORK(reload-command): 同上，reload 不得被消费为 inline guide。
     pendingInput?.commandKind !== "compact" &&
+    pendingInput?.commandKind !== "reload" &&
     pendingInputDelivery(pendingInput) === "guide"
   );
 }

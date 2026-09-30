@@ -112,6 +112,7 @@ import type { PresentationSurface } from "../context/types.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 // FORK(identity-preset): 自定义身份段的端口与结果类型
 import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
+import type { ForkToolModePort } from "../fork/tool-modes/file-port.js";
 import type { ResolvedIdentityPreset } from "../fork/identity-preset/identityManager.js";
 
 // -----------------------------------------------
@@ -381,6 +382,8 @@ export interface AgentRuntimeDeps {
   // 用户自定义身份段端口；缺席即不启用（系统默认提示词）。同一 App 内有效值只有一份；并发首次进入可能各读一次、结果相同（见 methods/context.ts）
   identityPresetPort?: IdentityPresetPort;
   // FORK-END(identity-preset)
+  // FORK(reload-command): /reload 的工具档位端口（创建期与重载共用同一份读盘逻辑）
+  forkToolModePort?: ForkToolModePort;
   eventSink?: SessionEventSink;
   logger?: Logger;
   traceContext?: TraceContext;
@@ -492,7 +495,8 @@ export type ExecuteTurnOptions = ExecuteTurnOptionsBase &
  * start/queue 的选择由持有该 session 状态的 AgentRuntime 原子完成。
  */
 export type PromptAdmissionOptions = ExecuteTurnOptions & {
-  commandKind?: "sendText" | "sendGoalCommand" | "compact";
+  // FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind（不得被消费为 inline guide）。
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
   delivery?: "auto" | "start_turn" | "steer_active_turn";
   expectedTurnId?: TurnId;
   /** busy 时的产品队列语义；附件或不可 steer 时由 Core 回退 queue。 */
@@ -754,7 +758,8 @@ export interface ExecuteToolsResult {
   events: SessionEvent[];
 }
 
-export type ActiveTurnKind = "regular" | "compact" | "rewind";
+// FORK(reload-command): /reload 维护轮的 turn kind（与 compact/rewind 并列，不可 steer）。
+export type ActiveTurnKind = "regular" | "compact" | "rewind" | "reload";
 
 export const INLINE_TEXT_ATTACHMENT_MAX_BYTES = 64 * 1024;
 

@@ -23,6 +23,8 @@ import {
   buildPluginReferenceCatalog,
   // FORK(identity-preset): 自定义身份段的只读文件端口；见 FEATURES.md 的 identity-preset 条目
   createFileIdentityPresetPort,
+  // FORK(reload-command): 工具档位的只读文件端口；创建期解析与 /reload 共用同一份读盘逻辑
+  createFileForkToolModePort,
   type AmendWorkflowRunSettingsInput,
   type ResumeSessionResult,
 } from "@zcode/core";
@@ -73,8 +75,6 @@ import { createPluginFacadeForApp } from "./plugin-facade.js";
 import { resolvePluginRuntimeFeatures } from "./plugin-runtime-features.js";
 import { createSessionFacade } from "./session-facade.js";
 import { resolveAppRuntimeConfig, runtimeConfigLogContext } from "./runtime-config.js";
-// FORK(tool-modes): 工具档位落盘解析；见 FEATURES.md 的 tool-modes 条目
-import { resolveForkToolMode } from "../fork/tool-modes.js";
 import { resolveBundledSkillRoots } from "./bundled-skills.js";
 import { collectDynamicWorkflowDisabledSkillPaths } from "./dynamic-workflow-gate.js";
 import { createWorkspaceHookRuntimeSecurity } from "./workspace-hook-trust.js";
@@ -265,14 +265,25 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         workingDirectory,
         workspaceIdentity: options.runtimeConfig?.memory?.workspaceIdentity,
       });
-    // FORK(tool-modes): 用户选定的工具档位落到 runtimeConfig.toolAllowlist；
-    // 与宿主下发的既有名单取交集（档位只让工具面更小）。见 FEATURES.md 的 tool-modes 条目
-    {
-      const forkToolMode = await resolveForkToolMode({
-        storageRoot,
-        hostAllowlist: runtimeConfig.toolAllowlist,
-        log: (message, detail) => logger.info(message, detail),
+    // FORK-BEGIN(tool-modes)
+    // 用户选定的工具档位落到 runtimeConfig.toolAllowlist；与宿主下发的既有名单取交集（档位只让
+    // 工具面更小）。解析走 core 的档位端口：创建期与 /reload（FORK(reload-command)）共用同一份
+    // 读盘逻辑；端口实例随后注入 runtime deps，供重载按当下设置重读。
+    const forkHostToolAllowlist = runtimeConfig.toolAllowlist;
+    const forkToolModePort =
+      options.forkToolModePort ??
+      createFileForkToolModePort({
+        root: storageRoot,
+        ...(forkHostToolAllowlist === undefined ? {} : { hostAllowlist: forkHostToolAllowlist }),
       });
+    {
+      const forkToolMode = await forkToolModePort.loadActive();
+      if (forkToolMode.diagnostic) {
+        logger.warn("Fork tool mode load failed", {
+          event: "fork.tool_mode.load.failed",
+          reason: forkToolMode.diagnostic,
+        });
+      }
       if (forkToolMode.toolAllowlist !== undefined) {
         runtimeConfig.toolAllowlist = forkToolMode.toolAllowlist;
       }
@@ -283,6 +294,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         toolCount: forkToolMode.toolAllowlist?.length ?? null,
       });
     }
+    // FORK-END(tool-modes)
     const browserControlPort = options.browserControlPort;
     if (
       browserControlPort &&
@@ -775,6 +787,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           root: join(storageRoot, FORK_IDENTITY_PRESET_ROOT_NAME),
         }),
       // FORK-END(identity-preset)
+      // FORK(reload-command): 档位端口与创建期解析共用同一实例；/reload 经 deps 读回。
+      forkToolModePort,
       skillPort:
         configResult.config.features.skill && configResult.config.skills.enabled
           ? (options.skillPort ??

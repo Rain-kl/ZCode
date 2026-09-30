@@ -7,7 +7,7 @@
 | `packages/shared/src/fork/tool-modes-contract.ts`                     | 模式类型、状态 schema（缺省「标准 + 注入」）、解析、`mcpEnabled`             |
 | `apps/zcode-cli/packages/core/src/fork/tool-modes/mode-tools.ts`      | 三档**分类**（不复制工具全集）与档位解析                                     |
 | `apps/zcode-cli/packages/core/src/fork/tool-modes/index.ts`           | core 公开入口                                                                |
-| `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts`            | 读状态文件 → 档位解析 → 写 `runtimeConfig.toolAllowlist`（与宿主名单取交集） |
+| `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts`       | 读状态文件 → 档位解析 → **终值白名单**（与宿主名单取交集；标准档 = 宿主名单本身）。创建期与 `/reload` 共用（原 `bootstrap/src/fork/tool-modes.ts` 已由本端口取代，见 reload-command） |
 | `packages/services/src/fork/toolModes.ts`                             | 服务面 + 描述符（通道 `fork-tool-modes`）                                    |
 | `packages/desktop/src/host/fork/tool-modes/{store,service,index}.ts`  | `tool-groups.json` 原子读写、`setMode` / `setInjectTools`、状态事件          |
 | `packages/ui/src/fork/tool-modes/{useForkToolMode.ts,index.ts}`       | 设置栏目数据入口与公开出口                                                   |
@@ -29,7 +29,7 @@
 | 文件                                                                                                           | 改动                                                          |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `apps/zcode-cli/packages/core/src/index.ts`                                                                    | 导出 `./fork/tool-modes/index.js`                             |
-| `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`                                                      | runtimeConfig 装配后调用 `resolveForkToolMode` 并记 info 日志 |
+| `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`                                                      | runtimeConfig 装配后经 core 的档位端口解析并记 info 日志；端口注入 runtime deps 供 `/reload` 复用 |
 | `packages/services/src/{index,accessor}.ts`                                                                    | 服务面导出与访问器字段                                        |
 | `packages/client/src/remoteServiceAccess.ts`                                                                   | manifest-gated 服务 + key 登记                                |
 | `packages/desktop/src/host/index.ts`                                                                           | 注册服务（状态文件与身份配置同级）                            |

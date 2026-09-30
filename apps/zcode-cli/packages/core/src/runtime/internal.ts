@@ -58,6 +58,7 @@ import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 // FORK(identity-preset): 自定义身份段端口；与 contextSourcePort 同款 deps 注入字段
 import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
+import type { ForkToolModePort } from "../fork/tool-modes/file-port.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
@@ -98,6 +99,12 @@ export interface AgentRuntimeInternal
   contextSourcePort?: ContextSourcePort;
   // FORK(identity-preset): 端口只能走 deps（config 会被子运行时 spread），故按同区惯例镜像成字段
   identityPresetPort?: IdentityPresetPort;
+  // FORK(reload-command): /reload 读档位的端口；内置工具按当下 config 重注册的闭包；
+  // MCP 上次注册名与启动期描述符快照（收窄要显式注销，放宽按同一份快照重新过滤）。
+  forkToolModePort?: ForkToolModePort;
+  reregisterBuiltInTools?: () => void;
+  mcpRegisteredToolNames?: string[];
+  mcpToolDescriptors?: McpConnectionSnapshot["tools"];
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   mcpStartupPromise?: Promise<McpConnectionSnapshot>;

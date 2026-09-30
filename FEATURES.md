@@ -90,7 +90,7 @@
 - **修改内容**：
   1. 三档工具模式（包含关系）：**极简**（Read/Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch）、**基础**（再加任务与计划、提问、子代理协作、工作流、定时任务、技能）、**标准**（再加脚本运行时与内部通信面，含全部 MCP 与插件工具）。默认标准，行为与改动前一致。
   2. 总开关「注入工具」：关闭后请求不下发任何工具定义（含 MCP），模型只能纯文本回答。
-  3. 机制：档位 → 白名单 → `runtimeConfig.toolAllowlist`，落点是 runtime 的 `resolveBuiltInToolAllowlist`（同时喂给 MCP 注册，所以不需要动 `mcpServers`）；标准档不下发（不加约束），与宿主既有名单取交集（只收敛，不放宽）。会话创建期冻结，对新会话生效。
+  3. 机制：档位 → 白名单 → `runtimeConfig.toolAllowlist`，落点是 runtime 的 `resolveBuiltInToolAllowlist`（同时喂给 MCP 注册，所以不需要动 `mcpServers`）；标准档不下发（不加约束），与宿主既有名单取交集（只收敛，不放宽）。会话创建期冻结，对新会话生效；已有会话可执行 `/reload` 原地重载（见 reload-command 条目），创建期与重载共用 core 的 `ForkToolModePort`（原 `bootstrap/src/fork/tool-modes.ts` 已删除）。
   4. 设置 → Agent 能力 → 功能组：总开关、三张档位卡片、当前档位的后果说明、生效时机提示。
 - **修改文件**：新增 `packages/shared/src/fork/tool-modes-contract.ts`、`apps/zcode-cli/packages/core/src/fork/tool-modes/**`、`apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts`、`packages/services/src/fork/toolModes.ts`、`packages/desktop/src/host/fork/tool-modes/**`、`packages/ui/src/fork/tool-modes/**` 与对应测试；上游接线 `apps/zcode-cli/packages/core/src/index.ts`、`bootstrap/src/app/create-app.ts`、`packages/services/src/{index,accessor}.ts`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/desktop/src/host/fork/webdav-sync/manifest.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`ui/src/settings/settingsPageConfig.ts`、`ui/src/SettingsPage.tsx`、`ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/shared/src/test-ids.ts`。
 - **上游改动标记**：`FORK(tool-modes)`；接线逐处标注，新增文件不需要标记。
@@ -111,7 +111,7 @@
 - **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步
 - **需求背景**：上游的系统提示词是代码里的固定文本，用户无法调整模型的回答风格；core 虽有 `customSystemPrompt`，但它是「整段替换」语义且没有任何生产写入方，不适合直接暴露给用户。需要一条用户可管理的自定义提示词通道：多组命名配置 + 总开关 + 本地文件存储（与 `~/.zcode/agents` 同级，全机一份），并纳入既有 WebDAV 同步；启用后只替换**身份段**，运行时事实段（环境信息 / gitStatus / 上下文管理 / 桌面契约）保持不变。
 - **修改内容**：
-  1. 第 1 期（内核）已完成：共享契约与模板常量（`presets/` 目录名、id 规则、`active.json` 形态、`default` / `skeleton` 模板）；agent 侧只读文件端口（读盘失败一律回退系统默认，绝不抛出、不写盘）；身份段构造与激活项解析；`builder.ts` 接线——启用后 `cli_prefix` 不再发出、身份段换成用户配置正文，system 消息由 3 条变 2 条，动态段与缓存语义不变，`workflowActor` / `customSystemPrompt` / 内置子代理三条路径让位；bootstrap 端口装配（`<storageRoot>/presets`，可用 `ZCodeAppOptions.identityPresetPort` 覆盖）。同一 App 内有效值只有一份（并发首次进入可能各读一次、结果相同）、只对新建会话生效，配置目录不存在时行为与改动前一致。
+  1. 第 1 期（内核）已完成：共享契约与模板常量（`presets/` 目录名、id 规则、`active.json` 形态、`default` / `skeleton` 模板）；agent 侧只读文件端口（读盘失败一律回退系统默认，绝不抛出、不写盘）；身份段构造与激活项解析；`builder.ts` 接线——启用后 `cli_prefix` 不再发出、身份段换成用户配置正文，system 消息由 3 条变 2 条，动态段与缓存语义不变，`workflowActor` / `customSystemPrompt` / 内置子代理三条路径让位；bootstrap 端口装配（`<storageRoot>/presets`，可用 `ZCodeAppOptions.identityPresetPort` 覆盖）。同一 App 内有效值只有一份（并发首次进入可能各读一次、结果相同）、只对新建会话生效（已有会话可执行 `/reload` 原地重载，见 reload-command 条目），配置目录不存在时行为与改动前一致。
   2. 第 2 期（服务与设置页）已完成：宿主文件层（原子写、空闲 id 分配、名称归一化、正文长度上限、Windows 保留设备名避让、删除激活项同时清空 activeId）；fork 服务面与宿主实现（写操作后广播状态，含 activeMissing 供 UI 提示）；访问层四处接线；设置页「系统指令」栏目（总开关、配置列表与激活标记、按模板新建、编辑器、删除确认，并明示「对新会话生效」）；i18n 与 test-ids。写入方绝不覆盖已有配置——id 派生会撞名（`"a b"` 与 `"a-b"` 都得 `a-b`），冲突时退让成 `-2`、`-3`。
   3. 第 3 期（同步）已完成：`presets/` 纳入 WebDAV 备份包（`presets/active.json` + `presets/profiles/<id>.md`）；预设正文参与内容哈希，只改提示词也会触发上传；恢复时整目录覆盖，但旧备份包（无 `presets/` 条目）保持本地不动；读取侧拒绝 zip 内的嵌套/穿越条目名。
 - **修改文件**：
@@ -125,6 +125,22 @@
 - **设计文档**：`docs/features/identity-preset/design.md`
 - **实现文档**：`docs/features/identity-preset/implementation.md`（第 1 期：落地位置、关键改动、上游接线、验证证据、与设计的偏差）与 `implementation-plan-2.md`（第 2 期计划与硬性要求）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；`writing-plans` 产出第 1 期计划，逐任务实现并评审后由 `verification-before-completion` 收口）。
+- **上游同步记录**：暂无。
+
+## 覆盖设置热重载：/reload 命令 (reload-command)
+
+- **状态**：已实现（2026-09-30）
+- **需求背景**：工具档位（tool-modes）与系统指令（identity-preset）都在会话创建/冷恢复时读取一次，运行中的会话冻结（前缀不可变的缓存不变量）。用户改完设置后要么新开对话、要么重启应用才能生效；`/fork` 之类借「新会话」达成等效，但会多出一条对话。需要一条**在已有会话里原地生效**的命令，不改开新对话。
+- **修改内容**：
+  1. 新命令 `/reload`：重读 `~/.zcode/tool-groups.json` 与 `~/.zcode/presets/active.json`，就地重建提示词前缀与工具面，**下一轮起生效**；对话历史不动。空闲立即执行（kind=`reload` 的维护轮，TurnStarted 标 model-only，不产生用户气泡）；忙碌时与 compact 一致入队，回合结束后由排空路径执行（`executeTurnCommand` 的 `parseReloadCommand` 分流，与空闲路径同源）。
+  2. 工具面差量：内置工具按新 allowlist 显式注销被排除项再整体重注册（含 embedded-search 联动）；MCP 注销上次注册名后按启动期描述符快照以新名单重注册（不重连）。`cachedTools` 清空后 `rebuildContextPrefix` 重建前缀（guidanceToolNames 随新工具面收敛）。
+  3. 读盘逻辑单点化：原来只在 bootstrap 的 `resolveForkToolMode` 里的一次性解析改为 core 的 `ForkToolModePort`（镜像 identity 端口），创建期与 `/reload` 共用；标准档语义显式化为「返回宿主名单（或 undefined）」，使时切回标准能正确恢复约束。
+  4. 回执：toast（复用 compact 的通道：成功/已排队/拒绝）；不做转录标记（v1 边界，见设计文档第 2 节）。
+  5. 命令面：App `/` 菜单与内置帮助目录新增 `reload`（保留名）。
+- **修改文件**：新增 `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/reload.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts`、`apps/zcode-cli/packages/core/test/{forkToolModePort,forkReload}.test.ts`、`docs/features/reload-command/**`；删除 `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `apps/zcode-cli/packages/bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口）；上游接线 `packages/shared/src/zcode-protocol-v4/{command,input-intent}.ts`、`packages/shared/src/zcode-protocol/index.ts`、`packages/shared/src/zcode-slash-command-help.ts`、`apps/zcode-cli/packages/core/src/{runtime/types.ts,runtime/internal.ts,runtime/agent-runtime.ts,runtime/methods/{turn,steering,index}.ts,runtime/helpers/{commands,runtime-tools}.ts,runtime/methods/mcp.ts}`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/index.ts`、`apps/zcode-cli/packages/bootstrap/src/{slash-command-surface.ts,app/{create-app,types}.ts}`、`packages/ui/src/v4/{slashCommands.ts,SessionPane.tsx}`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+- **上游改动标记**：`FORK(reload-command)`；共 27 个上游文件、43 行标记（口径：`rg -l "FORK\(reload-command\)|FORK-BEGIN\(reload-command\)" --glob '!docs/**' --glob '!FEATURES.md' --glob '!AGENTS.md'`，扣除 fork 自有新文件与测试）。接线逐处标注，新增文件不需要标记。
+- **设计文档**：`docs/features/reload-command/design.md`
+- **实现文档**：`docs/features/reload-command/implementation.md`
 - **上游同步记录**：暂无。
 
 ## GitHub 更新通道 (github-update)

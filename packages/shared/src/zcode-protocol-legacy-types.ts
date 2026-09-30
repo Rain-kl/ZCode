@@ -511,7 +511,8 @@ export const zcodeSessionRuntimeStateSchema = z
     stateRevision: z.number().int().nonnegative(),
     deliveryKind: zcodeDeliveryKindSchema.optional(),
     activeTurnId: nonEmptyString.optional(),
-    activeTurnKind: z.enum(["regular", "compact", "rewind"]).optional(),
+    // FORK(reload-command): 与 ActiveTurnKind 同步新增 "reload"（/reload 维护轮）。
+    activeTurnKind: z.enum(["regular", "compact", "rewind", "reload"]).optional(),
     pendingRequestIds: z.array(nonEmptyString),
     apiRetry: zcodeSessionApiRetryStatusSchema.nullable().optional(),
     contextUsage: zcodeSessionContextUsageSchema.optional(),

@@ -5,6 +5,8 @@ import type {
   AgentRuntimeConfig,
   // FORK(identity-preset): 自定义身份段端口类型；见 FEATURES.md 的 identity-preset 条目
   IdentityPresetPort,
+  // FORK(reload-command): 工具档位端口类型（创建期解析与 /reload 共用）
+  ForkToolModePort,
   ExecuteTurnOptions,
   ExpertWorkflowCommandResult,
   ProviderRuntimeHeadersPort,
@@ -169,6 +171,8 @@ export interface ZCodeAppOptions {
   contextSourcePort?: ContextSourcePort;
   // FORK(identity-preset): 端口覆盖点，与 contextSourcePort 同区；测试与同进程嵌入宿主靠它替换文件读取
   identityPresetPort?: IdentityPresetPort;
+  // FORK(reload-command): 档位端口覆盖点；宿主不传时由 create-app 按 storageRoot 建文件端口
+  forkToolModePort?: ForkToolModePort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   /** 由宿主提供 per-app lease；产出的端口归 app 所有。 */
@@ -226,7 +230,8 @@ export interface SteerTurnOptions {
   inputId?: string;
   queryId?: QueryId;
   expectedTurnId?: TurnId;
-  commandKind?: "sendText" | "sendGoalCommand" | "compact";
+  // FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind。
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
   /** 投递语义：queue=消费时切新轮；guide=内联当前轮。缺省 queue。 */
   delivery?: "guide" | "queue";
   intent?: TurnInputIntentMetadata;
@@ -246,7 +251,8 @@ export type SendInputOptions = SubmitPromptOptions & {
   queueDelivery?: "guide" | "queue";
   requireIdle?: boolean;
   expectedTurnId?: TurnId;
-  commandKind?: "sendText" | "sendGoalCommand" | "compact";
+  // FORK(reload-command): 同上（SendInputOptions 与 SteerTurnOptions 共用同一 kind 全集）。
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
 };
 
 export interface UserPromptInput {

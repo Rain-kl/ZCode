@@ -10,6 +10,8 @@ export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "workflow",
   "compact",
   "init",
+  // FORK(reload-command): 覆盖设置热重载（重读系统指令与工具档位；见 FEATURES.md 的 reload-command 条目）
+  "reload",
 ] as const;
 
 /** 仅供 App Composer 使用的命令，不扩展 CLI TUI/help surface。 */

@@ -4949,6 +4949,10 @@ const enUS: Record<string, string> = {
   "chat.compact.runningBlocked": "Compact context after the current task finishes.",
   "chat.compact.queued": "Compaction queued and will run in order.",
   "chat.compact.duplicateBlocked": "A compaction is already running or queued.",
+  // FORK(reload-command): /reload receipts (see the reload-command entry in FEATURES.md)
+  "chat.reload.applied": "Prompt and tool settings reloaded; effective from the next turn.",
+  "chat.reload.queued": "Reload queued; it will run after the current task finishes.",
+  "chat.reload.failed": "Reload failed. Check the logs.",
   "chat.modelSwitch.contextWindowGuard.title": "Compress context before switching models",
   "chat.modelSwitch.contextWindowGuard.description":
     "This conversation has used {used} tokens, which exceeds {modelName}'s available context of {target} tokens after reserving maximum output.\nCompress the current conversation with the current model first. If the compressed context fits, ZCode will continue switching models.",

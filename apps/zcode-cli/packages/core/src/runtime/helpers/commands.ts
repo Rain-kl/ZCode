@@ -14,6 +14,14 @@ export function parseCompactCommand(input: string): string | undefined | null {
   return null;
 }
 
+/**
+ * FORK(reload-command): `/reload` —— 只接受命令本身（无参数）。命中即走维护轮
+ * （`executeForkReload`），不产生模型请求；文本本身不进 runtime history。
+ */
+export function parseReloadCommand(input: string): boolean {
+  return input.trim() === "/reload";
+}
+
 export function parseRewindCommand(input: string): ParsedRewindCommand | null {
   const trimmed = input.trim();
   if (trimmed === "/fork") {

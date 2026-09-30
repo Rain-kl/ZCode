@@ -46,7 +46,7 @@
 ```
 设置 → Agent 能力 → 功能组
    └─ fork 服务读写 ~/.zcode/tool-groups.json
-        └─ 宿主建会话 / 冷恢复时解析（resolveForkToolModeAllowlist）：
+        └─ 宿主建会话 / 冷恢复 / `/reload` 重载时解析（core 的 ForkToolModePort）：
              极简 / 基础 → toolAllowlist = 该档的固定工具名集合
              标准        → 不下发（undefined = 不加任何约束 = 现状）
              注入关闭    → toolAllowlist = []（一条工具都不注册）
@@ -84,7 +84,7 @@ interface IForkToolModeService {
 
 ## 8. 语义与边界
 
-1. **对新会话生效**：工具面在会话创建时冻结，面板明示「对新会话生效」；已开着的会话不受影响（改完重启应用或新建对话）。
+1. **对新会话生效**：工具面在会话创建时冻结，面板明示「对新会话生效」；已开着的会话不受影响（改完重启应用、新建对话，或对已有会话执行 `/reload` 原地重载——见 `docs/features/reload-command/`）。
 2. **与既有闸门叠加，不覆盖**：注册表级的 `includeXxx` 门、动态工作流灰度门、automation 轮的硬禁用、子代理档案、`permission.allowedTools/disallowedTools` 全部照旧；本开关只会让工具面更小，永不变大。
 3. **子代理不受约束**（v1）：`Agent` 拉起的子代理按各自档案取工具。若日后要让本开关穿透到子代理，需在子代理创建处传同一份 allowlist——本期不做，写进风险。
 4. **注入关闭时的连带效果**：`# Session-specific guidance`、skills 清单等依赖工具在场的段会自动消失（走 `guidanceToolNames`），不需要额外开关。

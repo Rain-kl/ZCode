@@ -37,6 +37,12 @@ export function initializeRuntimeTooling(
   sessionId: SessionId,
 ): { executor: ToolExecutor; hookRunner?: HookRunner } {
   registerRuntimeBuiltInTools(runtime, deps);
+  // FORK(reload-command): /reload 需要按当下 config 重走一遍**完整**注册（含 deps 侧的门，
+  // 不能复用分支刷新的精简选项集）。闭包只捕获 runtime/deps 引用；registerRuntimeBuiltInTools
+  // 每次调用都重读 runtime.config，所以这里不会冻结任何配置值。刷新是覆盖式重注册，
+  // 仍允许的工具会被再次 register——传 silent 与分支刷新同一口径，避免每次 /reload 刷屏。
+  runtime.reregisterBuiltInTools = () =>
+    registerRuntimeBuiltInTools(runtime, deps, { silentDuplicateWarnings: true });
   const hookRunner = createRuntimeHookRunner(runtime, deps, sessionId);
   return {
     executor: deps.toolExecutor ?? createRuntimeToolExecutor(runtime, deps, hookRunner),
@@ -44,10 +50,15 @@ export function initializeRuntimeTooling(
   };
 }
 
-function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentRuntimeDeps): void {
+function registerRuntimeBuiltInTools(
+  runtime: AgentRuntimeInternal,
+  deps: AgentRuntimeDeps,
+  options: { silentDuplicateWarnings?: boolean } = {},
+): void {
   const nodeReplEnabled = runtime.config.runtimeFeatures?.nodeRepl === true;
   const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   registerBuiltInTools(runtime.registry, {
+    ...(options.silentDuplicateWarnings ? { silentDuplicateWarnings: true } : {}),
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),

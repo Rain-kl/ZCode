@@ -105,6 +105,14 @@ export interface AgentRuntimeTurnMethods {
     inputId?: string,
     model?: Model,
   ): Promise<TurnResult>;
+  // FORK(reload-command): /reload 维护轮（形状同 executeManualCompact，无模型请求）。
+  executeForkReload(
+    input: string,
+    turnId: TurnId,
+    turnTraceContext: TraceContext,
+    abortSignal?: AbortSignal,
+    inputId?: string,
+  ): Promise<TurnResult>;
   executeRewindCommand(
     input: string,
     command: ParsedRewindCommand,
