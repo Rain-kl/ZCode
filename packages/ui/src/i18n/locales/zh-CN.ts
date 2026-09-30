@@ -2000,12 +2000,14 @@ const zhCN: Record<string, string> = {
     "关闭后请求不带任何工具，模型只能纯文本回答；MCP 工具一并关闭",
   "settings.toolGroups.mode": "工具模式",
   "settings.toolGroups.mode.minimal": "极简",
+  "settings.toolGroups.mode.minimal.summary": "文件读写、代码搜索、命令执行、联网访问",
   "settings.toolGroups.mode.basic": "基础",
+  "settings.toolGroups.mode.basic.summary":
+    "极简全部，加任务与计划、交互提问、子代理协作、动态工作流、定时任务、技能",
   "settings.toolGroups.mode.standard": "标准",
-  "settings.toolGroups.hintNoTools": "已关闭工具注入",
-  "settings.toolGroups.hintStandard": "全部内置工具与 MCP / 插件工具（当前默认行为）",
-  "settings.toolGroups.hintRestricted": "只下发该档位的固定工具集；MCP 与插件工具不下发",
-  "settings.toolGroups.takesEffectOnNewSession": "生效时机",
+  "settings.toolGroups.mode.standard.summary":
+    "基础全部，加脚本运行时、内部通信工具、MCP 与插件工具",
+  "settings.toolGroups.injectionOffHint": "已关闭工具注入，档位不生效",
   "settings.toolGroups.takesEffectOnNewSessionHint": "对新会话生效，正在进行的会话不受影响",
   "settings.toolGroups.unavailable": "当前环境不支持功能组配置。",
   "settings.systemInstructions.injectSkills": "注入 skills 清单",

@@ -2130,14 +2130,15 @@ const enUS: Record<string, string> = {
     "Off sends no tool definitions at all — the model answers in plain text only, MCP tools included",
   "settings.toolGroups.mode": "Tool mode",
   "settings.toolGroups.mode.minimal": "Minimal",
+  "settings.toolGroups.mode.minimal.summary":
+    "File read/write, code search, command execution, web access",
   "settings.toolGroups.mode.basic": "Basic",
+  "settings.toolGroups.mode.basic.summary":
+    "Everything in Minimal, plus tasks and plans, questions, subagents, workflows, scheduled tasks, and skills",
   "settings.toolGroups.mode.standard": "Standard",
-  "settings.toolGroups.hintNoTools": "Tool injection is off",
-  "settings.toolGroups.hintStandard":
-    "Every built-in tool plus MCP and plugin tools (the current default)",
-  "settings.toolGroups.hintRestricted":
-    "Only this mode's fixed tool set; MCP and plugin tools are not sent",
-  "settings.toolGroups.takesEffectOnNewSession": "When it applies",
+  "settings.toolGroups.mode.standard.summary":
+    "Everything in Basic, plus the script runtime, internal coordination tools, and MCP / plugin tools",
+  "settings.toolGroups.injectionOffHint": "Tool injection is off, so the mode has no effect",
   "settings.toolGroups.takesEffectOnNewSessionHint":
     "Applies to new sessions; running sessions are unaffected",
   "settings.toolGroups.unavailable": "Tool groups are not available in this environment.",

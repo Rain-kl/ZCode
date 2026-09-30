@@ -91,12 +91,20 @@
   1. 三档工具模式（包含关系）：**极简**（Read/Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch）、**基础**（再加任务与计划、提问、子代理协作、工作流、定时任务、技能）、**标准**（再加脚本运行时与内部通信面，含全部 MCP 与插件工具）。默认标准，行为与改动前一致。
   2. 总开关「注入工具」：关闭后请求不下发任何工具定义（含 MCP），模型只能纯文本回答。
   3. 机制：档位 → 白名单 → `runtimeConfig.toolAllowlist`，落点是 runtime 的 `resolveBuiltInToolAllowlist`（同时喂给 MCP 注册，所以不需要动 `mcpServers`）；标准档不下发（不加约束），与宿主既有名单取交集（只收敛，不放宽）。会话创建期冻结，对新会话生效。
-  4. 设置 → Agent 能力 → 功能组：总开关、三档选择、当前档位的后果说明、生效时机提示。
+  4. 设置 → Agent 能力 → 功能组：总开关、三张档位卡片、当前档位的后果说明、生效时机提示。
 - **修改文件**：新增 `packages/shared/src/fork/tool-modes-contract.ts`、`apps/zcode-cli/packages/core/src/fork/tool-modes/**`、`apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts`、`packages/services/src/fork/toolModes.ts`、`packages/desktop/src/host/fork/tool-modes/**`、`packages/ui/src/fork/tool-modes/**` 与对应测试；上游接线 `apps/zcode-cli/packages/core/src/index.ts`、`bootstrap/src/app/create-app.ts`、`packages/services/src/{index,accessor}.ts`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/desktop/src/host/fork/webdav-sync/manifest.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`ui/src/settings/settingsPageConfig.ts`、`ui/src/SettingsPage.tsx`、`ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/shared/src/test-ids.ts`。
 - **上游改动标记**：`FORK(tool-modes)`；接线逐处标注，新增文件不需要标记。
 - **设计文档**：`docs/features/tool-modes/design.md`
 - **实现文档**：`docs/features/tool-modes/implementation.md`
 - **上游同步记录**：暂无。
+
+### 档位选择改为卡片（2026-09-30）
+
+- **增强点**：功能组栏目的三档从下拉框改成三张并列卡片——点击即切换，当前档位带选中标记，「注入工具」关闭时三张卡片禁用并说明「档位不生效」。三档是包含关系，并列的卡片才能同屏比较工具面（下拉框一次只显示一项）。卡片正文只写工具面的**分组名**（文件读写、代码搜索…），不列逐工具清单：工具名的权威来源是 core 的注册表分类，渲染层抄一份必然漂移。
+- **档位全集上提到契约**：`@zcode/shared` 新增运行时数组 `FORK_TOOL_MODES`，`isForkToolMode` 与界面卡片列表都读它，卡片顺序 = 数组顺序（能力递增）；增删档位只改这一处。
+- **影响的上游标记**：无新增上游文件；改动落在 fork 自有文件（`packages/shared/src/fork/tool-modes-contract.ts`、`packages/ui/src/fork/tool-modes/**`）与已标记的 `packages/shared/src/test-ids.ts`（档位 test-id 由 `…-mode-select` 改名为 `…-mode-card`，按下标生成）。
+- **验收**：`packages/ui/test/forkToolGroupsSection.test.ts` 按 `FORK_TOOL_MODES` 逐个断言两种语言的卡片标题与正文齐备、正文里不出现工具名标识符；`packages/shared/test/forkToolModes.test.ts` 新增「档位全集与判定函数同源」。运行中实例已确认三卡片排列、点击落盘、关闭注入后禁用与脚注切换（详见实现文档 §4）。
+- **决策记录**：`.agents/notes/tool-modes/decisions.md`（卡片 vs 下拉框、选中信号、档位全集上提、禁用而非隐藏）。
 
 ## 系统指令：用户自定义提示词 (identity-preset)
 
