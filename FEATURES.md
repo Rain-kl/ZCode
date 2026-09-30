@@ -83,6 +83,21 @@
 - **上游收敛**：上游若把闲时任务的开关/工具改成默认关闭或移除，本条目可整体退场（摘除范围见实现文档 §2）；若上游继续演进该功能，保持移除即可，同步时按守卫报错逐处取舍。
 - **上游同步记录**：暂无。
 
+## 功能组：工具模式与工具注入 (tool-modes)
+
+- **状态**：已实现（2026-09-29）
+- **需求背景**：每次请求都携带全部工具定义，而多数会话只用到其中一小部分——请求体大、模型选择面宽、误调用多。需要让用户按用途收敛工具面，并能整体关掉。
+- **修改内容**：
+  1. 三档工具模式（包含关系）：**极简**（Read/Write/Edit/Glob/Grep/Bash/WebFetch/WebSearch）、**基础**（再加任务与计划、提问、子代理协作、工作流、定时任务、技能）、**标准**（再加脚本运行时与内部通信面，含全部 MCP 与插件工具）。默认标准，行为与改动前一致。
+  2. 总开关「注入工具」：关闭后请求不下发任何工具定义（含 MCP），模型只能纯文本回答。
+  3. 机制：档位 → 白名单 → `runtimeConfig.toolAllowlist`，落点是 runtime 的 `resolveBuiltInToolAllowlist`（同时喂给 MCP 注册，所以不需要动 `mcpServers`）；标准档不下发（不加约束），与宿主既有名单取交集（只收敛，不放宽）。会话创建期冻结，对新会话生效。
+  4. 设置 → Agent 能力 → 功能组：总开关、三档选择、当前档位的后果说明、生效时机提示。
+- **修改文件**：新增 `packages/shared/src/fork/tool-modes-contract.ts`、`apps/zcode-cli/packages/core/src/fork/tool-modes/**`、`apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts`、`packages/services/src/fork/toolModes.ts`、`packages/desktop/src/host/fork/tool-modes/**`、`packages/ui/src/fork/tool-modes/**` 与对应测试；上游接线 `apps/zcode-cli/packages/core/src/index.ts`、`bootstrap/src/app/create-app.ts`、`packages/services/src/{index,accessor}.ts`、`packages/client/src/remoteServiceAccess.ts`、`packages/desktop/src/host/index.ts`、`packages/desktop/src/host/fork/webdav-sync/manifest.ts`、`packages/ui/src/lib/settingsNavigation.ts`、`ui/src/settings/settingsPageConfig.ts`、`ui/src/SettingsPage.tsx`、`ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/shared/src/test-ids.ts`。
+- **上游改动标记**：`FORK(tool-modes)`；接线逐处标注，新增文件不需要标记。
+- **设计文档**：`docs/features/tool-modes/design.md`
+- **实现文档**：`docs/features/tool-modes/implementation.md`
+- **上游同步记录**：暂无。
+
 ## 系统指令：用户自定义提示词 (identity-preset)
 
 - **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步
