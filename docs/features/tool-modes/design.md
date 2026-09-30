@@ -62,11 +62,6 @@
 ```ts
 export type ForkToolMode = "minimal" | "basic" | "standard";
 
-/** 档位 → 内置工具名集合（含包含关系，由 shared 常量派生，不在调用点重复列举）。 */
-export function resolveForkToolModeToolNames(mode: ForkToolMode): readonly string[];
-/** 全部内置工具名（契约里的完整清单，供一致性与计数使用）。 */
-export const FORK_TOOL_MODE_ALL_BUILTIN_TOOL_NAMES: readonly string[];
-
 /** 状态文件与解析结果。 */
 export interface ForkToolModeStateFile {
   schemaVersion: number;
@@ -74,10 +69,8 @@ export interface ForkToolModeStateFile {
   mode: ForkToolMode;
 }
 export interface ForkToolModeState extends ForkToolModeStateFile {
-  /** 当前档位下会下发的内置工具名（UI 展示用）。 */
-  activeToolNames: readonly string[];
-  /** 当前档位不下发的内置工具名（UI 展示用）。 */
-  disabledToolNames: readonly string[];
+  /** 标准档含全部 MCP 与插件工具；其余档位不下发。UI 据此提示。 */
+  mcpEnabled: boolean;
 }
 
 interface IForkToolModeService {
