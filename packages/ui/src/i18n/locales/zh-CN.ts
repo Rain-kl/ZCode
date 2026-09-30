@@ -1994,7 +1994,7 @@ const zhCN: Record<string, string> = {
   "settings.systemInstructions.injectDynamicHint":
     "关闭后只注入你写的提示词；模型将不再收到环境信息、git 状态、沟通风格与上下文管理说明",
   // FORK(tool-modes): 设置 → Agent 能力 → 功能组
-  "settings.toolGroups.title": "功能组",
+  "settings.toolGroups.title": "工具注入",
   "settings.toolGroups.injectTools": "注入工具",
   "settings.toolGroups.injectToolsHint":
     "关闭后请求不带任何工具，模型只能纯文本回答；MCP 工具一并关闭",
