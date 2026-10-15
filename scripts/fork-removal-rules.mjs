@@ -74,8 +74,10 @@ export const REGISTRY = [
       },
       {
         path: "packages/desktop/src/main/autoUpdater.ts",
-        pattern: /resolveUpdateReleaseChannel\(\s*options\.settingService\s*\)/,
-        reason: "初始化时必须按持久化的 preview 设置解析通道，否则 feed 基址与 channel 会对不上",
+        pattern:
+          /await\s+syncAutoUpdateCheckChannelFromSettings\(\s*checkId,\s*options\.settingService,\s*reason\s*\)/,
+        reason:
+          "启动检查必须先按持久化 preview 设置切换 feed，再请求更新；上游 generic 状态机在启动检查前解析设置",
       },
       {
         path: "packages/desktop/electron-builder.config.js",

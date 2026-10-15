@@ -7,6 +7,10 @@ const STORAGE_KEY = "zcode-theme";
 const BROWSER_THEME_SURFACE_ATTRIBUTE = "data-zcode-browser-theme-surface";
 
 function getSystemTheme(): ResolvedTheme {
+  // FORK(其他更新): 静态渲染与非浏览器 host 没有 window.matchMedia，system 主题回退到亮色。
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return "light";
+  }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 

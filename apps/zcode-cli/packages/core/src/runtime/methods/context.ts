@@ -18,6 +18,10 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import {
+  ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
+  type ProjectMemoryRetrievalBranch,
+} from "../../memory/project-memory-retrieval-branch.js";
+import {
   createReadFileStateKey,
   normalizeReadFileStateMtimeMs,
 } from "../../tool/read-file-state.js";
@@ -25,6 +29,10 @@ import { resolveEnabledProjectMemoryRoot } from "../helpers/project-memory.js";
 import { buildContextHistoryEntries } from "./context-history-entries.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "./embedded-search-branch.js";
 import { getContextSourceShellDisplayName } from "./session-shell-environment.js";
+import {
+  ensureGenUiOutputDirectory,
+  resolveGenUiOutputDirectory,
+} from "../helpers/gen-ui-output.js";
 
 export { buildContextHistoryEntries };
 
@@ -64,7 +72,12 @@ export async function ensureContextInitialized(
   this.startMcpStartup(traceContext);
   this.skillLoadOutcome = await this.discoverSkillsForContext(traceContext);
   this.memoryRoot = await this.loadProjectMemoryRoot(traceContext);
-  this.memoryIndexContent = await loadProjectMemoryIndexContent(this, this.memoryRoot);
+  this.memoryIndexContent = await loadProjectMemoryIndexContent(
+    this,
+    this.memoryRoot,
+    ACTIVE_PROJECT_MEMORY_RETRIEVAL_BRANCH,
+  );
+  await ensureGenUiOutputDirectory(this);
   // FORK-BEGIN(identity-preset)
   // 结果冻结进 config，会话中途换提示词会改变 provider 的 prompt cache 前缀，破坏
   // 「前缀在会话内不可变」的既定不变量（design.md 6.3）。读取失败一律回退系统默认。
@@ -142,6 +155,7 @@ export function createContextBuilderFromSnapshot(
     envInfo,
     model: options.model,
     presentationSurface: this.config.presentationSurface,
+    genUiOutputDirectory: resolveGenUiOutputDirectory(this),
     currentDate: snapshot.currentDate,
     userInstructions: snapshot.userInstructions,
     projectContext: snapshot.projectContext,
@@ -185,10 +199,12 @@ export async function loadProjectMemoryRoot(
   return memoryRoot;
 }
 
-async function loadProjectMemoryIndexContent(
+export async function loadProjectMemoryIndexContent(
   runtime: AgentRuntimeInternal,
   memoryRoot: string | undefined,
+  retrievalBranch: ProjectMemoryRetrievalBranch,
 ): Promise<string | undefined> {
+  if (retrievalBranch !== "default-index") return undefined;
   const fileSystemPort = runtime.fileSystemPort;
   if (!fileSystemPort || !memoryRoot) return undefined;
   const indexPath = join(memoryRoot, "MEMORY.md");

@@ -46,7 +46,12 @@ const WEBFETCH_DESCRIPTION = [
   "- Very large pages are truncated to a preview; the full content is saved to a file and its path is reported in the result.",
 ].join("\n");
 
-const webFetchHandler: ToolHandler = async (input, context) => {
+interface FreshWebFetchContent {
+  fetched: FetchAndExtractContentResult;
+  preapprovedUrl: boolean;
+}
+
+export const webFetchHandler: ToolHandler = async (input, context) => {
   const parsed = WebFetchInputSchema.parse(input) as WebFetchInput;
   const startedAt = Date.now();
   const normalizedUrl = normalizeWebFetchUrl(parsed.url);

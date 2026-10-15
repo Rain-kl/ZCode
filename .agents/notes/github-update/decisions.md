@@ -92,3 +92,10 @@
   `pnpm typecheck` 不会（已实测确认）。校验 main 工程类型时注意别把这些生成物一起提交。
 - **macOS 自更新要求签名**，Squirrel.Mac 会校验下载包的代码签名；未配签名 secret 时
   macOS 端自动更新直接失败。这是本轮无法在本地验证闭环的根本原因。
+
+## 4. 上游同步（2026-10-16，`29628c9..aac47556`）
+
+- 以上游 generic updater 状态机为基线，保留其检查 generation、下载/取消/ready 状态与失败收敛；更新源继续由 `applyForkGithubUpdateFeed` 接管，不恢复上游服务端 manifest 或强更链路。
+- 启动检查在请求前调用 `syncAutoUpdateCheckChannelFromSettings` 读取持久化 preview 设置并重设 GitHub feed。即使状态默认值暂为 stable，也不会用 stable 基址请求 preview channel。
+- 保留 `electron-builder` 的通道元数据检测，stable 与 preview 产物需要各自通道文件；更新相应的 Linux 打包契约断言。
+- 上游 manifest/force-update 专属测试和移除守卫里的初始化断言随实现变更同步调整；自动更新状态测试、GitHub feed 契约与移除守卫定向检查通过。Electron 原生 postinstall 因测试环境网络/DNS 不可用被跳过，完整桌面运行时用例无法在此环境确认。

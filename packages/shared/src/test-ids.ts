@@ -125,6 +125,15 @@ export const TID_BROWSER_OPEN_EXTERNAL_ITEM = "browser-open-external-item";
 export const TID_BROWSER_DEVTOOLS_BUTTON = "browser-devtools-button";
 /** 浏览器网页视图 */
 export const TID_BROWSER_WEBVIEW = "browser-webview";
+/** 内置浏览器权限确认条容器 */
+export const TID_BROWSER_PERMISSION_PROMPTS = "browser-permission-prompts";
+/** 权限确认条「仅本次允许」按钮 */
+export const TID_BROWSER_PERMISSION_ALLOW_ONCE = "browser-permission-allow-once";
+/** 权限确认条「访问此网站时允许」按钮 */
+export const TID_BROWSER_PERMISSION_ALLOW_ALWAYS = "browser-permission-allow-always";
+/** 权限确认条「不允许」按钮（本次拒绝，不记忆） */
+export const TID_BROWSER_PERMISSION_DENY = "browser-permission-deny";
+export const TID_BROWSER_PERMISSION_DISMISS = "browser-permission-dismiss";
 /** 浏览器页面加载失败的可读错误态 */
 export const TID_BROWSER_LOAD_ERROR = "browser-load-error";
 /** 浏览器加载失败错误态里的证书放行指引 */
@@ -153,6 +162,8 @@ export const TID_SSH_CONNECT_TRIGGER = "ssh-connect-trigger";
 export const TID_SSH_DIALOG = "ssh-dialog";
 /** 远程连接方式切换到 SSH */
 export const TID_REMOTE_KIND_SSH = "remote-kind-ssh";
+/** 远程连接方式切换到 Server */
+export const TID_REMOTE_KIND_SERVER = "remote-kind-server";
 /** 远程连接方式切换到 WSL */
 export const TID_REMOTE_KIND_WSL = "remote-kind-wsl";
 /** 远程连接方式切换到 Docker */
@@ -181,6 +192,14 @@ export const TID_WSL_USER_INPUT = "wsl-user-input";
 export const TID_DOCKER_CONTAINER_SELECT = "docker-container-select";
 /** Docker 容器名称/ID 输入框 */
 export const TID_DOCKER_CONTAINER_INPUT = "docker-container-input";
+/** Server 远程服务 URL 输入框 */
+export const TID_SERVER_URL_INPUT = "server-url-input";
+/** Server 远程服务名称输入框 */
+export const TID_SERVER_NAME_INPUT = "server-name-input";
+/** Server 远程服务 token 输入框 */
+export const TID_SERVER_TOKEN_INPUT = "server-token-input";
+/** Server 远程默认工作区路径输入框 */
+export const TID_SERVER_WORKSPACE_PATH_INPUT = "server-workspace-path-input";
 /** SSH 连接确认按钮 */
 export const TID_SSH_CONNECT_BUTTON = "ssh-connect-button";
 /** SSH 弹窗取消按钮 */
@@ -722,31 +741,19 @@ export const TID_OFFPEAK_CREATE_OPEN = "offpeak-create-open";
 export const TID_CONFIRM_DIALOG_CONFIRM = "confirm-dialog-confirm";
 
 /** 为动态元素生成带后缀的 testid，如 file-tree-item-/home/user */
-// FORK(identity-preset): 设置 → Agent 能力 → 系统指令
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH = "settings-system-instructions-switch";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE = "settings-system-instructions-create";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DYNAMIC_SWITCH =
-  "settings-system-instructions-dynamic-switch";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SKILLS_SWITCH =
-  "settings-system-instructions-skills-switch";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_TEMPLATE = "settings-system-instructions-template";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE = "settings-system-instructions-save";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_EDIT = "settings-system-instructions-edit";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_DELETE = "settings-system-instructions-delete";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_ACTIVATE = "settings-system-instructions-activate";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_DIALOG =
-  "settings-system-instructions-create-dialog";
-export const TID_SETTINGS_SYSTEM_INSTRUCTIONS_CREATE_SUBMIT =
-  "settings-system-instructions-create-submit";
-// FORK(tool-modes): 设置 → Agent 能力 → 功能组
-export const TID_SETTINGS_TOOL_GROUPS_INJECT_SWITCH = "settings-tool-groups-inject-switch";
-/** 档位卡片基名：按下标生成，如 settings-tool-groups-mode-card-minimal。 */
-export const TID_SETTINGS_TOOL_GROUPS_MODE_CARD = "settings-tool-groups-mode-card";
-
 export function testId(base: string, suffix: string): string {
   return `${base}-${suffix}`;
 }
 
+export * from "./test-ids-fork.js";
+
+/** 左侧栏头像上方的可手动领取 Start Plan banner。 */
+export const TID_MANUAL_CLAIM_PLAN_BANNER = "manual-claim-plan-banner";
+
+/** 插件 UI 沙箱卡片容器与其中的 webview。 */
+export const TID_PLUGIN_UI_CARD = "plugin-ui-card";
+export const TID_PLUGIN_UI_OPEN_SIDE_PANE = "plugin-ui-open-side-pane";
+export const TID_PLUGIN_UI_WEBVIEW = "plugin-ui-webview";
 export const TID_START_PLAN_RECOMMENDATION_DIALOG = "start-plan-recommendation-dialog";
 
 /** 用户反馈的诊断日志授权开关 */

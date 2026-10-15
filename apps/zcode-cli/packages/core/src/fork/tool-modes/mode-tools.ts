@@ -47,13 +47,14 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
   "GetWorkflowRun",
   "ResumeWorkflowRun",
   "ResolveWorkflowQuestion",
+  "FillWorkflowHole",
   "ListSavedWorkflows",
   "ListModels",
 ] as const;
 
 /**
  * 标准：再加脚本运行时与内部通信面。
- * 后四个（Task / submit_result / escalate / RespondToCoordinator）只在对应端口在场时注册，
+ * Task / submit_result / escalate / RespondToCoordinator 只在对应端口在场时注册；
  * 归类在这里是为了让「注册表里的每个工具都有归属」这条不变式成立。
  */
 export const FORK_TOOL_MODE_STANDARD_EXTRA_TOOL_NAMES = [
@@ -62,6 +63,7 @@ export const FORK_TOOL_MODE_STANDARD_EXTRA_TOOL_NAMES = [
   "submit_result",
   "escalate",
   "RespondToCoordinator",
+  "ReplyToChannel",
 ] as const;
 
 export type ForkToolModeName = "minimal" | "basic" | "standard";

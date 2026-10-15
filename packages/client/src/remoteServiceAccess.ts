@@ -1,5 +1,5 @@
 import { Event, ProxyChannel, type IChannel, type IChannelClient } from "@zcode/rpc";
-import type { IChannelAvailability } from "@zcode/services";
+import { IGenUiService, type IChannelAvailability } from "@zcode/services";
 import { isChannelAvailable } from "./channelManifest.js";
 // FORK(local-mode): WebDAV 服务通道名
 import {
@@ -35,10 +35,16 @@ import {
   ICodingPlanSubscriptionService,
   IClientConfigService,
   IClientScenesService,
+  ICloudContentService,
+  IMarketingTouchService,
   IOffPeakTaskService,
+  IHighspeedCardService,
   ISkillsService,
   ISkillSyncService,
   IMcpSyncService,
+  IPluginUiAppToolsService,
+  IPluginUiSamplingService,
+  IPluginUiBridgeService,
   IPluginSyncService,
   IPluginsService,
   IPluginManagementService,
@@ -46,6 +52,7 @@ import {
   ICommandsService,
   IHooksService,
   IMemoryService,
+  IOutputStyleService,
   ISettingsSyncService,
   IFeedbackService,
   IPromptAttachmentTransferService,
@@ -116,10 +123,17 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
   readonly clientConfigService: IClientConfigService;
   readonly clientScenesService: IClientScenesService;
+  readonly cloudContentService: ICloudContentService;
+  readonly marketingTouchService: IMarketingTouchService;
   readonly offPeakTaskService: IOffPeakTaskService;
+  readonly highspeedCardService: IHighspeedCardService;
   readonly skillsService: ISkillsService;
   readonly skillSyncService: ISkillSyncService;
   readonly mcpSyncService: IMcpSyncService;
+  readonly genUiService: IGenUiService;
+  readonly pluginUiBridgeService: IPluginUiBridgeService;
+  readonly pluginUiSamplingService: IPluginUiSamplingService;
+  readonly pluginUiAppToolsService: IPluginUiAppToolsService;
   readonly pluginSyncService: IPluginSyncService;
   readonly pluginsService: IPluginsService;
   readonly pluginManagementService: IPluginManagementService;
@@ -127,6 +141,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly commandsService: ICommandsService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
+  readonly outputStyleService: IOutputStyleService;
   readonly settingsSyncService: ISettingsSyncService;
   /** FORK(local-mode): WebDAV 备份恢复（host 未注册时为 undefined）。 */
   readonly forkWebdavService?: IForkWebdavService;
@@ -228,8 +243,17 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.clientScenesService = ProxyChannel.toService<IClientScenesService>(
       channelClient.getChannel(IClientScenesService.channelName),
     );
+    this.cloudContentService = ProxyChannel.toService<ICloudContentService>(
+      channelClient.getChannel(ICloudContentService.channelName),
+    );
+    this.marketingTouchService = ProxyChannel.toService<IMarketingTouchService>(
+      channelClient.getChannel(IMarketingTouchService.channelName),
+    );
     this.offPeakTaskService = ProxyChannel.toService<IOffPeakTaskService>(
       channelClient.getChannel(IOffPeakTaskService.channelName),
+    );
+    this.highspeedCardService = ProxyChannel.toService<IHighspeedCardService>(
+      channelClient.getChannel(IHighspeedCardService.channelName),
     );
     this.skillsService = ProxyChannel.toService<ISkillsService>(
       channelClient.getChannel(ISkillsService.channelName),
@@ -239,6 +263,18 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.mcpSyncService = ProxyChannel.toService<IMcpSyncService>(
       channelClient.getChannel(IMcpSyncService.channelName),
+    );
+    this.genUiService = ProxyChannel.toService<IGenUiService>(
+      channelClient.getChannel(IGenUiService.channelName),
+    );
+    this.pluginUiBridgeService = ProxyChannel.toService<IPluginUiBridgeService>(
+      channelClient.getChannel(IPluginUiBridgeService.channelName),
+    );
+    this.pluginUiSamplingService = ProxyChannel.toService<IPluginUiSamplingService>(
+      channelClient.getChannel(IPluginUiSamplingService.channelName),
+    );
+    this.pluginUiAppToolsService = ProxyChannel.toService<IPluginUiAppToolsService>(
+      channelClient.getChannel(IPluginUiAppToolsService.channelName),
     );
     this.pluginSyncService = ProxyChannel.toService<IPluginSyncService>(
       channelClient.getChannel(IPluginSyncService.channelName),
@@ -269,6 +305,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.defineManifestGatedService("forkToolModeService", FORK_TOOL_MODE_CHANNEL);
     // FORK(search-providers): 网络搜索渠道管理服务；见 FEATURES.md 的 search-providers 条目
     this.defineManifestGatedService("forkSearchProvidersService", FORK_SEARCH_PROVIDERS_CHANNEL);
+    this.outputStyleService = ProxyChannel.toService<IOutputStyleService>(
+      channelClient.getChannel(IOutputStyleService.channelName),
+    );
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(
       channelClient.getChannel(ISettingsSyncService.channelName),
     );

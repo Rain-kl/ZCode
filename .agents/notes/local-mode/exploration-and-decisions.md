@@ -36,3 +36,10 @@
 - `provider_config.json` 的写入必须走原子写（仓库既有 `atomicWriteText` 模式），否则轮询方可能读到半截 JSON。
 - 隐藏用量/升级项时不要改 `WorkspaceSidebarFooterUsageSummaryContent`（力渲染、`forceMount`），应在 footer 组件层与两个挂载点判断，否则设置页 footer 会漏。
 - 过滤智谱预置后，`Detail.tsx:398` 在找不到 provider 时会渲染占位；预置与套餐行需一起过滤，并同时禁用套餐深链意图（`ModelProviderSection.tsx:110`），否则会出现空选中。
+
+## 4. 上游同步（2026-10-16，`29628c9..aac47556`）
+
+- 上游允许 provider 空状态登录并新增云额度请求；保留本地模式关闭账号入口和云额度链路的语义，同时合入远控根页 guard、账号界面条件奖励入口与本地 App Usage 快照。
+- 上游新增的 Coding Plan 云账号/额度 UI、服务和 Account Config 同步用例不适用于此产品路径，已从新增测试集中清理；保留 App Usage、本地时间轴和通用 provider 测试。
+- 上游新增的账号选择迁移与 Start Plan 选择用例同样依赖已隐藏的智谱 Coding Plan provider，移除这两组用例，并调整 provider facade/runtime 断言以覆盖本地模式的隐藏行为。
+- 验证：受影响测试组 358/358 通过；静态检查与最终全量 Vitest 状态写入同步提交说明。

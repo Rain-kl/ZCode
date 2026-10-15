@@ -35,7 +35,7 @@ test("档位解析：极简 8 个、基础 33 个、标准不下发", () => {
   assert.ok(!minimal?.includes("CronCreate"));
 
   const basic = resolveForkToolModeToolNames("basic");
-  assert.equal(basic?.length, 33);
+  assert.equal(basic?.length, 34);
   assert.ok(basic?.includes("Agent") && basic?.includes("Skill"));
   assert.ok(!basic?.includes("js"));
 

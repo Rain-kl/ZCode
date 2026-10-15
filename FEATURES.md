@@ -32,7 +32,7 @@
 - **设计文档**：`docs/features/local-mode/design.md`
 - **实现文档**：`docs/features/local-mode/implementation.md`（文件清单、上游接线 20 个文件/42 处标记、验证证据、与设计的偏差）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件为 `packages/ui/src/lib/rootStartupGate.ts`、`packages/ui/src/WorkspaceSidebarFooter.tsx`、`packages/services/src/usage-stats/usageStatsService.ts`。上游方案允许 provider 空状态触发登录，并开放奖励/登录/登出与 Coding Plan 云额度请求；本 fork 方案隐藏云账号入口并停用云额度链路。保留本 fork 语义，同时合入远控根页 guard、仅在云账号界面启用时显示奖励入口，并保留本地 App Usage 快照。同步中移除上游新增、依赖云账号或 Coding Plan 入口/云额度的用例：`packages/ui/test/modelProviderCodingPlan.test.ts`、`packages/services/test/usageStatsService.test.ts`、`packages/desktop/test/hostRemoteWorkspaceServices.test.ts`、`packages/services/test/usageStatsAccountAccess.test.ts`、`packages/services/test/zcodeAgentService.providerRegistry.test.ts`、`packages/ui/test/accountConnectionLossNotification.test.ts`、`packages/ui/test/rewardsMenuIcon.test.ts`、`packages/ui/test/rootAccountRefreshLifecycle.test.ts`、`packages/ui/test/providerFamilyConnectionVisibility.test.ts`、`packages/provider-node/test/reasoning-level-migration.test.ts`、`packages/provider-node/test/start-plan-selection.test.ts`；更新 `packages/provider/test/facades.test.ts` 与 `packages/services/test/providerRuntime.test.ts`，明确隐藏智谱账号 provider 的选择视图。继续保留 App Usage、本地时间轴及通用 provider 覆盖。
 
 ### 功能增强：是否注入动态提示词 / skills 清单（2026-09-29）
 
@@ -81,7 +81,7 @@
 - **实现文档**：`docs/features/offpeak-removal/implementation.md`
 - **已知边界（保留为死代码，逐项写明为什么已是死路）**：`core` 的 off-peak handler 与 contracts schema、`OffPeakPort` 类型与上下文透传、协议字段（`offPeakTaskId` / `offPeakRunType` / `offPeakToolEnabled`）与 `off-peak-tool-policy.ts`、UI 的闲时区块与 store/hook、服务层（service/repo/server client/gateway）、桌面调度器的领号/派发/结算、运行时里的闲时轮身份与 denylist。**不删除的理由**：本仓库对上游能力一贯「入口屏蔽，不删除代码」（local-mode 同款），且该功能横跨 6 个包 50+ 文件，全删会把协议 schema 与整个 UI 卷进来。**不做数据迁移**：库里已有的闲时任务记录保持原样。
 - **上游收敛**：上游若把闲时任务的开关/工具改成默认关闭或移除，本条目可整体退场（摘除范围见实现文档 §2）；若上游继续演进该功能，保持移除即可，同步时按守卫报错逐处取舍。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts`。上游为闲时任务重新注入 `OffPeakPort`；本 fork 继续移除该入口，因为它依赖云端取号与 Coding Plan。保留上游新增的 `topicResourcePort`。
 
 ## 功能组：工具模式与工具注入 (tool-modes)
 
@@ -96,7 +96,7 @@
 - **上游改动标记**：`FORK(tool-modes)`；接线逐处标注，新增文件不需要标记。
 - **设计文档**：`docs/features/tool-modes/design.md`
 - **实现文档**：`docs/features/tool-modes/implementation.md`
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：`apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts` 同时涉及工具档位 `/reload` 重注册和上游 `tools/list_changed` 刷新。合并两条路径，并让它们共用当前已注册名称、描述符快照、签名与 revision，避免刷新或 `/reload` 后留下陈旧工具名单；将新增的 `FillWorkflowHole` 归入基础档以保持工作流可完成，将有外部发送副作用的 `ReplyToChannel` 放在标准档。
 
 ### 档位选择改为卡片（2026-09-30）
 
@@ -125,7 +125,7 @@
 - **设计文档**：`docs/features/identity-preset/design.md`
 - **实现文档**：`docs/features/identity-preset/implementation.md`（第 1 期：落地位置、关键改动、上游接线、验证证据、与设计的偏差）与 `implementation-plan-2.md`（第 2 期计划与硬性要求）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；`writing-plans` 产出第 1 期计划，逐任务实现并评审后由 `verification-before-completion` 收口）。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/context.ts`、`packages/services/src/node.ts`。保留 identity preset 端口和会话初始化读取，同时合入上游记忆检索分支、GenUI 输出目录初始化与网络捕获导出。
 
 ## 覆盖设置热重载：/reload 命令 (reload-command)
 
@@ -141,7 +141,7 @@
 - **上游改动标记**：`FORK(reload-command)`；共 33 个上游文件、54 行标记（口径：`rg -l "FORK\(reload-command\)|FORK-BEGIN\(reload-command\)" --glob '!docs/**' --glob '!FEATURES.md' --glob '!AGENTS.md' --glob '!.agents/**'`，扣除 fork 自有新文件与测试）。接线逐处标注，新增文件不需要标记。
 - **设计文档**：`docs/features/reload-command/design.md`
 - **实现文档**：`docs/features/reload-command/implementation.md`
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/index.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts`、`packages/shared/src/zcode-slash-command-help.ts`、`packages/ui/src/v4/pendingCommandRegistry.ts`。保留 `/reload` 的工具面与提示词热重载、回放和帮助条目；同时合入 highspeed metrics handler，并在帮助中同步上游新增的 `guarded` 模式。
 
 ## GitHub 更新通道 (github-update)
 
@@ -159,7 +159,7 @@
 - **设计文档**：`docs/features/github-update/design.md`
 - **实现文档**：`docs/features/github-update/implementation.md`（落地位置、标记清单、验证证据、未执行项、与设计的偏差）
 - **已知边界**：macOS 自更新要求签名（未配置签名 secret 时 macOS 端自动更新不可用）；更新元数据本身无签名，信任根转移到 GitHub 仓库写权限；更新弹窗的 release notes 会退化为空（generic provider 不带 `releaseNotesByLocale`）；移除强更 gate 后没有强制下线能力。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `packages/desktop/src/main/autoUpdater.ts`、`packages/desktop/src/main/index.ts`、`packages/desktop/src/main/forceUpdateGuard.ts`、`packages/desktop/src/main/forceUpdatePrompt.ts`、`packages/desktop/src/main/manifestUpdateProvider.ts`、`packages/services/src/coding-plan-subscription/bigmodelCodingPlanSubscriptionProvider.ts`、`packages/services/src/coding-plan-subscription/codingPlanSubscription.ts`、`packages/services/src/coding-plan-subscription/codingPlanSubscriptionService.ts`、`packages/shared/src/coding-plan-subscription.ts`。上游使用服务端 manifest 与 `minimalVersion` 强更；本 fork 使用 GitHub Releases 且不接远端强更。保留 GitHub feed、强更文件/类型/RPC 删除与已有发布元数据，同时合入桌面 remote-control/tray 更新、billing discount 和 request verification 接口，并合入 generic updater 状态机；启动检查仍先读取持久化 preview 设置并切换 GitHub feed 后再请求更新。删除随上游回流的 manifest/强更专属测试，保留其余自动更新状态覆盖；`electronBuilderLinuxPackageTargets.test.ts` 保留 fork 依赖的 stable/preview 通道元数据检测。
 
 ## 编辑 stale 判据改为内容哈希 (edit-stale-guard)
 
@@ -190,7 +190,7 @@
 - **设计文档**：`docs/features/nonstream-via-stream/design.md`
 - **实现文档**：`docs/features/nonstream-via-stream/implementation.md`
 - **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/core/src/runtime/methods/runtime-model.ts`。将 fork 的 stream→non-stream 适配器包在上游 invocation layer 外侧，保留上游 session type 与 retry budget 绑定，并用已拆出的 `factoryInput` 调用 model factory。
 
 ## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 
@@ -213,7 +213,7 @@
 - **实现文档**：`docs/features/webfetch-direct-return/implementation.md`
 - **已知边界**：正文质量未改——链接仍以 `[文本](URL)` 内联（python.org 下载页 64,850 字符中有 19,868 是 URL），导航与页脚仍保留；噪声治理明确不在本次范围。输入侧 artifact（`maybePersistRawContent`，>100,000 字符触发）是上游既有行为，与结果侧 artifact 可能对同一页面各写一份，冗余但无害。`resultBudget` 的落盘实现未被新增测试覆盖，只断言「阈值已配置到会触发」。
 - **上游收敛**：上游若自己实现「直接返回抽取正文 + 结果预算封顶」，删除本功能并采用上游实现；摘除范围与守卫见实现文档 §3、§4。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts` 与上游修改的 `webfetch-processing.ts`。上游保留加工模型摘要；本 fork 直返抽取正文并以 `resultBudget` 封顶。保留直返语义及 `webfetch-processing.ts` 删除，避免恢复额外模型往返。
 
 ## 网络搜索渠道 (search-providers)
 
@@ -246,7 +246,7 @@
 - **设计文档**：`docs/features/search-providers/design.md`
 - **实现文档**：`docs/features/search-providers/implementation.md`
 - **已知边界**：见实现文档 §8（测试替身 `as never`、`statSync` 异常粒度、`createServerSearchChannel` 缺乏独立单测、测试临时目录清理、host 装配内联路径风格）。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `packages/client/src/remoteServiceAccess.ts`。保留 WebDAV、identity preset、tool mode、search-provider 的清单门控服务，同时合入上游 `IGenUiService` 与 output-style 通道。
 
 ## 通道清单驱动的服务可用性 (rpc-channel-manifest)
 
@@ -263,9 +263,13 @@
 - **实现文档**：`docs/features/rpc-channel-manifest/implementation.md`
 - **已知边界**：`deferInit === true` 链路无生产调用方，仅有契约测试覆盖；桌面端验收是「旧 host + 新 renderer 混跑」而非全新实例复验；空清单兜底会掩盖「服务端真的零通道」（当前无此装配点）。
 - **上游收敛**：上游若自带服务能力协商（Initialize 携带可用服务声明等），整体删除本功能并采用上游实现；摘除范围与「必须保留的时序不变量」见实现文档 §2。
-- **上游同步记录**：暂无。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `packages/client/src/remoteServiceAccess.ts`。保留 Initialize 通道清单驱动的服务可用性与 fork 服务门控，同时合入上游 output-style 服务注册。
 
 ## 其他更新
+
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：`packages/ui/src/lib/uiFontSize.ts` 的默认字号冲突为上游 14px、fork 12px；保留已记录的 12px 首次启动默认值。`packages/ui/src/app-shell/WorkspaceShellLayout.tsx` 冲突为上游可拖拽宽度面板与 fork 侧栏底色；采用上游面板结构并保留 `bg-sidebar`。
+- **同步维护（2026-10-16）**：为上游新增的 `packages/services/src/gen-ui` 补齐架构规则要求的 `contract.test.ts`；将 fork 专属 test id 移至 `packages/shared/src/test-ids-fork.ts`，保持公开导出并修复上游文件触发的 max-lines lint。
+- 2026-10-16：主题为 system 时在 SSR/无浏览器 `window.matchMedia` 环境下安全回退到亮色，避免 UI 静态渲染与桌面服务测试初始化失败；`packages/ui/src/useTheme.ts`、`packages/ui/test/useTheme.test.ts`。
 
 - 2026-09-29：WebDAV 报错不再只有一句 `fetch failed`——展开错误 `cause` 链、补上请求方法与 URL，并区分「未收到 HTTP 响应（网络/代理问题）」与「服务端返回错误状态」；`packages/desktop/src/host/fork/webdav/{error-message.ts,webdav-client.ts,service.ts}`。
 - 2026-09-29：亮色主题配色——对话/主区域底色改纯白 `#ffffff`，侧边栏改 `#f7f8f9`。侧边栏此前不铺底色、直接透出窗口底色（`bg-background-alt`），现改为消费设计系统里原本闲置的 `--color-sidebar`（展开态 aside 与折叠态轨道都铺底色）。暗色主题 `theme-zai-dark` 本次未改；`packages/ui/src/styles.css`、`packages/ui/src/app-shell/WorkspaceShellLayout.tsx`、`packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx`。

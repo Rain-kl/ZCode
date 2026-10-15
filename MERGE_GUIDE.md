@@ -108,6 +108,7 @@ pnpm fork:check-removals
 
 ```bash
 pnpm test:unit            # 依赖契约与功能单测（依赖 API 变更的第一信号）
+pnpm test:unit:fork       # fork 的 node:test 契约与功能单测
 pnpm typecheck
 pnpm lint
 pnpm architecture:check

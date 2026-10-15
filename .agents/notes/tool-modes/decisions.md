@@ -60,3 +60,10 @@
 运行中的 dev 实例（Vite HMR + CDP 9229）实测：三卡片按极简→基础→标准排列、标准档带选中标记；
 点「极简」后标记移动且 `tool-groups.json` 落盘 `mode: "minimal"`；关总开关后三张卡片 `disabled`
 且脚注切换。验证后把状态文件还原为验证前的字节。暗色主题未验证（要改用户当前主题）。
+
+## 4. 上游同步（2026-10-16，`29628c9..aac47556`）
+
+- `FillWorkflowHole` 归入基础档：它补全正在构造的 workflow 参数，基础档仍需允许该能力，否则 Agent 无法完成 workflow。
+- `ReplyToChannel` 归入标准档：该工具会向外部频道发送内容，属于标准档保留的外部副作用能力。
+- MCP 工具刷新同时保留上游 `tools/list_changed` 与 fork `/reload` 重注册；两条路径共用注册名称、descriptor 快照、签名和 revision，防止刷新时把 fork 档位筛选结果覆盖掉。
+- 验证：`forkToolModeTools.test.ts` 和针对性工具模式测试通过；完整检查结果记录在合并提交说明中。

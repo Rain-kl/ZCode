@@ -18,15 +18,15 @@
 
 ## 3. 工具现状（实测）
 
-注册表共 **38 个内置工具**（`builtInTools`，来自把注册表跑出来的实测结果）。此外还有**动态来源**：MCP 服务器工具（名字形如 `<server>__<tool>`，含内置的 `computer-use__*`）与插件工具，其名字在会话创建时不可知。
+注册表共 **40 个内置工具**（`builtInTools`，来自把注册表跑出来的实测结果）。此外还有**动态来源**：MCP 服务器工具（名字形如 `<server>__<tool>`，含内置的 `computer-use__*`）与插件工具，其名字在会话创建时不可知。
 
 ## 4. 三档定义
 
 | 档位                | 内容                                                                                                                                                                                                                                                                                                                                                                                                  | 工具数    |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | **极简** `minimal`  | `Read` `Write` `Edit` `Glob` `Grep` `Bash` `WebFetch` `WebSearch`                                                                                                                                                                                                                                                                                                                                     | 8         |
-| **基础** `basic`    | 极简 + `TodoRead` `TodoWrite` `EnterPlanMode` `ExitPlanMode` `AskUserQuestion` `Agent` `SendMessage` `ReadSessionContext` `TaskOutput` `TaskStop` `Skill` `CronCreate` `CronList` `CronUpdate` `CronDelete` `CreateWorkflow` `AmendWorkflow` `SaveWorkflow` `EvalWorkflowSnippet` `ListWorkflowRuns` `GetWorkflowRun` `ResumeWorkflowRun` `ResolveWorkflowQuestion` `ListSavedWorkflows` `ListModels` | 33        |
-| **标准** `standard` | 基础 + `js`（脚本运行时）+ `Task` / `submit_result` / `escalate` / `RespondToCoordinator`（后四个是子代理与工作流的内部通信面，只在对应端口在场时注册）+ 全部 MCP / 插件工具                                                                                                                                                                                                                          | 38 + 动态 |
+| **基础** `basic`    | 极简 + `TodoRead` `TodoWrite` `EnterPlanMode` `ExitPlanMode` `AskUserQuestion` `Agent` `SendMessage` `ReadSessionContext` `TaskOutput` `TaskStop` `Skill` `CronCreate` `CronList` `CronUpdate` `CronDelete` `CreateWorkflow` `AmendWorkflow` `SaveWorkflow` `EvalWorkflowSnippet` `ListWorkflowRuns` `GetWorkflowRun` `ResumeWorkflowRun` `ResolveWorkflowQuestion` `FillWorkflowHole` `ListSavedWorkflows` `ListModels` | 34        |
+| **标准** `standard` | 基础 + `js`（脚本运行时）+ `Task` / `submit_result` / `escalate` / `RespondToCoordinator`（仅对应端口在场时注册）+ `ReplyToChannel`（只有用户明确要求发送消息时使用）+ 全部 MCP / 插件工具                                                                                                                                                                                                                          | 40 + 动态 |
 
 档位是**包含关系**：标准 ⊃ 基础 ⊃ 极简。默认 `standard`，因此默认行为与改动前逐字节一致。
 
@@ -97,7 +97,7 @@ interface IForkToolModeService {
 
 1. 默认（未配置）：`toolDenylist` 为空、MCP 照旧下发，请求工具面与改动前一致。
 2. 选极简：新会话请求只含 8 个内置工具，MCP 工具不存在，`# Session-specific guidance` 里与已关工具相关的指导消失。
-3. 选基础：请求含 33 个内置工具，`js` 与内部四件套不在其中。
+3. 选基础：请求含 34 个内置工具，`js`、内部通信工具和 `ReplyToChannel` 不在其中；`FillWorkflowHole` 与工作流工具一起可用。
 4. 选标准：回到场景 1。
 5. 关闭「注入工具」：请求不含任何工具定义（tools 为空/缺席），模型只能纯文本回答；重新打开后恢复。
 6. 冷恢复（resume）仍带同一份 allowlist，不因恢复而放大工具面。

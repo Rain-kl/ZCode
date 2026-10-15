@@ -9,7 +9,7 @@
  * `@/*` 别名，只有带上 packages/ui/tsconfig.json 的 paths 才能解析。
  *
  * 用法：
- *   pnpm test:unit                    # 全部
+ *   pnpm test:unit:fork               # fork 的全部 node:test 用例
  *   pnpm exec tsx --test <file>       # 单跑某个文件（排查时用）
  *
  * 约定：测试文件用 node:test + node:assert，不要 import 需要打包器别名/JSX 的模块，
@@ -17,12 +17,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { resolveSpawnRuntimeOptions } from "./spawn-command.mjs";
 
 const REPO_ROOT = resolve(import.meta.dirname, "..");
-const PNPM_COMMAND = "pnpm";
 const TEST_FILE_SUFFIX = ".test.ts";
 
 /**
@@ -36,6 +34,10 @@ function discoverTestGroups() {
     if (!existsSync(testDir)) return;
     const files = readdirSync(testDir)
       .filter((name) => name.endsWith(TEST_FILE_SUFFIX))
+      .filter((name) => {
+        const source = readFileSync(join(testDir, name), "utf8");
+        return !/\bfrom\s*["']vitest["']|\bimport\s*["']vitest["']/.test(source);
+      })
       .sort()
       .map((name) => join(testDir, name));
     if (files.length === 0) return;
@@ -71,11 +73,11 @@ function runGroup(group) {
   }
 
   console.log(`\n── ${displayName}（${group.files.length} 个文件）`);
-  const result = spawnSync(PNPM_COMMAND, ["exec", "tsx", "--test", ...group.files], {
+  // Importing tsx as a loader avoids tsx CLI's Unix socket IPC, which is blocked in sandboxed runs.
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--test", ...group.files], {
     cwd: REPO_ROOT,
     env,
     stdio: "inherit",
-    ...resolveSpawnRuntimeOptions(PNPM_COMMAND),
   });
 
   if (result.error) throw result.error;
