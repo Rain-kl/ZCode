@@ -258,8 +258,19 @@ jobs:
             echo "ZCODE_ENABLE_MAC_SIGN=1"
           } >> "$GITHUB_ENV"
 
+      # 失败详情写成 annotation：Actions 日志需要管理员权限，打包报错否则只剩 exit code。
       - name: Bundle desktop app
-        run: pnpm bundle:desktop -- --os mac --arch ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set +e
+          pnpm bundle:desktop -- --os mac --arch ${{ matrix.arch }} 2>&1 | tee /tmp/desktop-bundle.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail=$(tail -n 30 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=bundle desktop failed::${detail}"
+            exit "$status"
+          fi
 
       # 验收 tag 版本确实进了程序：比对 app.asar 内 package.json 与 build-meta.json。
       - name: Verify packaged version
@@ -332,8 +343,19 @@ jobs:
       - name: Apply release version
         run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
 
+      # 失败详情写成 annotation：Actions 日志需要管理员权限，打包报错否则只剩 exit code。
       - name: Bundle desktop app
-        run: pnpm bundle:desktop -- --os win --arch x64
+        shell: bash
+        run: |
+          set +e
+          pnpm bundle:desktop -- --os win --arch x64 2>&1 | tee /tmp/desktop-bundle.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail=$(tail -n 30 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=bundle desktop failed::${detail}"
+            exit "$status"
+          fi
 
       - name: Verify packaged version
         shell: bash
