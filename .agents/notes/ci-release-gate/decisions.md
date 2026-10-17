@@ -63,7 +63,16 @@ verify 通过后，macOS/Windows 的 `Bundle desktop app` 同时失败（重复�
 验证：`pnpm --filter @zcode/bootstrap build` 通过；`pnpm --filter @zcode/desktop run prepare:agent-bundle`
 从失败变为完整成功（CLI bundle + 官方插件 runtime 全部 staging 完成）。
 
-### 2.5 Install dependencies 的瞬时拉包失败
+### 2.5 Windows Gen UI vendor 的 CRLF hash 失配
+
+Windows build 在 tsup 阶段失败：`Gen UI vendor hash mismatch: floating-ui-core-1.7.3.min.js`。
+`copyGenUiRuntimeAssets` 按 manifest 的 SHA-256 校验 vendor 快照；这些 `.min.js` 未在
+`.gitattributes` 标记为二进制，Windows 检出在 `core.autocrlf=true` 下把 LF 转成 CRLF，
+字节改变导致 hash 失配（macOS/Linux 不转换，所以只有 Windows 失败）。
+修复：`apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/vendor/**` 标记
+`-text -whitespace`，保证按字节检出。
+
+### 2.6 Install dependencies 的瞬时拉包失败
 
 重试 tag 后 verify 在 `Install dependencies` 秒级失败，两次重试均失败；本地全新 store 安装
 （约 3GB）成功，锁文件无问题。给安装步骤加 `--fetch-retries` 等参数后同一提交通过，判定为
