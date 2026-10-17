@@ -11,7 +11,7 @@ import type { SteerTurnOptions } from "../../../app/types.js";
 import { inputIntentMetadata } from "../input-intent.js";
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
-import { enqueueDeferredInputForBusyWork, V4InputAdmissionRejectedError } from "./session-flow.js";
+import { enqueueDeferredInputForBusyWork, V4InputAdmissionRejectedError } from "../input-admission.js";
 
 /** /reload 的裁决拒绝（gateway 捕获后进 ACK failed，message 透传给客户端）。 */
 export class V4ReloadRejectedError extends Error {

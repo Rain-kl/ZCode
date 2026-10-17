@@ -45,6 +45,31 @@ Linux ext4 在 `rm -rf` 后立即重建目录时会复用刚释放的 inode，`d
 
 上游标记：`FORK-BEGIN(其他更新)` / `FORK-END(其他更新)`，见 FEATURES.md「其他更新」。
 
+### 2.4 打包阶段暴露的同步合并残留
+
+verify 通过后，macOS/Windows 的 `Bundle desktop app` 同时失败（重复标识符注解指向
+`bootstrap/src/app/types.ts`）。`pnpm verify` 的根 typecheck 不包含 `apps/zcode-cli`，
+所以这类问题只会在打包时暴露：
+
+- `bootstrap/src/app/types.ts` 在同步合并后保留了两份 import 前导块（fork 版与 upstream 版各一份），
+  同名类型被导入两次，tsc 报 TS2300。合并为 upstream 结构，并把 fork 的
+  `IdentityPresetPort` / `ForkToolModePort` 及其 FORK 注释并回 core import。
+- `bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts` 仍从 `./session-flow.js`
+  导入 `enqueueDeferredInputForBusyWork` / `V4InputAdmissionRejectedError`；上游已把这两个
+  原语移到 `commands/input-admission.ts`，改为 `../input-admission.js`。
+- `bootstrap/src/zcode-protocol-v4/product-projection.ts` 的 `CompactLifecyclePayload` 在同一
+  import 列表出现两次，删除重复项。
+
+验证：`pnpm --filter @zcode/bootstrap build` 通过；`pnpm --filter @zcode/desktop run prepare:agent-bundle`
+从失败变为完整成功（CLI bundle + 官方插件 runtime 全部 staging 完成）。
+
+### 2.5 Install dependencies 的瞬时拉包失败
+
+重试 tag 后 verify 在 `Install dependencies` 秒级失败，两次重试均失败；本地全新 store 安装
+（约 3GB）成功，锁文件无问题。给安装步骤加 `--fetch-retries` 等参数后同一提交通过，判定为
+runner 侧瞬时网络/拉包失败。安装步骤同时把失败尾部写成 `::error::` annotation，便于在无
+管理员权限时排查（本仓库 Actions 日志需要 admin token）。
+
 ## 3. 验证
 
 Node 24（mise 24.18.0，仓库 .nvmrc=24）下：
@@ -54,8 +79,11 @@ Node 24（mise 24.18.0，仓库 .nvmrc=24）下：
 - 全量 `pnpm test:unit`：1917 个文件、17986 个用例通过，10 skipped，exit 0。
 - 删除 adapters dist 后按新 filter 构建，storage 用例恢复通过；删除 electron dist 后
   `pnpm rebuild electron` 恢复二进制，bytecode 用例通过。
-- 未验证：真实 GitHub Actions 重跑（仓库规则禁止推送）；Ubuntu runner 上 Electron-as-Node
-  的系统库可用性。
+- Release Desktop run 39047581345：Resolve 与 Verify workspace gates 全绿（含此前失败的
+  Unit tests）；随后 macOS/Windows 两个 Build 作业在 `Bundle desktop app` 暴露 §2.4 的合并残留。
+- 修复 §2.4 后本地 `pnpm --filter @zcode/bootstrap build` 与 `prepare:agent-bundle` 通过，
+  重新打 tag 验证。
+- 未验证：Ubuntu runner 上 Electron-as-Node 的系统库可用性（本次 verify 实测已通过该步骤）。
 
 ## 4. 本地环境注意
 

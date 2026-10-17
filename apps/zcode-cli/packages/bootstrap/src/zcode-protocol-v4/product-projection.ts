@@ -12,7 +12,6 @@ import type {
   ForkReloadCompletedPayload,
   AssistantFeedbackUpdatedPayload,
   HighspeedMetricsUpdatedPayload,
-  CompactLifecyclePayload,
   DynamicWorkflowRunProgressPayload,
   HookRunLifecyclePayload,
   ModelCompletePayload,
