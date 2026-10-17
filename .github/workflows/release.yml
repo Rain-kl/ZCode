@@ -124,8 +124,22 @@ jobs:
           cache: pnpm
 
       # 这里只跑静态检查，不需要原生模块和 Electron 运行时，跳过安装脚本可省掉一次 Electron 下载。
+      # 网络抖动时 pnpm 的默认重试次数不够；失败详情写成 annotation，便于无管理员权限时排查。
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        shell: bash
+        run: |
+          set +e
+          pnpm install --frozen-lockfile --ignore-scripts \
+            --fetch-retries=5 \
+            --fetch-retry-mintimeout=10000 \
+            --fetch-retry-maxtimeout=60000 2>&1 | tee /tmp/pnpm-install.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail=$(tail -n 20 /tmp/pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=pnpm install failed::${detail}"
+            exit "$status"
+          fi
 
       - name: Typecheck
         run: pnpm typecheck
