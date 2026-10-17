@@ -267,8 +267,10 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
-            detail=$(tail -n 30 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
-            echo "::error title=bundle desktop failed::${detail}"
+            errors=$(grep -niE 'error|failed|exception|cannot find|enoent' /tmp/desktop-bundle.log | tail -n 15 | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3000)
+            echo "::error title=bundle desktop errors::${errors}"
+            detail=$(tail -n 40 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | tail -c 3000)
+            echo "::error title=bundle desktop tail::${detail}"
             exit "$status"
           fi
 
@@ -352,8 +354,10 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ]; then
-            detail=$(tail -n 30 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
-            echo "::error title=bundle desktop failed::${detail}"
+            errors=$(grep -niE 'error|failed|exception|cannot find|enoent' /tmp/desktop-bundle.log | tail -n 15 | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3000)
+            echo "::error title=bundle desktop errors::${errors}"
+            detail=$(tail -n 40 /tmp/desktop-bundle.log | tr '\n\r' '  ' | sed 's/%/%25/g' | tail -c 3000)
+            echo "::error title=bundle desktop tail::${detail}"
             exit "$status"
           fi
 
