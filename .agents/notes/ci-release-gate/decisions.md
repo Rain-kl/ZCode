@@ -90,9 +90,14 @@ Node 24（mise 24.18.0，仓库 .nvmrc=24）下：
   `pnpm rebuild electron` 恢复二进制，bytecode 用例通过。
 - Release Desktop run 39047581345：Resolve 与 Verify workspace gates 全绿（含此前失败的
   Unit tests）；随后 macOS/Windows 两个 Build 作业在 `Bundle desktop app` 暴露 §2.4 的合并残留。
-- 修复 §2.4 后本地 `pnpm --filter @zcode/bootstrap build` 与 `prepare:agent-bundle` 通过，
-  重新打 tag 验证。
-- 未验证：Ubuntu runner 上 Electron-as-Node 的系统库可用性（本次 verify 实测已通过该步骤）。
+- 修复 §2.4 后本地 `pnpm --filter @zcode/bootstrap build` 与 `prepare:agent-bundle` 通过。
+- §2.5 在本地用 `git -c core.autocrlf=true checkout` 模拟 Windows 检出：vendor 文件仍为 LF，
+  SHA-256 与 manifest 一致。
+- 最终 Release Desktop run 39056659512（tag `v3.16.151` → `a4f9617b`）全绿：
+  Resolve、Verify workspace gates、Build macOS (arm64)、Build Windows (x64)、Publish GitHub Release
+  全部 success。Release 资产：macOS dmg/zip/blockmap、Windows exe/blockmap、latest.yml、
+  latest-mac.yml、SHA256SUMS.txt。
+- Ubuntu runner 上 Electron-as-Node 的系统库可用性已由 verify 的 `Unit tests` 实测通过。
 
 ## 4. 本地环境注意
 
