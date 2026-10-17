@@ -257,6 +257,30 @@ describe("Host incremental subagent snapshots", () => {
     ).toBe(false);
   });
 
+  it("rebinds when a parent rename names the watched directory even if inode is reused", async () => {
+    const f = await fixture();
+    const path = join(f.userRoot, "a.md");
+    await writeFile(path, markdown("aaa", "initial"));
+    await f.cache.prepare(f.workspace);
+    const obsolete = initialWatcherFor(f.userRoot);
+    const staleStats = await fs.stat(f.userRoot);
+    await rm(f.userRoot, { recursive: true });
+    await mkdir(f.userRoot);
+    await writeFile(path, markdown("aaa", "replacement"));
+    // ext4 会复用刚释放的 inode：目录已被替换，但 dev/ino 可能与旧目录相同。
+    const actualFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    vi.mocked(fs.stat).mockImplementation((target, options) =>
+      resolve(String(target)) === f.userRoot
+        ? Promise.resolve(staleStats)
+        : actualFs.stat(target, options),
+    );
+    for (const events of parentEvents.get(dirname(f.userRoot)) ?? [])
+      events.emit("change", { eventType: "rename", filename: "user" });
+    await until(() =>
+      expect((obsolete as unknown as { close: unknown }).close).toHaveBeenCalledOnce(),
+    );
+  });
+
   it("rebinds before publishing child unlinks when the directory unlink notification is late", async () => {
     const f = await fixture();
     const path = join(f.userRoot, "a.md");

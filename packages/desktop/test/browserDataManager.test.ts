@@ -782,6 +782,9 @@ describe("browserDataManager", () => {
     const result = await importChromeLocalStorage({
       profilePath,
       platform: "aix",
+      // aix 不是受支持平台，但实现会回落到 Linux 标准路径；Linux CI runner 自带
+      // /usr/bin/google-chrome 时用例会误判为“找到了 Chrome”。显式注入空路径锁定缺失分支。
+      chromeExecutablePath: "",
       logger,
       targetSession: {} as Electron.Session,
     });

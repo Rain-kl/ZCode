@@ -267,6 +267,7 @@
 
 ## 其他更新
 
+- 2026-10-17：子代理配置监听修复目录快速替换的漏检——父目录原生 `rename` 事件原先只触发 `stat` 比对，Linux ext4 复用刚释放的 inode 时 `dev/ino` 不变，旧 watcher 不会关闭，后续配置修改静默失效。现在事件指名被监听目录项时强制重建；`packages/services/src/subagents/subagentConfigScope.ts`、`packages/services/test/subagentRuntimeConfig.test.ts`。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：`packages/ui/src/lib/uiFontSize.ts` 的默认字号冲突为上游 14px、fork 12px；保留已记录的 12px 首次启动默认值。`packages/ui/src/app-shell/WorkspaceShellLayout.tsx` 冲突为上游可拖拽宽度面板与 fork 侧栏底色；采用上游面板结构并保留 `bg-sidebar`。
 - **同步维护（2026-10-16）**：为上游新增的 `packages/services/src/gen-ui` 补齐架构规则要求的 `contract.test.ts`；将 fork 专属 test id 移至 `packages/shared/src/test-ids-fork.ts`，保持公开导出并修复上游文件触发的 max-lines lint。
 - 2026-10-16：主题为 system 时在 SSR/无浏览器 `window.matchMedia` 环境下安全回退到亮色，避免 UI 静态渲染与桌面服务测试初始化失败；`packages/ui/src/useTheme.ts`、`packages/ui/test/useTheme.test.ts`。

@@ -143,9 +143,15 @@ jobs:
 
       # apps/zcode-cli/packages/core/test 的单测会 import 上游 CLI 包（tool 入口等），
       # 而这些包的 exports 指向 dist：verify 只 install 不 build，缺 dist 会 ERR_MODULE_NOT_FOUND
-      # 让整组失败。这里按依赖链构建 core（约 4 个包），其余组只 import 源码，不需要构建。
+      # 让整组失败。这里按依赖链构建 core 与 adapters（storage 协议用例直接 import bootstrap
+      # 源码，而 bootstrap 依赖 @zcode/adapters/storage 的 dist），其余组只 import 源码。
       - name: Build CLI packages used by unit tests
-        run: pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." run build
+        run: pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." --filter "@zcode/adapters" run build
+
+      # --ignore-scripts 省掉了 Electron 下载，但 desktopAgentBytecode 用例要真实执行 Electron
+      # 二进制；只补装 Electron，保留其余安装脚本跳过的加速效果。
+      - name: Install Electron binary used by unit tests
+        run: pnpm --filter @zcode/desktop rebuild electron
 
       # 依赖契约与功能单测：上游 API 形状/默认值/语义变更的第一信号，见 AGENTS.md「依赖契约测试」。
       - name: Unit tests

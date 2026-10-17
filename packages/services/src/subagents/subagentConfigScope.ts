@@ -246,10 +246,18 @@ export function createSubagentConfigScope<T>(options: {
           const controller = new AbortController();
           parentWatch = controller;
           void (async () => {
-            for await (const _event of watchDirectory(parent, { signal: controller.signal })) {
+            // FORK-BEGIN(其他更新)
+            // 目录被快速替换时 inode 可能被复用（Linux ext4），只比较 dev/ino 会漏检，
+            // 旧 watcher 不关闭会让后续配置修改静默失效；见 FEATURES.md「其他更新」。
+            for await (const event of watchDirectory(parent, { signal: controller.signal })) {
               if (disposed || watcher !== current) return;
-              await checkWatch();
+              const renamedAnchor =
+                event.eventType === "rename" &&
+                event.filename != null &&
+                resolve(parent, String(event.filename)) === anchor;
+              await checkWatch(renamedAnchor);
             }
+            // FORK-END(其他更新)
           })().catch((error) => {
             if (!controller.signal.aborted && !disposed)
               logger.warn(undefined, "Subagent 父目录监听异常，显式重载可重建监听", {
