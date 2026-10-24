@@ -49,6 +49,15 @@ it("Electron 单 listener 分发不会覆盖其他观测者，异常仍原样放
   listener!({ url: "https://g.alicdn.com/a" } as OnBeforeRequestListenerDetails, callback);
   expect(callback).toHaveBeenCalledExactlyOnceWith({});
   expect(cdnObserver).toHaveBeenCalledOnce();
+  const denied = vi.fn();
+  listener!(
+    {
+      url: "https://zcode.z.ai/api/v1/marketing/touch",
+      method: "GET",
+    } as OnBeforeRequestListenerDetails,
+    denied,
+  );
+  expect(denied).toHaveBeenCalledExactlyOnceWith({ cancel: true });
   removeCapture();
   expect(onBeforeRequest.mock.lastCall![0]).toEqual({ urls: ["https://*.alicdn.com/*"] });
   removeCdnObserver();

@@ -69,7 +69,7 @@ export const REGISTRY = [
       })),
       {
         path: "packages/desktop/src/main/observeBeforeRequest.ts",
-        pattern: /cancel:\s*!isUpstreamRequestAllowed\(details.url, details.method\)/,
+        pattern: /callback\(\s*isUpstreamRequestAllowed\(details.url, details.method\)/,
         reason: "网络观测共用 listener 必须保持请求门禁",
       },
       {

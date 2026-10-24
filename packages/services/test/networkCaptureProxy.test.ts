@@ -58,3 +58,41 @@ it("Host 原 dispatcher 的 CONNECT 和 noProxy 均正常，只记录目标 HTTP
     ]);
   }
 });
+
+it("显式 undici dispatcher 保留 Node Request 的 POST 正文和请求头", async () => {
+  const { Agent } = await import("undici");
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    res.setHeader("Content-Type", "application/json");
+    res.end(
+      JSON.stringify({
+        method: req.method,
+        header: req.headers["x-probe"],
+        body: Buffer.concat(chunks).toString(),
+      }),
+    );
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const transport = createHostApiNetworkTransport(
+    async () => ({ httpProxy: "http://proxy.example:8080" }),
+    {
+      // 走真实显式 dispatcher/undici 传输；本用例只隔离代理路由，不伪造响应。
+      createDispatcher: async () => new Agent(),
+    },
+  );
+  try {
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/post`;
+    const response = await transport.fetch(url, {
+      method: "POST",
+      headers: { "X-Probe": "kept" },
+      body: "payload",
+    });
+    expect(await response.json()).toEqual({ method: "POST", header: "kept", body: "payload" });
+  } finally {
+    await transport.disposeAndWait();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

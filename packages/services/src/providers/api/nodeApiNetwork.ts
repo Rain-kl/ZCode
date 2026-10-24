@@ -192,10 +192,20 @@ export function createHostApiNetworkTransport(
     }
     // FORK(local-mode): 显式 undici dispatcher 的重定向也必须逐跳审核。
     return createUpstreamPolicyFetch((nextInput, nextInit) =>
-      fetchWithDispatcher(
-        nextInput as unknown as string,
-        { ...nextInit, dispatcher } as Omit<RequestInit, "dispatcher"> & { dispatcher: Dispatcher },
-      ),
+      fetchWithDispatcher(nextInput instanceof Request ? nextInput.url : String(nextInput), {
+        // Node 内置 Request 与 npm undici 的 Request 不是同一个类；只传 URL 和标准字段。
+        ...(nextInput instanceof Request
+          ? {
+              method: nextInput.method,
+              headers: Array.from(nextInput.headers.entries()),
+              body: nextInput.body,
+              signal: nextInput.signal,
+              duplex: "half",
+            }
+          : {}),
+        ...nextInit,
+        dispatcher,
+      } as Omit<RequestInit, "dispatcher"> & { dispatcher: Dispatcher }),
     )(input, init);
   };
 

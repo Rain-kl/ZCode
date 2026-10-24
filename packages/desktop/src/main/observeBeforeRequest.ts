@@ -28,7 +28,7 @@ export function subscribeBeforeRequest(
       { urls: [...new Set([...entries.values()].flatMap((entry) => entry.urls))] },
       (details, callback) => {
         // FORK(local-mode): 每个重定向与 WebSocket 握手先审核，不让观测器覆盖网络门禁。
-        callback({ cancel: !isUpstreamRequestAllowed(details.url, details.method) });
+        callback(isUpstreamRequestAllowed(details.url, details.method) ? {} : { cancel: true });
         for (const [listener, entry] of entries) {
           try {
             if (entry.patterns.some((pattern) => pattern.test(details.url))) listener(details);
