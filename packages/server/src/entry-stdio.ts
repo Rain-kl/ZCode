@@ -1,3 +1,5 @@
+// FORK(local-mode): 独立子进程入口必须先安装上游网络门禁。
+import "@zcode/shared/upstream-network-policy/node";
 import { migrateApplicationStorage, createSettingService } from "@zcode/services/node";
 import { disposeServiceResourcesAndWait, getAppConfigDir } from "@zcode/services/node";
 import type { IChannel } from "@zcode/rpc";

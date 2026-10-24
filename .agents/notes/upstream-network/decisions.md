@@ -13,3 +13,5 @@
 出口复查补充：desktopSaveFile 独立 undici 每跳先检查再 DNS；NodeApiClient 提供宿主授权回调并在地址重写前后执行，以覆盖设置中的自定义上游域；共享 fetch 保留显式 dispatcher，避免破坏用户代理/证书。追加 76 项回归通过，typecheck、lint、architecture 与移除守卫均通过。首候选 3c5742b6 的 CI 不作为最终发版证据，等待包含本补充的后继提交。
 
 CI 40071337270：2039 文件/19800 测试通过，4 文件/18 测试失败。真实缺陷是 Node 内置 Request 与独立 npm undici 的品牌不兼容，显式 dispatcher 适配改传 URL+标准字段，保留 body/headers/signal/duplex。另修复无 XHR 运行环境的能力判断；Electron 放行回调保持原 {} 形状、拒绝仍为 cancel:true。相关 52 项通过，包含真实本地服务、CONNECT/noProxy、POST 正文和请求头；静态检查与移除守卫通过。不关闭任何拒绝规则来迁就测试。
+
+CI 40071741322 另外暴露账号令牌用例与现有云账号禁用规则冲突，改为验证缓存凭据也不能发送账号请求，保留 Host 私有服务边界检查。client-scenes 单独审核：纯 GET、调用方不读取账号；用不含 Authorization/Cookie 的 HTTP 请求实测 200/code 0、9 组场景，供新会话提示词及自动化模板使用，符合用户明确的匿名实用功能条件。因此精确白名单保留 /api/v1/client/scenes，不放开整个 client 前缀或 configs 灰度接口。

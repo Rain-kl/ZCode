@@ -62,6 +62,8 @@ export const REGISTRY = [
         "packages/server/src/entry-http.ts",
         "packages/server/src/stdio.ts",
         "packages/zcode-server-cli/src/main.ts",
+        "packages/zcode-server-cli/src/server-core/entry.ts",
+        "packages/server/src/entry-stdio.ts",
       ].map((path) => ({
         path,
         pattern: /import "@zcode\/shared\/upstream-network-policy\/node"/,

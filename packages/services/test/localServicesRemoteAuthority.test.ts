@@ -260,7 +260,7 @@ describe("createLocalServices remote authority", () => {
     }
   });
 
-  it("keeps the narrow account request auth service private to the host process", async () => {
+  it("缓存登录凭据也不允许请求上游令牌，账号鉴权服务仍私有", async () => {
     const home = makeTempHome();
     process.env.HOME = home;
     const fetchToken = vi.fn<typeof fetch>(async (input) => {
@@ -354,19 +354,9 @@ describe("createLocalServices remote authority", () => {
           },
           reason: "model-request",
         }),
-      ).resolves.toEqual({
-        apiKey: "current-project-token",
-        apiKeyId: "key-id",
-        accountScope: expect.stringMatching(/^[a-f0-9]{64}$/),
-      });
-      const tokenRequest = fetchToken.mock.calls.find(([url]) =>
-        String(url).endsWith("/api_keys/key-id/access_tokens"),
-      );
-      expect(tokenRequest).toBeDefined();
-      expect(new Headers(tokenRequest![1]?.headers).get("authorization")).toBe(
-        "Bearer login-token",
-      );
-      expect(fetchToken.mock.calls.some(([url]) => String(url).includes("/copy/"))).toBe(false);
+      ).rejects.toThrow("project_token_request_failed");
+      // FORK(local-mode): 缓存的登录态也不能绕过上游请求门禁，不能用旧 Key 回退发送。
+      expect(fetchToken).not.toHaveBeenCalled();
     } finally {
       disposeServiceResources(services);
     }

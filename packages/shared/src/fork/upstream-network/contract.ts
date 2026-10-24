@@ -30,7 +30,12 @@ export function isUpstreamRequestAllowed(
       url.pathname.startsWith(prefix),
     );
   }
-  return host === "zcode.z.ai" && (url.pathname === "/docs" || url.pathname.startsWith("/docs/"));
+  return (
+    host === "zcode.z.ai" &&
+    (url.pathname === "/api/v1/client/scenes" ||
+      url.pathname === "/docs" ||
+      url.pathname.startsWith("/docs/"))
+  );
 }
 
 export function assertUpstreamRequestAllowed(

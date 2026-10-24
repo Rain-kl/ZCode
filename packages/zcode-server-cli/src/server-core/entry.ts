@@ -1,3 +1,5 @@
+// FORK(local-mode): 独立子进程入口必须先安装上游网络门禁。
+import "@zcode/shared/upstream-network-policy/node";
 import { runServerCore } from "./core.js";
 
 const generation = Number(process.argv[2] ?? 0);

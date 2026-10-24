@@ -24,11 +24,13 @@ describe("fork upstream request boundary", () => {
     "https://cdn-zcode.z.ai/zcode/official-plugin/assets/github/icon.png",
     "https://cdn.codegeex.cn/zcode/electron/releases/3.0/node.tar.gz",
     "https://zcode.z.ai/docs",
+    "https://zcode.z.ai/api/v1/client/scenes",
     "https://github.com/Rain-kl/ZCode/releases/latest/download/latest.yml",
     "https://my-provider.example/v1/messages",
     "http://127.0.0.1:8080/webdav/",
   ])("retains %s", (url) => expect(isUpstreamRequestAllowed(url)).toBe(true));
   it("only permits read methods on anonymous upstream resources", () => {
+    expect(isUpstreamRequestAllowed("https://zcode.z.ai/api/v1/client/scenes", "POST")).toBe(false);
     const url = "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json";
     expect(isUpstreamRequestAllowed(url, "POST")).toBe(false);
     expect(isUpstreamRequestAllowed(url, "HEAD")).toBe(true);

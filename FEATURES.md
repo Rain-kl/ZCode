@@ -298,6 +298,6 @@
 ### 本地模式上游通信收口（2026-10-24）
 
 - 营销组件停止挂载；ARMS、应用埋点、TTFT/界面动作 OTLP 导出停用；上游手机远控依赖账号 JWT，不再展示入口。账号、权益、反馈、云分享及灰度配置请求由默认拒绝策略阻断。
-- 唯一允许的上游匿名读请求为官方插件市场/静态资源、远程运行时下载和公开文档。Node Main/Host/CLI/Server 出口与 Electron Session/沙箱、Web 入口统一使用 `fork-upstream-network` 策略，重定向逐跳验证，错误不泄露 query。
+- 唯一允许的上游匿名读请求为官方插件市场/静态资源、远程运行时下载、公开文档和已核验匿名可用的场景提示词/自动化模板。Node Main/Host/CLI/Server 出口与 Electron Session/沙箱、Web 入口统一使用 `fork-upstream-network` 策略，重定向逐跳验证，错误不泄露 query。
 - 新增 `shared/src/fork/upstream-network/**`；上游接线均标记 `FORK(local-mode)`；`scripts/fork-removal-rules.mjs` 固化入口守卫，避免同步后恢复上游营销/采集链路。
 - 设计与审查清单：`docs/features/upstream-network/design.md`；实现与验证：`docs/features/upstream-network/implementation.md`。
