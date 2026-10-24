@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import { urlToHttpOptions } from "node:url";
+import { URL as NodeURL, urlToHttpOptions } from "node:url";
 import { syncBuiltinESMExports } from "node:module";
 import { assertUpstreamRequestAllowed } from "./contract.js";
 import { createUpstreamPolicyFetch } from "./module.js";
@@ -31,11 +31,11 @@ export function installUpstreamNetworkPolicy(): void {
     transport.request = function (...args: Parameters<typeof http.request>) {
       const first = args[0];
       const extra = typeof args[1] === "object" ? args[1] : {};
-      const options = typeof first === "string" || first instanceof URL ? extra : first;
+      const options = typeof first === "string" || first instanceof NodeURL ? extra : first;
       // CONNECT 只建立代理隧道，真实目标路径已由外层 fetch/HTTP 请求验证。
       if (options.method?.toUpperCase() === "CONNECT")
         return Reflect.apply(originalRequest, transport, args) as http.ClientRequest;
-      const base = typeof first === "string" || first instanceof URL ? new URL(first) : undefined;
+      const base = typeof first === "string" || first instanceof NodeURL ? new NodeURL(first) : undefined;
       // 与 Node 合并 URL/options 的顺序一致，防止 host 覆盖项掩盖实际 hostname。
       const normalized = { ...(base ? urlToHttpOptions(base) : {}), ...options };
       const host = normalized.hostname ?? normalized.host ?? "localhost";
