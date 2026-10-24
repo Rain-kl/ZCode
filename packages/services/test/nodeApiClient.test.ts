@@ -1,8 +1,26 @@
+import { assertUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@zcode/shared";
 import { createNodeApiClient } from "../src/providers/api/nodeApiClient.js";
 
 describe("nodeApiClient", () => {
+  it("宿主授权在端点重写前后阻断账号接口，不进入传输", async () => {
+    const fetchImpl = vi.fn();
+    const client = createNodeApiClient({
+      fetchImpl,
+      resolveZCodeEndpointOrigin: () => "https://custom-upstream.example",
+      authorizeRequest: (url, method, endpoint) =>
+        assertUpstreamRequestAllowed(String(url), method, [endpoint]),
+    });
+    await expect(client.request("https://zcode.z.ai/api/v1/marketing/touch")).rejects.toThrow(
+      "FORK_UPSTREAM_REQUEST_BLOCKED",
+    );
+    await expect(
+      client.request("https://custom-upstream.example/api/v1/oauth/token"),
+    ).rejects.toThrow("FORK_UPSTREAM_REQUEST_BLOCKED");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it.each(["bigmodel", "zai"])("%s 空业务响应经身份核验确认失效，保留原响应", async (family) => {
     const original = new Response("");
     const notified = vi.fn();

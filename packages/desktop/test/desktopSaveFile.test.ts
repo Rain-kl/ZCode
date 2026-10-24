@@ -215,6 +215,29 @@ describe("desktopSaveFile", () => {
     expect(mocks.rm).toHaveBeenCalled();
   });
 
+  it.each([false, true])("上游广告下载（含重定向 %s）在 DNS/传输前被拒绝", async (redirect) => {
+    mocks.showSaveDialog.mockResolvedValue({ canceled: false, filePath: "/tmp/blocked.png" });
+    mocks.undiciFetch.mockResolvedValue({
+      status: 302,
+      headers: new Headers({ location: "https://zcode.z.ai/api/v1/marketing/touch" }),
+      body: { cancel: vi.fn(async () => undefined) },
+    });
+    await expect(
+      mocks.handler?.(
+        { sender: {} },
+        {
+          sourceUrl: redirect
+            ? "https://images.example.test/start.png"
+            : "https://zcode.z.ai/api/v1/marketing/touch",
+          suggestedName: "blocked.png",
+        },
+      ),
+    ).resolves.toEqual({ success: false, error: "upstream_request_blocked" });
+    expect(mocks.lookup).toHaveBeenCalledTimes(redirect ? 1 : 0);
+    expect(mocks.undiciFetch).toHaveBeenCalledTimes(redirect ? 1 : 0);
+    expect(mocks.copyFile).not.toHaveBeenCalled();
+  });
+
   it("拒绝直接访问本机或私网图片地址", async () => {
     mocks.showSaveDialog.mockResolvedValue({
       canceled: false,

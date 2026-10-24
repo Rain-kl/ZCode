@@ -1,3 +1,5 @@
+// FORK(local-mode): 保存远程文件的显式 undici 出口也逐跳执行上游策略。
+import { isUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
 import { copyFile, mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
@@ -60,9 +62,7 @@ function parseRemoteImageUrl(value: unknown): URL | null {
   }
 }
 
-async function resolvePublicRemoteUrl(
-  url: URL,
-): Promise<LookupAddress[]> {
+async function resolvePublicRemoteUrl(url: URL): Promise<LookupAddress[]> {
   const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new SaveFileError("remote_address_not_allowed");
@@ -90,6 +90,8 @@ async function fetchPublicRemoteUrl(
 ): Promise<{ dispatcher: Agent; response: Awaited<ReturnType<typeof undiciFetch>> }> {
   let currentUrl = initialUrl;
   for (let redirectCount = 0; redirectCount <= MAX_REMOTE_REDIRECTS; redirectCount += 1) {
+    if (!isUpstreamRequestAllowed(currentUrl.href))
+      throw new SaveFileError("upstream_request_blocked");
     const addresses = await resolvePublicRemoteUrl(currentUrl);
     const pinnedLookup: LookupFunction = (_hostname, options, callback) => {
       if (options.all) {
@@ -134,10 +136,7 @@ async function fetchPublicRemoteUrl(
   throw new SaveFileError("download_failed");
 }
 
-async function downloadRemoteFile(
-  sourceUrl: URL,
-  destinationPath: string,
-): Promise<void> {
+async function downloadRemoteFile(sourceUrl: URL, destinationPath: string): Promise<void> {
   const controller = new AbortController();
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "zcode-save-file-"));
   const temporaryPath = join(temporaryDirectory, "download");

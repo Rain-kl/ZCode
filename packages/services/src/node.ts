@@ -1,3 +1,5 @@
+// FORK(local-mode): 服务容器在通用 API 出口注入集中授权策略。
+import { assertUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
 import {
   createRemoteProjectService,
   IRemoteProjectService,
@@ -1358,6 +1360,9 @@ export function createLocalServices(options: {
     current: ((input: string | URL, headers: Headers) => void) | null;
   } = { current: null };
   const apiClient = createNodeApiClient({
+    // FORK(local-mode): 即使上游地址被重写到自定义域名，也禁止账号、营销等业务接口。
+    authorizeRequest: (input, method, endpoint) =>
+      assertUpstreamRequestAllowed(String(input), method, [endpoint]),
     fetchImpl: hostApiNetworkTransport.fetch,
     onZcodeJwtInvalid: (input, headers) => zcodeJwtLogoutHandlerRef.current?.(input, headers),
     isZcodeJwtRequest: (input, headers) =>

@@ -6,12 +6,17 @@ export function createUpstreamPolicyFetch(
   aliases: () => readonly string[] = () => [],
 ): typeof fetch {
   return async (input, init) => {
+    // Node 的 dispatcher 不属于 Request 字段，必须留在传输 init 中以保留用户代理/证书配置。
+    const dispatcher = (init as (RequestInit & { dispatcher?: unknown }) | undefined)?.dispatcher;
     let request = new Request(input, init);
     const redirect = request.redirect;
     for (let count = 0; count <= 20; count++) {
       assertUpstreamRequestAllowed(request.url, request.method, aliases());
       const replay = request.clone();
-      const response = await transport(request, { redirect: "manual" });
+      const response = await transport(request, {
+        redirect: "manual",
+        ...(dispatcher !== undefined ? { dispatcher } : {}),
+      });
       if (response.type === "opaqueredirect")
         throw new TypeError("Fork network policy cannot verify opaque redirect target");
       const location = response.headers.get("location");

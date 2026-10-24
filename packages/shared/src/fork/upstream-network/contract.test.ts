@@ -70,4 +70,18 @@ describe("fork upstream request boundary", () => {
       });
     },
   );
+  it("preserves explicit Node dispatcher and allows docs when the standard API origin is configured", async () => {
+    expect(isUpstreamRequestAllowed("https://zcode.z.ai/docs", "GET", ["https://zcode.z.ai"])).toBe(
+      true,
+    );
+    const dispatcher = {};
+    let observed: unknown;
+    const init: RequestInit = {};
+    Object.defineProperty(init, "dispatcher", { value: dispatcher });
+    await createUpstreamPolicyFetch(async (_request, options) => {
+      observed = (options as RequestInit & { dispatcher: unknown }).dispatcher;
+      return new Response("ok");
+    })("https://my-provider.example/v1", init);
+    expect(observed).toBe(dispatcher);
+  });
 });

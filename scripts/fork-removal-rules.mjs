@@ -32,6 +32,28 @@ export const REGISTRY = [
       },
     ],
     requiredPatterns: [
+      {
+        path: "packages/services/src/node.ts",
+        pattern:
+          /authorizeRequest:\s*\(input, method, endpoint\)\s*=>\s*assertUpstreamRequestAllowed/,
+        reason: "自定义上游端点也必须走 API 授权",
+      },
+      {
+        path: "packages/services/src/providers/api/nodeApiClient.ts",
+        pattern: /this.authorizeRequest\?\.\(input, resolveMethod\(init\), activeEndpointOrigin\)/,
+        reason: "端点重写不能掩盖原上游目标",
+      },
+      {
+        path: "packages/desktop/src/main/desktopSaveFile.ts",
+        pattern: /!isUpstreamRequestAllowed\(currentUrl.href\)/,
+        reason: "显式 undici 文件下载逐跳受控",
+      },
+      {
+        path: "packages/desktop/src/shared/armsBrowserInit.ts",
+        pattern: /if \(FORK_LOCAL_MODE\) return false/,
+        reason: "Preload/Renderer 不初始化 ARMS",
+      },
+
       ...[
         "packages/desktop/src/main/index.ts",
         "packages/desktop/src/host/index.ts",

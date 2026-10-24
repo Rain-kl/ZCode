@@ -13,6 +13,8 @@ import { withRequestIdHeader } from "./requestIdHeaders.js";
 const log = createServiceLogger("node-api-client");
 
 interface NodeApiClientOptions {
+  /** FORK(local-mode): 宿主在重写端点前后审核目标，避免别名绕过网络策略。 */
+  authorizeRequest?: (input: string | URL, method: string, endpointOrigin: string) => void;
   fetchImpl?: typeof fetch;
   onZcodeJwtInvalid?: (input: string | URL, headers: Headers) => void;
   isZcodeJwtRequest?: (input: string | URL, headers: Headers) => boolean | Promise<boolean>;
@@ -175,6 +177,8 @@ function resolveRequestHeaders(
 }
 
 export class NodeApiClient implements ApiClient {
+  // FORK(local-mode): 可注入的宿主出网授权边界。
+  private readonly authorizeRequest?: NodeApiClientOptions["authorizeRequest"];
   private readonly fetchImpl?: typeof fetch;
   private readonly resolveZCodeEndpointOrigin?: () => Promise<string> | string;
   private readonly resolveClientLanguage?: NodeApiClientOptions["resolveClientLanguage"];
@@ -193,6 +197,7 @@ export class NodeApiClient implements ApiClient {
   >();
 
   constructor(options: NodeApiClientOptions = {}) {
+    this.authorizeRequest = options.authorizeRequest;
     this.fetchImpl = options.fetchImpl;
     this.onZcodeJwtInvalid = options.onZcodeJwtInvalid;
     this.isZcodeJwtRequest = options.isZcodeJwtRequest;
@@ -286,7 +291,10 @@ export class NodeApiClient implements ApiClient {
       ? await this.resolveZCodeEndpointOrigin()
       : undefined;
     const activeEndpointOrigin = endpointOrigin ?? DEFAULT_ZCODE_ENDPOINT_ORIGIN;
+    // FORK(local-mode): 同时检查原目标与重写目标，不让设置里的自定义上游端点绕过门禁。
+    this.authorizeRequest?.(input, resolveMethod(init), activeEndpointOrigin);
     const requestInput = rewriteZCodeEndpointUrl(input, activeEndpointOrigin);
+    this.authorizeRequest?.(requestInput, resolveMethod(init), activeEndpointOrigin);
     const url = resolveUrl(requestInput);
     const method = resolveMethod(init);
     const timeoutMs = init?.timeoutMs;
