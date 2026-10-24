@@ -241,20 +241,18 @@ describe("terminal 与 V2 假 relay 的线级契约", () => {
 
   it("网络和5xx保持500ms指数退避，上限10秒", async () => {
     let fail: "server" | "network" | undefined = "server";
-    const h = await fixture({
-      users: { jwt: "user-1" },
-      onHttp: (call) =>
-        (call.body as { role?: string }).role === "terminal" && fail
-          ? fail === "server"
-            ? { status: 503 }
-            : { networkError: true }
-          : undefined,
+    // 退避边界测 fetch 调用的发起时间；真实 HTTP 到达时间属于 IO 调度，不能作为假时钟的毫秒边界。
+    // 成功恢复仍交给下方真实 relay，网络/5xx 则在 fetch 边界注入确定的失败。
+    const tokenFetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (fail === "server") return new Response("unavailable", { status: 503 });
+      if (fail === "network") throw new TypeError("network unavailable");
+      return fetch(input, init);
     });
+    const h = await fixture({ users: { jwt: "user-1" } }, "jwt", tokenFetcher as typeof fetch);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     h.terminal.start();
     await delay(60);
-    const tokens = () =>
-      h.relay.httpCalls.filter((r) => (r.body as { role?: string }).role === "terminal").length;
+    const tokens = () => tokenFetcher.mock.calls.length;
     let count = 1;
     for (const ms of [500, 1000, 2000, 4000, 8000, 10000, 10000]) {
       await vi.advanceTimersByTimeAsync(ms - 1);
@@ -267,8 +265,9 @@ describe("terminal 与 V2 假 relay 的线级契约", () => {
     }
     fail = undefined;
     await vi.advanceTimersByTimeAsync(10000);
-    await delay(100);
-    expect(h.states.at(-1)).toBe("paired");
+    // 已验证全部退避边界，真实握手阶段恢复真实 IO 时钟。
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(h.states.at(-1)).toBe("paired"));
     expect(h.failures).toEqual([]);
   });
 

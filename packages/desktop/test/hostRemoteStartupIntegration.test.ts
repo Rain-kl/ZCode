@@ -235,6 +235,17 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
         initializeHostApiNetworkTransportOwner: async (params: { establishOwner(): unknown }) =>
           params.establishOwner(),
         createLocalServices,
+        // Host 的 fork 注册点通过同一装配边界注入，不参与本用例的数据库时序。
+        createForkIdentityPresetService: () => ({}),
+        createForkToolModeService: () => ({}),
+        createForkSearchProvidersService: () => ({}),
+        IForkIdentityPresetService: {},
+        IForkToolModeService: {},
+        IForkSearchProvidersService: {},
+        resolveZCodeStorageRoot: async () => "/storage",
+        FORK_IDENTITY_PRESET_ROOT_NAME: "presets",
+        FORK_TOOL_MODE_STATE_FILENAME: "tool-modes.json",
+        join: (...parts: string[]) => parts.join("/"),
         resolveBotProjectConnection() {},
         authorizeLocalMediaPreviewPath() {},
         runtimeProcessLifecycleReporter: {},

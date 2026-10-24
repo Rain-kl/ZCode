@@ -245,7 +245,17 @@ jobs:
             mock-cdn-${{ runner.os }}-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --fetch-retries=5 2>&1 | tee /tmp/pnpm-build-install.log
+            status=${PIPESTATUS[0]}
+            if [ "$status" -eq 0 ]; then break; fi
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/pnpm-build-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          exit "$status"
 
       - name: Apply release version
         run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
@@ -347,7 +357,17 @@ jobs:
             electron-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --fetch-retries=5 2>&1 | tee /tmp/pnpm-build-install.log
+            status=${PIPESTATUS[0]}
+            if [ "$status" -eq 0 ]; then break; fi
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/pnpm-build-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          exit "$status"
 
       - name: Apply release version
         run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"

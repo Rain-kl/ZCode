@@ -17,6 +17,7 @@ afterEach(async () => {
 
 async function fixture(
   options: Parameters<typeof createFakeRelayV2>[0] = { users: { jwt: "user" } },
+  tokenFetcher = fetch,
 ) {
   const relay = await createFakeRelayV2(options);
   cleanups.push(() => relay.close());
@@ -35,7 +36,8 @@ async function fixture(
   const transport = new WebRemoteControlDeviceTransport({
     relayWsUrl: relay.wsUrl,
     deviceMid: "mid-1",
-    getToken: (signal) => createWebRemoteControlV2Http(relay.httpUrl).token("jwt", signal),
+    getToken: (signal) =>
+      createWebRemoteControlV2Http(relay.httpUrl, tokenFetcher).token("jwt", signal),
     resolveDeviceSid: async () => device.device_sid,
     meta: { name: "My desktop", platform: "darwin", version: "3.13.0" },
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -127,19 +129,18 @@ describe("desktop relay V2 transport", () => {
   it("token网络与5xx指数退避到30秒，auth_ack后重置", async () => {
     vi.spyOn(Math, "random").mockReturnValue(0.5);
     let failure: "network" | "server" | undefined = "server";
-    const f = await fixture({
-      users: { jwt: "user" },
-      onHttp: (call) => {
-        if (call.path.endsWith("/token") && failure)
-          return failure === "network" ? { networkError: true } : { status: 503 };
-      },
+    // 精确退避测 fetch 发起边界，失败在该边界注入；恢复握手仍使用真实 relay。
+    const tokenFetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (failure === "server") return new Response("unavailable", { status: 503 });
+      if (failure === "network") throw new TypeError("network unavailable");
+      return fetch(input, init);
     });
+    const f = await fixture({ users: { jwt: "user" } }, tokenFetcher as typeof fetch);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     f.transport.start();
     await settle();
     let count = 1;
-    const tokenCalls = () =>
-      f.relay.httpCalls.filter((call) => call.path.endsWith("/token")).length;
+    const tokenCalls = () => tokenFetcher.mock.calls.length;
     for (const ms of [1000, 2000, 4000, 8000, 16000, 30000, 30000]) {
       expect(tokenCalls()).toBe(count);
       await vi.advanceTimersByTimeAsync(ms - 1);
@@ -151,8 +152,10 @@ describe("desktop relay V2 transport", () => {
     }
     failure = undefined;
     await vi.advanceTimersByTimeAsync(30000);
+    vi.useRealTimers();
     await f.waitForState("waiting_terminal");
     expect(f.states.at(-1)).toBe("waiting_terminal");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     failure = "network";
     f.relay.disconnect({ role: "device" });
     await settle();

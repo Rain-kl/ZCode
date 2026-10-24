@@ -111,7 +111,8 @@ describe("Builtin 远端失败不阻断有效本地配置的业务刷新", () =>
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     fixture.grant();
     await fixture.runtime.providerSettings.refresh("composer-connection");
-    const view = await fixture.runtime.modelSelection.getView();
+    // 本地模式选择视图刻意隐藏云账号；此处验证底层注册表刷新，避免与 UI 过滤规则混淆。
+    const view = fixture.runtime.registryService.getView();
     for (const id of plans) {
       const provider = view.providers.find((entry) => entry.providerId === id);
       expect(provider?.config.access).toMatchObject({ entitled: true });
