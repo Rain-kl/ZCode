@@ -64,6 +64,8 @@ export const FORK_TOOL_MODE_STANDARD_EXTRA_TOOL_NAMES = [
   "escalate",
   "RespondToCoordinator",
   "ReplyToChannel",
+  "ToolSearch",
+  "DeferredToolCall",
 ] as const;
 
 export type ForkToolModeName = "minimal" | "basic" | "standard";

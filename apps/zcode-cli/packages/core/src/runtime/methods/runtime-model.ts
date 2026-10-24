@@ -16,6 +16,7 @@ import {
   resolveModelRequestSessionTypeFromTaskType,
   resolveModelRetryBudgetFromTaskType,
 } from "./model-request-session-type.js";
+import { getOffPeakModelBinding } from "../off-peak/model-binding.js";
 
 export function createRuntimeModel(
   runtime: AgentRuntimeInternal,
@@ -36,22 +37,16 @@ export function createRuntimeModel(
       recoverable: true,
     });
   }
-  // FORK-BEGIN(nonstream-via-stream)
-  // 这里是全部 Model 的唯一出口（全仓库只有本函数调用 runtime.modelFactory），因此在本层适配
-  // 即可覆盖主对话、子代理、压缩、标题与 WebFetch 处理等所有调用方。
-  // 必须放在 invocation layer 的**外层**：适配器要调用「带调用上下文的 streamText」，
-  // 让重试预算与准入闸门作用在真正发出的那次请求上，而不是依赖环境继承。
-  return withNonStreamingViaStream(
-    withRuntimeInvocationLayer(
-      runtime,
-      runtime.modelFactory({ ...factoryInput, selection: factoryInput.selection }),
-      scope === "workspace"
-        ? "other"
-        : resolveModelRequestSessionTypeFromTaskType(runtime.config.taskType),
-      retryBudget,
-    ),
+  const model = withRuntimeInvocationLayer(
+    runtime,
+    runtime.modelFactory({ ...factoryInput, selection: factoryInput.selection }),
+    scope === "workspace"
+      ? "other"
+      : resolveModelRequestSessionTypeFromTaskType(runtime.config.taskType),
+    retryBudget,
   );
-  // FORK-END(nonstream-via-stream)
+  // FORK(nonstream-via-stream): 所有请求在 invocation layer 外统一适配流式通道；见 FEATURES.md
+  return withNonStreamingViaStream(getOffPeakModelBinding(input.requestDependencies)?.wrap(model) ?? model);
 }
 
 /**
@@ -92,6 +87,7 @@ export function withModelInvocationContext(
     modelId: model.modelId,
     displayName: model.displayName,
     properties: model.properties,
+    requestCapabilities: model.requestCapabilities,
     optionSpecs: model.optionSpecs,
     options: model.options,
     bind(options) {

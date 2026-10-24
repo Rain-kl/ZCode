@@ -46,7 +46,7 @@ import {
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SAVE,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_SWITCH,
   TID_SETTINGS_SYSTEM_INSTRUCTIONS_TEMPLATE,
-} from "@zcode/shared";
+} from "@zcode/shared/test-ids";
 
 import { useForkIdentityPreset } from "./useForkIdentityPreset.js";
 

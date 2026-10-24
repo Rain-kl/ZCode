@@ -16,6 +16,8 @@
 
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。
+
 - **状态**：四期全部实现（2026-09-28）：入口屏蔽、WebDAV 备份内核、设置页「同步」栏目、首屏引导/冲突弹窗/左下角状态项
 - **需求背景**：本项目不接入上游 ZCode 云账号体系，需要把「登录 ZCode 账号」从产品面移除（仅保留自定义提供商），并提供一条用户自管的配置同步通道，便于多机共享界面配置与自定义提供商。
 - **修改内容**：
@@ -85,6 +87,8 @@
 
 ## 功能组：工具模式与工具注入 (tool-modes)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：保留配置服务、设置入口及 reload 档位刷新，并与上游 ToolSearch 可见性条件共同生效。
+
 - **状态**：已实现（2026-09-29）
 - **需求背景**：每次请求都携带全部工具定义，而多数会话只用到其中一小部分——请求体大、模型选择面宽、误调用多。需要让用户按用途收敛工具面，并能整体关掉。
 - **修改内容**：
@@ -108,6 +112,8 @@
 
 ## 系统指令：用户自定义提示词 (identity-preset)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：node.ts 合入 storage migration barrier 与 standalone server 服务工厂，保留配置存储根目录导出和设置入口。
+
 - **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步
 - **需求背景**：上游的系统提示词是代码里的固定文本，用户无法调整模型的回答风格；core 虽有 `customSystemPrompt`，但它是「整段替换」语义且没有任何生产写入方，不适合直接暴露给用户。需要一条用户可管理的自定义提示词通道：多组命名配置 + 总开关 + 本地文件存储（与 `~/.zcode/agents` 同级，全机一份），并纳入既有 WebDAV 同步；启用后只替换**身份段**，运行时事实段（环境信息 / gitStatus / 上下文管理 / 桌面契约）保持不变。
 - **修改内容**：
@@ -129,6 +135,8 @@
 
 ## 覆盖设置热重载：/reload 命令 (reload-command)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：turn.ts 保留 reload 维护轮，并合入 creationFailure 决定 steer 可用性的上游规则；分享时间线采用上游国际化结构，保留 reload 标签。
+
 - **状态**：已实现（2026-09-30）
 - **需求背景**：工具档位（tool-modes）与系统指令（identity-preset）都在会话创建/冷恢复时读取一次，运行中的会话冻结（前缀不可变的缓存不变量）。用户改完设置后要么新开对话、要么重启应用才能生效；`/fork` 之类借「新会话」达成等效，但会多出一条对话。需要一条**在已有会话里原地生效**的命令，不改开新对话。
 - **修改内容**：
@@ -144,6 +152,8 @@
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/index.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts`、`packages/shared/src/zcode-slash-command-help.ts`、`packages/ui/src/v4/pendingCommandRegistry.ts`。保留 `/reload` 的工具面与提示词热重载、回放和帮助条目；同时合入 highspeed metrics handler，并在帮助中同步上游新增的 `guarded` 模式。
 
 ## GitHub 更新通道 (github-update)
+
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 
 - **状态**：已实现（2026-09-28），未打包验收（见实现文档 §4）
 - **需求背景**：本项目只把产物发布到自己的 GitHub Release，不部署上游 `zcode.z.ai` 的服务端更新接口。线上包因此有两个问题：桌面自动更新查的是上游地址，永远拿不到本 fork 的版本；启动前还会向上游 `/api/v1/client/configs` 请求 `forceUpdate.minimalVersion`，一旦上游把最低版本抬高，二开版本会被拦在启动页（强更 gate）。
@@ -179,6 +189,8 @@
 - **上游同步记录**：暂无。
 
 ## 非流式走流式通道 (nonstream-via-stream)
+
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：runtime-model.ts 以上游 invocation/off-peak binding 结构为基线，在最外层保留流式转非流式适配。
 
 - **状态**：已实现（2026-09-29），未做真实 provider 端到端验证（见实现文档 §4）
 - **需求背景**：应用对 provider 有两条请求通道——流式（主对话/子代理）与非流式（会话标题、上下文压缩、WebFetch 内容处理、子代理汇总）。第三方中转存在只把流式做对的情况：非流式返回的响应体不符合 OpenAI 兼容协议（实测 `{"data":{"choices":[...]}}`，`choices` 未在顶层 → AI SDK 校验失败），或该通道直接不可用（500 `empty response content`）。后果是所有非流式调用方一起失效，而流式正常。
@@ -217,6 +229,8 @@
 
 ## 网络搜索渠道 (search-providers)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：config.ts 合入 ToolSearch/DeferredToolCall 可见性规则，WebSearch 继续调用 fork 的普通形参判据；设置页保留渠道管理入口。
+
 - **状态**：已实现（2026-09-29），未做打包产物与真实 Tavily 端到端验证（见实现文档 §7）
 - **需求背景**：`WebSearch` 原本仅有 provider-native 服务端搜索一条实现路径，且编码层只支持 anthropic 通道。在 openai-compatible 通道上（`supportsNativeWebSearch` 恒为假），`WebSearch` 对模型被硬性过滤，模型拿不到任何搜索工具只能猜 URL。需要将搜索后端解耦为可插拔、可降级的渠道链，以服务端搜索为首选，并允许用户配置自带 Key 的 Tavily 外部搜索渠道作为备用和兜底。
 - **修改内容**：
@@ -250,6 +264,8 @@
 
 ## 通道清单驱动的服务可用性 (rpc-channel-manifest)
 
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：remoteServiceAccess.ts 合入窗口目录及 source server management 能力选项；保留清单门控与 fork 服务，兼容旧 Host。
+
 - **状态**：已实现（2026-09-29），单测覆盖判定边界、客户端过滤与装配时序；网页端与桌面端均已 CDP 实测（桌面端为「新旧混跑」验证，见实现文档 §5.4）。
 - **需求背景**：网页端打开「设置 → Agent 能力 → 系统指令」时报 `Channel name 'fork-identity-preset' timed out after 1000ms`，本应是空态的列表被错误取代。根因是「通道是否存在」在协议里没有表达：`RemoteServiceAccess` 为每个通道无条件创建惰性代理（代理恒为真值对象），服务端收到未知通道则挂起 1s 后回 `Unknown channel`。于是 UI 里 `available: Boolean(service)` 探测永远为真，真正的「能力缺席」被伪装成「一条超时错误 + 空数据」，且与「调用出错」共用同一个 `error` 状态。
 - **修改内容**：**传输层预登记可用通道**。服务端 `ChannelServer` 在既有的 `ResponseType.Initialize` 握手里带上当前已注册通道名数组，不新增往返；客户端 `ChannelClient` 保存并暴露同步读取的 `channelNames()` / `isInitialized()`；`RemoteServiceAccess` 上 `IServiceAccessor` 的可选成员（7 个：media-preview、onboarding-record、window-controller、cua-permission 及三个 fork 服务）改为按清单惰性解析，清单里没有的通道为 `undefined`；清单未知（旧服务端 / 握手未完成）时保持历史行为（照旧建代理）保证向前兼容。UI 两段时间分离：`available` 读成员（清单缺席即「当前环境不支持」），调用由 `usable` 门控（清单到达前不发探测请求）。
@@ -266,6 +282,8 @@
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `packages/client/src/remoteServiceAccess.ts`。保留 Initialize 通道清单驱动的服务可用性与 fork 服务门控，同时合入上游 output-style 服务注册。
 
 ## 其他更新
+
+- **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游 WorkspaceShellLayout 与侧栏折叠结构，保持 bg-sidebar 和 12px 默认字号；合入新的 remote continuity 色值。
 
 - 2026-10-17：子代理配置监听修复目录快速替换的漏检——父目录原生 `rename` 事件原先只触发 `stat` 比对，Linux ext4 复用刚释放的 inode 时 `dev/ino` 不变，旧 watcher 不会关闭，后续配置修改静默失效。现在事件指名被监听目录项时强制重建；`packages/services/src/subagents/subagentConfigScope.ts`、`packages/services/test/subagentRuntimeConfig.test.ts`。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：`packages/ui/src/lib/uiFontSize.ts` 的默认字号冲突为上游 14px、fork 12px；保留已记录的 12px 首次启动默认值。`packages/ui/src/app-shell/WorkspaceShellLayout.tsx` 冲突为上游可拖拽宽度面板与 fork 侧栏底色；采用上游面板结构并保留 `bg-sidebar`。

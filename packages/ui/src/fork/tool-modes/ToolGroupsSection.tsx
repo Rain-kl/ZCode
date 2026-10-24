@@ -11,13 +11,13 @@
  * 可选项，两层卡面叠起来后选中态底色与组卡底色分不清层级（DESIGN.md 的 Cards and Panels）。
  * 选中态沿用仓库既有的可选中卡片语言：border-foreground/60 + bg-card-selected + 小圆点对勾。
  */
+import { FORK_TOOL_MODES } from "@zcode/shared";
 import { Check } from "lucide-react";
 import {
-  FORK_TOOL_MODES,
   TID_SETTINGS_TOOL_GROUPS_INJECT_SWITCH,
   TID_SETTINGS_TOOL_GROUPS_MODE_CARD,
   testId,
-} from "@zcode/shared";
+} from "@zcode/shared/test-ids";
 
 import { cn } from "@/components/lib/utils.js";
 import { Switch } from "@/components/ui/switch.js";

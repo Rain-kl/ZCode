@@ -111,6 +111,7 @@ export class ChannelClient implements IChannelClient, IDisposable {
                 "details",
                 "taskId",
                 "traceId",
+                "retryable",
               ] as const;
               for (const key of passthroughKeys) {
                 const value = response.data[key];

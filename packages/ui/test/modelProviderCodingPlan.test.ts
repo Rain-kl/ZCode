@@ -7,10 +7,12 @@ import {
   BIGMODEL_PROVIDER_ID,
   BUILTIN_MODEL_PROVIDER_IDS,
   ZAI_PROVIDER_ID,
-  TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
-  TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
   type UsageEntitlementSnapshot,
 } from "@zcode/shared";
+import {
+  TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
+  TID_MODEL_PROVIDER_MODEL_DELETE_BUTTON,
+} from "@zcode/shared/test-ids";
 import {
   resolveCodingPlanProviderSyncAttemptKey,
   shouldRetryUnchangedCodingPlanProviderSync,
@@ -33,23 +35,13 @@ import {
   resolveEnterprisePurchaseChoiceBannerPrice,
   resolvePurchaseChoiceBannerProductsProviderId,
   resolvePurchaseChoiceBannerPrice,
-  resolveEnterpriseTeamPlanBannerClass,
-  resolveEnterpriseTeamPlanBannerDescriptionId,
-  resolveEnterpriseTeamPlanBannerIconClass,
   resolvePurchaseChoiceSelectionIntent,
   resolveTeamScopedPlanNavItem,
   resolveTeamPlanInspectionAccess,
 } from "@/settings/model-provider-section/Detail.js";
 import { resolveCodingPlanEntitlementState } from "@/settings/model-provider-section/providerFamilyConnectionVisibility.js";
 import { groupEnterpriseCodingPlanProductsByTier } from "@/settings/model-provider-section/codingPlanEnterpriseTiers.js";
-import {
-  ModelProviderSectionNavigation,
-  resolveModelProviderSideNavLabel,
-} from "@/settings/model-provider-section/Navigation.js";
-import {
-  resolveProviderConnectionApiFormatDisplayLabel,
-  resolveProviderConnectionApiFormatOptions,
-} from "@/settings/model-provider-section/ProviderCardSections.js";
+import { ModelProviderSectionNavigation } from "@/settings/model-provider-section/Navigation.js";
 import {
   buildProviderFamilyConnectionOptions,
   ProviderFamilyPlanModeSwitch,
@@ -61,8 +53,6 @@ import {
   formatStartPlanExpireDate,
   resolvePendingStartPlanEffectiveTime,
 } from "@/settings/model-provider-section/CodingPlanStatusMeta.js";
-import { ConversationQuotaBanner } from "@/v4/ConversationQuotaBanner.js";
-import enUS from "@/i18n/locales/en-US.js";
 import { StartPlanCard } from "@/settings/model-provider-section/StartPlanCard.js";
 import {
   CodingPlanStatusPanel,
@@ -82,46 +72,6 @@ import { type ModelProviderNavGroup } from "@/settings/model-provider-section/co
 import type { ModelProviderNavItem } from "@/settings/model-provider-section/constants.js";
 import type { ProviderSettingsView } from "@zcode/services";
 
-it("Start 独立后移除套餐数量快捷入口与切换按钮", () => {
-  const item = (
-    presetId:
-      | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
-      | typeof BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
-  ): ModelProviderNavItem => ({
-    key: `coding-plan:${presetId}`,
-    type: "codingPlan",
-    presetId,
-    oauthProviderId: ZAI_PROVIDER_ID,
-    label: presetId,
-    providerName: "Z.AI",
-    provider: null,
-    status: "purchased",
-    statusActive: true,
-  });
-  const start = item(BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan);
-  const coding = item(BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan);
-  const render = (selectedNavItem: ModelProviderNavItem, count: number, failed = false) =>
-    renderWithTooltipProvider(
-      createElement(ProviderFamilyPlanModeSwitch, {
-        selectedNavItem,
-        navigationItems: [start, coding],
-        startPlanSubscriptionCount: count,
-        connectionSettingsFailed: failed,
-        onSelectNavItem: vi.fn(),
-      }),
-    );
-  expect(render(coding, 2)).not.toContain('data-testid="model-provider-start-plan-count-shortcut"');
-  // 数量不再驱动切换入口，也不保留旧快捷入口的文案与标签。
-  expect(render(coding, 2)).not.toContain("Start Plan × 2");
-  expect(render(coding, 2)).not.toContain('aria-label="Switch to Start Plan"');
-  expect(render(coding, 2)).not.toContain("lucide-tickets");
-  expect(render(coding, 2)).not.toContain('data-testid="model-provider-start-plan-switch-prefix"');
-  expect(render(start, 2)).not.toContain('data-testid="model-provider-start-plan-count-shortcut"');
-  expect(render(coding, 0)).not.toContain('data-testid="model-provider-start-plan-count-shortcut"');
-  expect(render(coding, 2, true)).not.toContain(
-    'data-testid="model-provider-start-plan-count-shortcut"',
-  );
-});
 it("付费下拉按完整保存选择显示团队，不读取复制的个人 current", () => {
   const provider = createProvider({ id: BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan });
   provider.accountState = { availability: "available", entitled: true, current: false };
@@ -193,11 +143,8 @@ it("旧 Start 连接下，唯一未选中的个人套餐仍提供显式选择入
   expect(html).toContain("data-placeholder");
 });
 import {
-  CODING_PLAN_BILLING_DISCOUNT_DIALOG_BODY_CLASS,
-  CODING_PLAN_BILLING_DISCOUNT_DIALOG_CONTENT_CLASS,
   clearCodingPlanBillingDiscountCacheForTest,
   CodingPlanBillingDiscountBadge,
-  CodingPlanBillingDiscountBadgePill,
   CodingPlanBillingDiscountBanner,
   primeCodingPlanBillingDiscountCacheForTest,
   resolveCodingPlanBillingDiscountCopy,
@@ -1080,22 +1027,6 @@ describe("model provider coding plan", () => {
       statusActive: false,
     });
 
-    const intl = { formatMessage: ({ id }: { id: string }) => id };
-    const apiFormatOptions = resolveProviderConnectionApiFormatOptions();
-    expect(apiFormatOptions).toEqual([
-      "anthropic-messages",
-      "openai-chat-completions",
-      "openai-responses",
-    ]);
-    expect(
-      apiFormatOptions.map((format) =>
-        resolveProviderConnectionApiFormatDisplayLabel(intl, format),
-      ),
-    ).toEqual([
-      "settings.modelProvider.apiFormat.title.anthropicMessages (/v1/messages)",
-      "settings.modelProvider.apiFormat.title.chatCompletions (/chat/completions)",
-      "settings.modelProvider.apiFormat.title.responses (/responses)",
-    ]);
     expect(html).toContain('value="https://api.example.com/v1"');
     expectConnectionApiFormatVisible(html);
     expect(html).not.toContain("settings.modelProvider.endpointPath");
@@ -1143,64 +1074,6 @@ describe("model provider coding plan", () => {
     ).toBe("preset:account:zai-start-plan");
   });
 
-  it.each([
-    ["preset", BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan, "BigModel", "BigModel"],
-    ["preset", BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan, "Z.ai", "Z.ai"],
-    ["codingPlan", BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan, "Start Plan", "Start Plan"],
-    ["codingPlan", BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan, "Start Plan", "Start Plan"],
-  ] as const)("导航 %s %s 保持品牌与 Start 名称", (type, presetId, en, zh) => {
-    const item: ModelProviderNavItem = {
-      key: presetId,
-      type,
-      presetId,
-      label: "Old brand",
-      ...(type === "preset"
-        ? { displayName: "Old brand" }
-        : {
-            oauthProviderId: "bigmodel" as const,
-            providerName: "Old brand",
-            status: "notPurchased" as const,
-          }),
-      provider: null,
-      statusActive: false,
-    };
-    expect(resolveModelProviderSideNavLabel(item)).toBe(en);
-    expect(resolveModelProviderSideNavLabel(item)).toBe(zh);
-  });
-
-  it("Provider sidebar 不按团队 Coding Plan 数量展开入口", () => {
-    const bigmodelApiKeyItem = {
-      key: "preset:account:bigmodel-start-plan",
-      type: "preset" as const,
-      presetId: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
-      label: "BigModel - API Key",
-      provider: createProvider({
-        id: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
-      }),
-      displayName: "BigModel - API Key",
-      statusActive: true,
-    };
-    const html = renderWithTooltipProvider(
-      createElement(ModelProviderSectionNavigation, {
-        navigationGroups: [
-          {
-            id: "preset",
-            title: "Preset",
-            items: [bigmodelApiKeyItem],
-          },
-        ],
-        selectedNodeKey: "preset:account:bigmodel-start-plan",
-        presetLoading: false,
-        customLoading: false,
-        onSelectNavItem: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain("BigModel");
-    expect(html).not.toContain("Team A");
-    expect(html).not.toContain("Team B");
-  });
-
   it("Z.ai family 导航保持品牌图标，不借用 Start 图标", () => {
     const html = renderWithTooltipProvider(
       createElement(ModelProviderSectionNavigation, {
@@ -1237,10 +1110,6 @@ describe("model provider coding plan", () => {
     expect(html).toContain("<img ");
     expect(html).toContain("model-provider-zai-app.png");
     expect(html).not.toContain("model-provider-start-plan.png");
-    expect(html).toContain("object-contain size-4");
-    expect(html).toContain("border-border-hover bg-card-selected text-foreground");
-    expect(html).not.toContain("border-card-border bg-surface");
-    expect(html).toContain("flex h-8 w-full");
     expect(html).not.toContain("settings.modelProvider.connectionMode.startPlan");
     expect(html).not.toContain("settings.modelProvider.codingPlan.start.freeBadge");
   });
@@ -1838,9 +1707,6 @@ describe("model provider coding plan", () => {
     );
 
     expect(html).toBe("");
-    expect(html).not.toContain("settings.modelProvider.startPlan.summaryTitle");
-    expect(html).not.toContain("settings.modelProvider.startPlan.heroMetric");
-    expect(html).not.toContain("settings.modelProvider.startPlan.summaryDescription");
   });
 
   it("StartPlanCard 中文界面使用本地化紧凑单位展示体验套餐额度", () => {
@@ -2866,7 +2732,6 @@ describe("model provider coding plan", () => {
     expect(html).toContain("settings.usage.entitlementFiveHourUsage");
     expect(html).toContain("settings.usage.entitlementWeeklyUsage");
     expect(html).toContain("settings.usage.entitlementMonthlyMcpUsage");
-    expect(html.match(/class="flex min-h-6 min-w-0 items-center gap-1"/g)).toHaveLength(3);
     expect(html).toContain("GLM Coding Lite");
     expect(html).not.toContain("GLM CODING LITE");
     expect(html).not.toContain("Search Prime");
@@ -2876,16 +2741,9 @@ describe("model provider coding plan", () => {
     expect(html).toContain("50%");
     expect(html).toContain("90%");
     expect(html).toContain("Aug 10, 09:30");
-    expect(html).toContain('text-ui-sm text-foreground-subtle">Aug 10, 09:30');
     expect(html).toContain("Aug 11");
     expect(html).toContain("Aug 12");
     expect(html.indexOf("75%")).toBeLessThan(html.indexOf("Aug 10, 09:30"));
-    expect(html.indexOf("Aug 10, 09:30")).toBeLessThan(
-      html.indexOf("background-color:var(--color-usage-chart-1)"),
-    );
-    expect(html).toContain("background-color:var(--color-usage-chart-1)");
-    expect(html).toContain("background-color:var(--color-usage-chart-2)");
-    expect(html).toContain("background-color:var(--color-usage-chart-3)");
     expect(html).not.toContain("settings.modelProvider.startPlan.balance.used");
     expect(html).not.toContain("settings.modelProvider.codingPlan.period.monthly");
     expect(html).toContain("settings.modelProvider.codingPlan.renewsAt");
@@ -2941,26 +2799,6 @@ describe("model provider coding plan", () => {
 
     expect(html).toContain("settings.modelProvider.models");
     expect(html).toContain("settings.modelProvider.addModel");
-  });
-
-  it("Z.ai Coding Plan 已购买时套餐标题保留模型名大小写", () => {
-    const html = renderDetail({
-      key: "coding-plan:account:zai-individual-coding-plan",
-      type: "codingPlan",
-      presetId: BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
-      oauthProviderId: ZAI_PROVIDER_ID,
-      label: "Z.ai - Coding Plan",
-      providerName: "Z.ai",
-      provider: createProvider(),
-      status: "purchased",
-      planLevel: "GLM CODING LITE",
-      purchaseUrl: "https://z.ai/",
-      quotaLimits: [],
-      statusActive: true,
-    });
-
-    expect(html).toContain(">GLM Coding Lite<");
-    expect(html).not.toContain("GLM CODING LITE");
   });
 
   it("Coding Plan 用量卡 percentage 按已用百分比反转成剩余百分比", () => {
@@ -3485,7 +3323,6 @@ describe("model provider coding plan", () => {
     expect(html).not.toContain("settings.usage.entitlementMonthlyMcpUsage");
     expect(html).toContain("90%");
     expect(html).toContain("80%");
-    expect(html).not.toContain("background-color:var(--color-usage-chart-3)");
   });
 
   it("Team Plan 非标准额度项也会展示用量卡", () => {
@@ -3519,7 +3356,6 @@ describe("model provider coding plan", () => {
     expect(html).toContain("settings.modelProvider.planCard.usage.totalTokens");
     expect(html).toContain("GLM-5.2");
     expect(html).toContain("75%");
-    expect(html).toContain("background-color:var(--color-usage-chart-1)");
   });
 
   it("Z.ai Coding Plan Upgrade 等待 OAuth 时显示 loading", () => {
@@ -3973,8 +3809,6 @@ describe("model provider coding plan", () => {
     const tomorrowEffectiveTime = new Date(2026, 8, 2, 22, 0).toISOString();
     const laterEffectiveTime = new Date(2026, 8, 4, 22, 0).toISOString();
 
-    expect(zhCN["settings.modelProvider.startPlan.pendingUntil"]).toBe("待生效 {date}");
-    expect(enUS["settings.modelProvider.startPlan.pendingUntil"]).toBe("Pending {date}");
     expect(formatStartPlanEffectiveDate(todayEffectiveTime, "zh-CN", now)).toBe("今天 22:00");
     expect(formatStartPlanEffectiveDate(todayEffectiveTime, "en-US", now)).toBe("Today 22:00");
     expect(formatStartPlanEffectiveDate(tomorrowEffectiveTime, "zh-CN", now)).toBe("明天 22:00");
@@ -4226,14 +4060,6 @@ describe("model provider coding plan", () => {
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamTitle");
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamDescription");
     expect(html).not.toContain("CN¥598.00+");
-    expect(html).not.toContain("color-mix(in_srgb,var(--color-success)_24%");
-    expect(html).not.toContain("color-mix(in_srgb,#4099ff_24%");
-    expect(html).not.toContain("color-mix(in_srgb,#0ea5e9_24%");
-    expect(html).not.toContain("circle_at_14%_12%");
-    expect(html).toContain("w-full");
-    expect(html).not.toContain("bg-background/80");
-    expect(html).not.toContain("sm:grid-cols-3");
-    expect(html).not.toContain("button-gradient");
     expect(html).not.toContain("settings.modelProvider.codingPlan.description.disconnected");
     expect(html).not.toContain("settings.modelProvider.codingPlan.productsLoading");
     expect(html).not.toContain("settings.modelProvider.models");
@@ -4288,7 +4114,6 @@ describe("model provider coding plan", () => {
       expect(html).not.toContain("30 Million");
       expect(html).not.toContain("tokens per day");
       expect(html).not.toContain("Daily quota · GLM-5.2 / GLM-5.1 / GLM-5-Turbo 10M each");
-      expect(html).not.toContain("color-mix(in_srgb,var(--color-success)_24%");
       expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.personalTitle");
       expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamTitle");
     },
@@ -4478,7 +4303,7 @@ describe("model provider coding plan", () => {
     ).toBe("Org A");
   });
 
-  it("Start Plan 活动升级按钮使用渐变背景", () => {
+  it("完整活动配置在升级入口旁显示说明入口和远端徽标文案", () => {
     const html = renderToStaticMarkup(
       createElement(CodingPlanUpgradeAction, {
         loginLoading: false,
@@ -4496,52 +4321,8 @@ describe("model provider coding plan", () => {
       }),
     );
 
-    expect(html).toContain("button-gradient");
-    expect(html).toContain("dark:bg-[#484A58]");
-    expect(html).toContain("bg-white");
-    expect(html).toContain("text-[#191A1D]");
-    expect(html).toContain("rounded-full");
-    expect(html).not.toContain("lucide-trending-up");
     expect(html).toContain("lucide-info");
     expect(html).toContain('data-slot="dialog-trigger"');
-    expect(html).not.toContain("uppercase");
-    expect(html).toContain("150% Quota");
-  });
-
-  it("聊天额度 Banner 的活动升级按钮与 Model Settings 使用一致样式", () => {
-    const html = renderToStaticMarkup(
-      createElement(ConversationQuotaBanner, {
-        state: {
-          visible: true,
-          kind: "model-very-low",
-          concurrentLimitBusinessCode: null,
-          concurrentLimitReason: null,
-          providerLimitedBusinessCode: null,
-          providerLimitedMessage: null,
-          modelName: "GLM-4.5",
-          remainingTokens: 12_800,
-          remainingPercent: 10,
-          dismissible: true,
-          blocksSubmit: false,
-          priority: 40,
-        },
-        billingDiscountActive: true,
-        billingDiscountConfig: {
-          "en-US": {
-            badgeBody: "150% Quota",
-            infoTitle: "Entitlement Rules",
-            infoBody: "Remote campaign rules",
-          },
-        },
-        onUpgrade: vi.fn(),
-        onDismiss: vi.fn(),
-      }),
-    );
-
-    expect(html).toContain("button-gradient");
-    expect(html).toContain("dark:bg-[#484A58]");
-    expect(html).toContain("pr-px");
-    expect(html).toContain("h-auto");
     expect(html).toContain("150% Quota");
   });
 
@@ -4562,15 +4343,11 @@ describe("model provider coding plan", () => {
 
     expect(html).toContain("Limited-time 150% Quota Campaign");
     expect(html).toContain("150% Quota");
-    expect(html).toContain("lucide-trending-up");
     expect(html).toContain("lucide-info");
-    expect(html).not.toContain('data-slot="button"');
-    expect(html).toContain("bg-white");
-    expect(html).toContain("text-[#191A1D]");
     expect(html).toContain("settings.modelProvider.codingPlan.billingDiscountInfo.open");
   });
 
-  it("默认活动徽标旁的说明入口在浅色背景可见", () => {
+  it("完整活动配置为徽标提供说明入口", () => {
     const html = renderToStaticMarkup(
       createElement(CodingPlanBillingDiscountBadge, {
         config: {
@@ -4585,26 +4362,6 @@ describe("model provider coding plan", () => {
 
     expect(html).toContain("150% Quota");
     expect(html).toContain("lucide-info");
-    expect(html).not.toContain('data-slot="button"');
-    expect(html).toContain("text-foreground-subtle");
-    expect(html).not.toContain("text-white/90");
-  });
-
-  it("compact 活动徽标使用 badge 级字号", () => {
-    const html = renderToStaticMarkup(
-      createElement(CodingPlanBillingDiscountBadgePill, {
-        config: {
-          "en-US": {
-            badgeBody: "150% Quota",
-          },
-        },
-        size: "compact",
-      }),
-    );
-
-    expect(html).toContain("text-ui-xs");
-    expect(html).not.toContain("text-ui-sm");
-    expect(html).toContain("whitespace-nowrap");
   });
 
   it("远端未下发完整活动说明时不显示 Info 入口且不使用本地兜底", () => {
@@ -4637,15 +4394,6 @@ describe("model provider coding plan", () => {
 
     expect(copy.infoTitle).toBe("远端权益规则");
     expect(copy.infoBody).toBe("- 远端规则一\n- 远端规则二");
-  });
-
-  it("Coding Plan 活动说明弹窗使用紧凑宽度", () => {
-    expect(CODING_PLAN_BILLING_DISCOUNT_DIALOG_CONTENT_CLASS).toContain("max-w-lg");
-    expect(CODING_PLAN_BILLING_DISCOUNT_DIALOG_CONTENT_CLASS).not.toContain("max-w-2xl");
-  });
-
-  it("Coding Plan 活动说明文案区域使用弹窗内 wrapper", () => {
-    expect(CODING_PLAN_BILLING_DISCOUNT_DIALOG_BODY_CLASS).toBe("p-3 !space-y-3");
   });
 
   it("按当前 locale 读取服务端下发的 150% 活动文案", () => {
@@ -4996,14 +4744,6 @@ describe("model provider coding plan", () => {
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamTitle");
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamDescription");
     expect(html).not.toContain("CN¥598.00+");
-    expect(html).not.toContain("color-mix(in_srgb,var(--color-success)_24%");
-    expect(html).not.toContain("color-mix(in_srgb,#4099ff_24%");
-    expect(html).not.toContain("color-mix(in_srgb,#0ea5e9_24%");
-    expect(html).not.toContain("circle_at_14%_12%");
-    expect(html).toContain("w-full");
-    expect(html).not.toContain("bg-background/80");
-    expect(html).not.toContain("sm:grid-cols-3");
-    expect(html).not.toContain("button-gradient");
     expect(html).not.toContain("settings.modelProvider.startPlan.quotaSectionTitle");
     expect(html).not.toContain("settings.modelProvider.codingPlan.productsLoading");
     expect(html).not.toContain("settings.modelProvider.codingPlan.bigmodel.plan.lite.name");
@@ -5104,13 +4844,6 @@ describe("model provider coding plan", () => {
     );
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamTitle");
     expect(html).not.toContain("settings.modelProvider.codingPlan.purchaseBanner.teamDescription");
-    expect(html).not.toContain("color-mix(in_srgb,#4099ff_24%");
-    expect(html).not.toContain("color-mix(in_srgb,var(--color-warning)_24%");
-    expect(html).not.toContain("circle_at_14%_12%");
-    expect(html).toContain("w-full");
-    expect(html).not.toContain("bg-background/80");
-    expect(html).not.toContain("sm:grid-cols-2");
-    expect(html).not.toContain("button-gradient");
     expect(html).not.toContain("settings.modelProvider.startPlan.quotaSectionTitle");
     expect(html).not.toContain("settings.modelProvider.models");
     expect(html).not.toContain("settings.modelProvider.apiKey");
@@ -5237,29 +4970,6 @@ describe("model provider coding plan", () => {
     } finally {
       spy.mockRestore();
     }
-  });
-
-  it("团队标准版和高级版使用不同 banner 背景", () => {
-    const standardClassName = resolveEnterpriseTeamPlanBannerClass("pro");
-    const advancedClassName = resolveEnterpriseTeamPlanBannerClass("max");
-
-    expect(standardClassName).toContain("#0ea5e9");
-    expect(advancedClassName).toContain("#14b8a6");
-    expect(advancedClassName).not.toBe(standardClassName);
-  });
-
-  it("团队标准版和高级版图标颜色跟随 banner 背景", () => {
-    expect(resolveEnterpriseTeamPlanBannerIconClass("pro")).toBe("text-[#0ea5e9]");
-    expect(resolveEnterpriseTeamPlanBannerIconClass("max")).toBe("text-[#14b8a6]");
-  });
-
-  it("团队标准版和高级版使用各自的 banner 描述", () => {
-    expect(resolveEnterpriseTeamPlanBannerDescriptionId("pro")).toBe(
-      "settings.modelProvider.codingPlan.purchaseBanner.teamStandardDescription",
-    );
-    expect(resolveEnterpriseTeamPlanBannerDescriptionId("max")).toBe(
-      "settings.modelProvider.codingPlan.purchaseBanner.teamAdvancedDescription",
-    );
   });
 
   it("模型供应商手动刷新会同步 Team Plan 产品快照", async () => {

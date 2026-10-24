@@ -42,3 +42,11 @@ test("档位解析：极简 8 个、基础 33 个、标准不下发", () => {
   // undefined = 不下发 = 不加约束（标准档等于改动前的行为）。
   assert.equal(resolveForkToolModeToolNames("standard"), undefined);
 });
+
+ test("延迟工具发现与调用只在标准档开放", () => {
+  for (const mode of ["minimal", "basic"] as const) {
+    const tools = resolveForkToolModeToolNames(mode);
+    assert.ok(!tools?.includes("ToolSearch"));
+    assert.ok(!tools?.includes("DeferredToolCall"));
+  }
+});

@@ -26,13 +26,13 @@
 
 ## 作业门禁与跳过语义
 
-- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / 单测）**只在非 dev 渠道运行**：dev 由推送 `canary` 触发，直接进集成以缩短 CI；tag 发布仍走完整门禁。
+- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / 单测）**在所有通道运行**：2026-10-24 起 canary 与 tag 都执行完整门禁。
 - **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
 - 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
 
 | 渠道               | `verify` | `build-macos` / `build-windows` | `publish`                                |
 | ------------------ | -------- | ------------------------------- | ---------------------------------------- |
-| dev（推送 canary） | skipped  | 运行（条件容忍 `skipped`）      | 运行（只要求三个直接依赖 `success`）     |
+| dev（推送 canary） | success  | 运行（要求 verify 成功）      | 运行（只要求三个直接依赖 `success`）     |
 | tag 且门禁通过     | success  | 运行                            | 运行                                     |
 | tag 且门禁失败     | failure  | 跳过（条件不满足）              | 跳过（构建非 `success`）→ 不创建 Release |
 
@@ -64,3 +64,7 @@
 - **第三方清单**：`third-party/inventory.json` 记录的 `package.json` 哈希与当前文件不一致（需执行 `node scripts/licenses.mjs notices` 重新生成），因此 `licenses.mjs check --strict` 在流水线中仅作提示（`continue-on-error: true`），不阻塞发布；打包链路本身不校验清单新鲜度。
 - **清理流水线不得触碰 dev 通道**：`.github/workflows/cleanup-prerelease-tags.yml`（每日 03:00 + 手动）只清理 `v*` 系列的预发布与悬空项。它的悬空判定是「发布 tag 不在 `git tag --list 'v*'` 结果里」，而 dev 通道的 tag 按构造永远不在其中——所以必须靠 `is_dev_channel_tag`（`canary-build` 与 `dev-*`）先跳过，否则会把预览通道的指针发布和 dev 下载页一起删掉。
 - **已跳过作业的流水线「成功」具有误导性**：`publish` 被跳过时整个 run 仍显示 success（被跳过的作业不算失败）。发布是否真的发生，要看 run 里 `publish` 的结论，不能只看 run 的总体状态。
+
+## 2026-10-24 同步验证
+
+上游同步推送到 main/canary 时，canary 的 verify 必须执行，覆盖类型、lint、架构、移除守卫及两种单测入口；构建与发布继续依赖 verify 成功。不得以 skipped 的 verify 作为本次同步验证成功的依据。稳定 tag 触发与历史发布 tag 保持原有规则。

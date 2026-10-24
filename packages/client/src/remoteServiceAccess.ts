@@ -23,6 +23,9 @@ import {
   IZCodeTaskService,
   IZCodeAgentService,
   IZCodeSessionService,
+  IProjectService,
+  ITaskGroupService,
+  IRemoteProjectService,
   ICuaPermissionService,
   IConversationShareService,
   IBotsService,
@@ -31,6 +34,8 @@ import {
   IModelSelectionService,
   IProviderSettingsService,
   IProviderProvisioningTargetService,
+  ISourceServerWorkspaceService,
+  ISourceServerManagementService,
   IUsageStatsService,
   ICodingPlanSubscriptionService,
   IClientConfigService,
@@ -65,6 +70,10 @@ import {
   IForkToolModeService,
   // FORK(search-providers): 网络搜索渠道管理服务面；见 FEATURES.md 的 search-providers 条目
   IForkSearchProvidersService,
+  IWindowProjectService,
+  IWindowRemoteProjectService,
+  IWindowProjectChangesService,
+  type WindowProjectDirectoryServices,
   type IServiceAccessor,
 } from "@zcode/services";
 
@@ -92,6 +101,7 @@ type ManifestGatedServiceKey =
  * 见 FEATURES.md 的 rpc-channel-manifest 条目与 docs/features/rpc-channel-manifest/design.md。
  */
 export class RemoteServiceAccess implements IServiceAccessor {
+  readonly windowProjectDirectory?: WindowProjectDirectoryServices;
   readonly fileService: IFileService;
   // FORK(rpc-channel-manifest): 下面这些成员在 IServiceAccessor 上是可选的（各 host 未必注册），
   // 因此由构造里的 defineManifestGatedService 按通道清单惰性解析；清单里没有该通道时读作 undefined。
@@ -108,8 +118,11 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly windowControllerService?: IWindowControllerService;
   readonly zcodeAgentService: IZCodeAgentService;
   readonly zcodeSessionService: IZCodeSessionService;
-  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供）。桌面 main host 始终
-  // 注册此 descriptor（非 macOS / 未启用时方法返回 available:false），所以桌面 renderer 仍拿到代理。
+  readonly taskGroupService: ITaskGroupService;
+  readonly projectService: IProjectService;
+  readonly remoteProjectService: IRemoteProjectService;
+  // cuaPermissionService 在 IServiceAccessor 上是可选（远端/bots host 不提供），但桌面 renderer
+  // 经 RPC 一定能拿到（main host 始终注册此 descriptor；非 macOS / 未启用时方法返回 available:false）。
   readonly cuaPermissionService?: ICuaPermissionService;
   readonly conversationShareService: IConversationShareService;
   readonly botsService: IBotsService;
@@ -119,6 +132,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly modelSelectionService: IModelSelectionService;
   /** Host-only target proxy；不属于 IServiceAccessor，避免向 Renderer 暴露 Secret 写入接口。 */
   readonly providerProvisioningTargetService!: IProviderProvisioningTargetService;
+  readonly sourceServerWorkspaceService: ISourceServerWorkspaceService;
+  /** 仅 desktop base attachment 注册；其他 scope 必须按可选能力消费。 */
+  readonly sourceServerManagementService?: ISourceServerManagementService;
   readonly usageStatsService: IUsageStatsService;
   readonly codingPlanSubscriptionService: ICodingPlanSubscriptionService;
   readonly clientConfigService: IClientConfigService;
@@ -161,7 +177,24 @@ export class RemoteServiceAccess implements IServiceAccessor {
     { manifest: readonly string[] | undefined; service: unknown }
   >();
 
-  constructor(private channelClient: IChannelClient) {
+  constructor(
+    private channelClient: IChannelClient,
+    options: { sourceServerManagementService?: boolean; windowProjectDirectory?: boolean } = {},
+  ) {
+    // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
+    if (options.windowProjectDirectory) {
+      this.windowProjectDirectory = {
+        projectService: ProxyChannel.toService(
+          channelClient.getChannel(IWindowProjectService.channelName),
+        ),
+        remoteProjectService: ProxyChannel.toService(
+          channelClient.getChannel(IWindowRemoteProjectService.channelName),
+        ),
+        changesService: ProxyChannel.toService(
+          channelClient.getChannel(IWindowProjectChangesService.channelName),
+        ),
+      };
+    }
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );
@@ -203,6 +236,15 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
     );
+    this.remoteProjectService = ProxyChannel.toService<IRemoteProjectService>(
+      channelClient.getChannel(IRemoteProjectService.channelName),
+    );
+    this.taskGroupService = ProxyChannel.toService<ITaskGroupService>(
+      channelClient.getChannel(ITaskGroupService.channelName),
+    );
+    this.projectService = ProxyChannel.toService<IProjectService>(
+      channelClient.getChannel(IProjectService.channelName),
+    );
     this.zcodeSessionService = ProxyChannel.toService<IZCodeSessionService>(
       channelClient.getChannel(IZCodeSessionService.channelName),
     );
@@ -231,6 +273,16 @@ export class RemoteServiceAccess implements IServiceAccessor {
       ),
       enumerable: false,
     });
+    this.sourceServerWorkspaceService = ProxyChannel.toService<ISourceServerWorkspaceService>(
+      channelClient.getChannel(ISourceServerWorkspaceService.channelName),
+    );
+    // Bug 原因：ProxyChannel 是惰性的，无论服务端是否注册 channel 都能构造出“看似存在”
+    // 的对象，optional 合同因此在首次调用时才失败。scope 创建时必须显式声明能力。
+    this.sourceServerManagementService = options.sourceServerManagementService
+      ? ProxyChannel.toService<ISourceServerManagementService>(
+          channelClient.getChannel(ISourceServerManagementService.channelName),
+        )
+      : undefined;
     this.usageStatsService = ProxyChannel.toService<IUsageStatsService>(
       channelClient.getChannel(IUsageStatsService.channelName),
     );

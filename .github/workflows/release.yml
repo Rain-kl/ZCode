@@ -105,9 +105,7 @@ jobs:
   verify:
     name: Verify workspace gates
     needs: [resolve]
-    # dev 渠道（canary 推送）跳过全部校验，直接进集成以缩短 CI 时间；tag 发布仍走完整门禁。
-    # 依赖它的 build 作业用 result 判定容忍 skipped，见下。
-    if: ${{ needs.resolve.outputs.channel != 'dev' }}
+    # 同步后的 canary 也执行完整门禁，确保集成发布基于已验证的同一提交。
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -171,6 +169,9 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit
 
+      - name: Fork contract tests
+        run: pnpm test:unit:fork
+
       # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
       # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
       # 打包链路本身不校验清单新鲜度（scripts/third-party-notices.mjs:9-12），不影响产物。
@@ -181,8 +182,8 @@ jobs:
   build-macos:
     name: Build macOS (${{ matrix.arch }})
     needs: [resolve, verify]
-    # verify 在 dev 渠道被跳过（不是失败）：这里按 result 判定，成功或跳过都继续。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    # canary 和 stable 都必须先通过完整 verify。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
     strategy:
       fail-fast: false
       # 只发布 Apple Silicon 包。若将来要出 Intel 包，必须在 Intel runner 上构建：
@@ -305,8 +306,8 @@ jobs:
   build-windows:
     name: Build Windows (x64)
     needs: [resolve, verify]
-    # verify 在 dev 渠道被跳过（不是失败）：这里按 result 判定，成功或跳过都继续。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.verify.result == 'success' || needs.verify.result == 'skipped') }}
+    # canary 和 stable 都必须先通过完整 verify。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
     runs-on: windows-2025
     timeout-minutes: 150
     env:
