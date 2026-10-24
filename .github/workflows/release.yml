@@ -127,11 +127,17 @@ jobs:
         shell: bash
         run: |
           set +e
-          pnpm install --frozen-lockfile --ignore-scripts \
-            --fetch-retries=5 \
-            --fetch-retry-mintimeout=10000 \
-            --fetch-retry-maxtimeout=60000 2>&1 | tee /tmp/pnpm-install.log
-          status=${PIPESTATUS[0]}
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --ignore-scripts \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=10000 \
+              --fetch-retry-maxtimeout=60000 2>&1 | tee /tmp/pnpm-install.log
+            status=${PIPESTATUS[0]}
+            if [ "$status" -eq 0 ]; then break; fi
+            # hoisted linker 偶发丢失 esbuild 临时目录；只重试明确的临时安装错误。
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/pnpm-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
           set -e
           if [ "$status" -ne 0 ]; then
             detail=$(tail -n 20 /tmp/pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)

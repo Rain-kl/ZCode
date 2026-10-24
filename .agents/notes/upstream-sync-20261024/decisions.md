@@ -16,3 +16,8 @@
 - fork 契约 7 组通过；autoUpdaterReadyState、remoteServiceAccess、settingsPageConfig、providerRegistry 定向回归通过。
 - 全量 test:unit 已执行，本环境只读 home 导致迁移备份、日志和临时工作区用例失败；保留失败并由 canary 标准 runner 的完整门禁验证。
 - 发布 tag 不移动、不创建新版本；本任务是上游同步。
+
+## CI 首轮反馈与修复
+
+- run 40058606218 在安装依赖时因 hoisted linker 重命名 tsup 的 esbuild 临时目录 ENOENT 失败。安装步骤仅对明确的临时错误做最多三次完整重试，仍保留最终失败退出与注解。
+- rootOAuthReauthentication 新增用例显式打开云账号测试夹具，并增加本地模式不订阅失效通知的用例；5 项通过，产品默认禁用云账号不变。

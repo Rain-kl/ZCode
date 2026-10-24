@@ -1,9 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ZCODE_JWT_INVALID_BROADCAST_CHANNEL } from "@zcode/shared";
 
-const { effects, requestAlert } = vi.hoisted(() => ({
+const { effects, requestAlert, cloudAccountEnabled } = vi.hoisted(() => ({
+  cloudAccountEnabled: vi.fn(() => true),
   effects: [] as Array<() => unknown>,
   requestAlert: vi.fn(),
+}));
+// 云账号分支是本地模式关闭的可选能力，测试显式开启，避免依赖产品默认开关。
+vi.mock("@zcode/shared", async (original) => ({
+  ...(await original<typeof import("@zcode/shared")>()),
+  isCloudAccountBackgroundEnabled: cloudAccountEnabled,
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -24,6 +30,7 @@ describe("运行时登录失效进入重新登录", () => {
   beforeEach(() => {
     effects.length = 0;
     requestAlert.mockReset();
+    cloudAccountEnabled.mockReturnValue(true);
   });
   it.each([true, false])("提示结果 %s 都使用登录入口，不重启 App", async (confirmed) => {
     let finish!: (value: boolean) => void;
@@ -123,4 +130,27 @@ describe("运行时登录失效进入重新登录", () => {
       dispose();
     },
   );
+});
+
+it("本地模式不订阅云账号失效通知", () => {
+  effects.length = 0;
+  requestAlert.mockReset();
+  cloudAccountEnabled.mockReturnValue(false);
+  const onMessage = vi.fn();
+  useRootOAuthEffects({
+    accountIntentKey: "local",
+    platform: {} as never,
+    services: { broadcastService: { onMessage } } as never,
+    refreshProviderState: vi.fn(),
+    setUser: vi.fn(),
+    setIsRestoringOAuthSession: vi.fn(),
+    setOAuthError: vi.fn(),
+    oauthPollingActive: false,
+    setOAuthPollingActive: vi.fn(),
+    markOAuthSuccess: vi.fn(),
+    onReauthenticationRequired: vi.fn(),
+  });
+  effects[1]();
+  expect(onMessage).not.toHaveBeenCalled();
+  expect(requestAlert).not.toHaveBeenCalled();
 });
