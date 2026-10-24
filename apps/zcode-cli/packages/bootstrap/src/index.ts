@@ -1,3 +1,5 @@
+// FORK(local-mode): 业务启动前统一阻断未审核的上游连接。
+import "@zcode/shared/upstream-network-policy/node";
 // Bootstrap public API surface.
 
 export * from "./app/create-app.js";

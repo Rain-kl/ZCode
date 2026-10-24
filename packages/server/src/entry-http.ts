@@ -1,3 +1,5 @@
+// FORK(local-mode): 服务端入口采用与桌面相同的上游请求门禁。
+import "@zcode/shared/upstream-network-policy/node";
 import {
   createServerHostServices,
   createTopicResourcePeers,

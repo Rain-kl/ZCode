@@ -1,3 +1,5 @@
+// FORK(local-mode): 沙箱的专用 listener 同样不能绕过上游请求策略。
+import { isUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
 import { webContents, type Session } from "electron";
 import type { PluginSandboxRegistryPort } from "./contract.js";
 import type { PluginSandboxPermissionGate } from "./permissionGate.js";
@@ -39,13 +41,22 @@ export function preparePluginSandboxSession(input: {
   );
   // 稳定 origin 不能授予跨实例资源访问；以 Electron 提供的实际 guest 与路径登记交叉验证。
   session.webRequest.onBeforeRequest(
-    { urls: ["zcode-sandbox://*/*", "https://*/*"] },
+    { urls: ["zcode-sandbox://*/*", "https://*/*", "http://*/*", "ws://*/*", "wss://*/*"] },
     (details, callback) => {
+      if (!isUpstreamRequestAllowed(details.url, details.method)) {
+        callback({ cancel: true });
+        return;
+      }
       const target = parsePluginSandboxUrl(details.url);
       const guest =
         details.webContentsId === undefined ? undefined : webContents.fromId(details.webContentsId);
       const shell = guest && parsePluginSandboxUrl(guest.getURL());
       const url = new URL(details.url);
+      // FORK(local-mode): 专用 listener 覆盖通用 listener 后，HTTP/WS 也必须先通过门禁。
+      if (["http:", "ws:", "wss:"].includes(url.protocol)) {
+        callback({});
+        return;
+      }
       if (url.protocol === "https:") {
         if (details.resourceType !== "script" || shell?.kind !== "shell") {
           callback({});

@@ -2,6 +2,15 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: fork-upstream-network
+    roots: [packages/shared/src/fork/upstream-network]
+    managed: true
+    publicEntrypoints:
+      - packages/shared/src/fork/upstream-network/contract.ts
+      - packages/shared/src/fork/upstream-network/node.ts
+      - packages/shared/src/fork/upstream-network/browser.ts
+      - packages/shared/src/fork/upstream-network/module.ts
+    requires: []
   - id: rpc
     roots: [packages/rpc/src]
     managed: false
@@ -303,7 +312,7 @@ modules:
       - packages/desktop/src/preload/pluginSandbox
       - packages/desktop/src/renderer/src/plugin-sandbox
     managed: true
-    requires: [desktop, shared, mcp-apps-protocol, gen-ui-protocol]
+    requires: [desktop, shared, mcp-apps-protocol, gen-ui-protocol, fork-upstream-network]
     publicEntrypoints:
       [
         packages/desktop/src/host/pluginSandbox/index.ts,
@@ -747,6 +756,10 @@ global:
   acceptedUpstreamSnapshot: scripts/architecture/upstream-snapshot.json
 
 exceptions:
+  - id: upstream-network-observer-legacy-edit
+    rule: unmanaged-new-file
+    paths: [packages/desktop/src/main/observeBeforeRequest.ts, packages/desktop/src/shared/armsBrowserInit.ts]
+    reason: Existing Electron listener enforces the shared predicate and the existing browser initializer applies local-mode before initialization or retries. No new state owner; separate Electron listeners would overwrite diagnostics and capture.
   - id: side-pane-full-view-shortcut-command-edit
     rule: unmanaged-new-file
     paths: [packages/shared/src/shortcutCommands.ts]

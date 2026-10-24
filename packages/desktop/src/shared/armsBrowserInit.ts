@@ -1,3 +1,5 @@
+// FORK(local-mode): Preload/Renderer 不初始化采集器，也不调度桥接重试。
+import { FORK_LOCAL_MODE } from "@zcode/shared";
 import armsRum from "@arms/rum-electron/browser";
 import type { ZCodeRuntimeEnv } from "@zcode/shared";
 import { buildArmsBrowserInitConfig } from "./armsRumShared.js";
@@ -10,6 +12,7 @@ let bootstrapped = false;
  * 仅放在 renderer 入口会导致 beforeReport 长期 perf=0；须在 preload 末尾（ARMS frame preload 已注入 Bridge 之后）调用。
  */
 export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
+  if (FORK_LOCAL_MODE) return false;
   if (bootstrapped) {
     return true;
   }
@@ -45,6 +48,8 @@ export function initArmsBrowserRumOnce(runtimeEnv: ZCodeRuntimeEnv): boolean {
 
 /** preload 中 ARMS frame preload 可能晚于本脚本一帧，短重试避免 Bridge 尚未就绪 */
 export function scheduleArmsBrowserRumInit(runtimeEnv: ZCodeRuntimeEnv, maxAttempts = 50): void {
+  // FORK(local-mode): 禁用时没有等待 ARMS Bridge 的重试任务。
+  if (FORK_LOCAL_MODE) return;
   let attempts = 0;
   const tick = (): void => {
     if (initArmsBrowserRumOnce(runtimeEnv)) {

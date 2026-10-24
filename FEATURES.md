@@ -294,3 +294,10 @@
 - 2026-09-29：亮色主题配色——对话/主区域底色改纯白 `#ffffff`，侧边栏改 `#f7f8f9`。侧边栏此前不铺底色、直接透出窗口底色（`bg-background-alt`），现改为消费设计系统里原本闲置的 `--color-sidebar`（展开态 aside 与折叠态轨道都铺底色）。暗色主题 `theme-zai-dark` 本次未改；`packages/ui/src/styles.css`、`packages/ui/src/app-shell/WorkspaceShellLayout.tsx`、`packages/ui/src/WorkspaceSidebar/WorkspaceSidebarCollapsedRail.tsx`。
 - 2026-09-29：首次启动默认值调整——界面字号 14px → 12px，颜色主题 `zai-dark` → 跟随系统（`system`）。只影响没有 localStorage 偏好的首次启动，已有偏好不被覆盖。字号必须同时改 JS 默认值与 CSS 变量，否则首屏先按 14px 渲染再跳；主题必须同时改 Zustand store 与 `useTheme` hook 的兜底值，否则两个主题入口分叉；`packages/ui/src/{lib/uiFontSize.ts,styles.css,store/index.ts,useTheme.ts}`。
 - 2026-09-29：设置页「搜索」栏目移到 **Agent 能力** 分组下（紧随「MCP 服务器」），并改名 **网络搜索 / Web Search**。它在「基础设置」里与工作区文件搜索（`.zcodeignore`）容易混为一谈，实际配置的是 agent 的外部能力来源，与 MCP 同类；分组与标题都加了测试断言，只断言「栏目存在」会漏掉这两处改动；`packages/ui/src/settings/settingsPageConfig.ts`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`、`packages/ui/test/forkSearchProvidersSection.test.ts`。
+
+### 本地模式上游通信收口（2026-10-24）
+
+- 营销组件停止挂载；ARMS、应用埋点、TTFT/界面动作 OTLP 导出停用；上游手机远控依赖账号 JWT，不再展示入口。账号、权益、反馈、云分享及灰度配置请求由默认拒绝策略阻断。
+- 唯一允许的上游匿名读请求为官方插件市场/静态资源、远程运行时下载和公开文档。Node Main/Host/CLI/Server 出口与 Electron Session/沙箱、Web 入口统一使用 `fork-upstream-network` 策略，重定向逐跳验证，错误不泄露 query。
+- 新增 `shared/src/fork/upstream-network/**`；上游接线均标记 `FORK(local-mode)`；`scripts/fork-removal-rules.mjs` 固化入口守卫，避免同步后恢复上游营销/采集链路。
+- 设计与审查清单：`docs/features/upstream-network/design.md`；实现与验证：`docs/features/upstream-network/implementation.md`。

@@ -31,7 +31,11 @@
     "./gen-ui": "./src/gen-ui/index.ts",
     "./testing/fake-relay-v2": "./test/fixtures/fake-relay-v2.ts",
     "./request-security": "./src/request-security-edition/index.ts",
-    "./web-remote-relay": "./src/web-remote-relay/index.ts"
+    "./web-remote-relay": "./src/web-remote-relay/index.ts",
+    "./upstream-network-policy": "./src/fork/upstream-network/contract.ts",
+    "./upstream-network-policy/node": "./src/fork/upstream-network/node.ts",
+    "./upstream-network-policy/browser": "./src/fork/upstream-network/browser.ts",
+    "./upstream-network-policy/fetch": "./src/fork/upstream-network/module.ts"
   },
   "scripts": {
     "lint": "oxlint",

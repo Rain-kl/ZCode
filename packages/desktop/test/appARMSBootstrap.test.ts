@@ -4,6 +4,8 @@ import { runInNewContext } from "node:vm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ZCODE_AGENT_LIFECYCLE_LOG_MARKER } from "@zcode/shared/process-diagnostic";
 
+const policy = vi.hoisted(() => ({ localMode: false }));
+
 const init = vi.fn((_config: unknown) => Promise.resolve());
 
 vi.mock("@arms/rum-electron", () => ({
@@ -32,6 +34,10 @@ vi.mock("@zcode/shared", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zcode/shared")>();
   return {
     ...actual,
+    // 原上游脱敏算法用显式非本地夹具验证；默认产品禁用另有用例。
+    get FORK_LOCAL_MODE() {
+      return policy.localMode;
+    },
     ZCODE_ARMS_RUM_ENDPOINT: "https://example.test/endpoint",
     ZCODE_ENV: "test",
     ZCODE_VERSION: "0.0.0-test",
@@ -223,6 +229,14 @@ describe("appARMSBootstrap beforeReport", () => {
   beforeEach(() => {
     vi.resetModules();
     init.mockClear();
+    policy.localMode = false;
+  });
+
+  it("本地模式不初始化 ARMS，不安装采集器和 Renderer 注入", async () => {
+    policy.localMode = true;
+    const runtime = await import("../src/main/appARMSBootstrap.js");
+    await runtime.armsInitPromise;
+    expect(init).not.toHaveBeenCalled();
   });
 
   it("使用 Desktop 本地开发运行态计算 ARMS 环境", async () => {

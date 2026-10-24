@@ -41,6 +41,8 @@ const REPORT_RATE_LIMIT_RETRY_DELAY_MS = 1_000;
 const REPORT_MAX_ATTEMPTS = 2;
 
 interface TelemetryCoreDependencies {
+  /** FORK(local-mode): 产品宿主关闭埋点传输，独立核心测试仍可注入传输。 */
+  enabled?: boolean;
   fetchImpl?: typeof fetch;
   loadUserId?: () => Promise<string>;
   loadAuthorization?: (userId: string) => Promise<string | null>;
@@ -415,6 +417,8 @@ export function createTelemetryCore(dependencies: TelemetryCoreDependencies = {}
     userId: string,
     deviceMid: string,
   ): Promise<void> {
+    // FORK(local-mode): 禁用时不读取营销归因，也不进行任何传输或网络重试。
+    if (dependencies.enabled === false) return;
     // 构建期未配置事件上报端点时不上报（见 docs/desktop/build-time-optional-capabilities.md）
     if (!REPORT_ENDPOINT) return;
     let marketingParams: OAuthLoginAttribution | null = null;

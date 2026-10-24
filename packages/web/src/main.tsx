@@ -1,3 +1,5 @@
+// FORK(local-mode): Web 端同样拒绝未审核的上游请求。
+import "@zcode/shared/upstream-network-policy/browser";
 import { mobilePluginDiscoveryTelemetrySchema } from "@zcode/shared";
 import {
   sessionCreateTelemetrySchema,

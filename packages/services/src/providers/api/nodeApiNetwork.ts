@@ -1,3 +1,6 @@
+import { createUpstreamPolicyFetch } from "@zcode/shared/upstream-network-policy/fetch";
+// FORK(local-mode): undici 的显式 dispatcher 也必须受相同上游门禁约束。
+import { assertUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
 import { readFile } from "node:fs/promises";
 import { rootCertificates } from "node:tls";
 import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from "undici";
@@ -117,6 +120,10 @@ export function createHostApiNetworkTransport(
     if (disposed) {
       throw new Error("Host API network transport has been disposed");
     }
+    assertUpstreamRequestAllowed(
+      input instanceof Request ? input.url : String(input),
+      init?.method ?? (input instanceof Request ? input.method : "GET"),
+    );
     const requestGeneration = generation;
     if (!optionsPromise) {
       // 设置读取失败只影响当前请求；清掉 rejected promise，避免一次瞬时 IPC/启动竞态
@@ -183,13 +190,13 @@ export function createHostApiNetworkTransport(
     if (disposed || generation !== requestGeneration) {
       throw new Error("Host API network transport has been disposed");
     }
-    return fetchWithDispatcher(
-      input as unknown as string,
-      {
-        ...init,
-        dispatcher,
-      } as Omit<RequestInit, "dispatcher"> & { dispatcher: Dispatcher },
-    );
+    // FORK(local-mode): 显式 undici dispatcher 的重定向也必须逐跳审核。
+    return createUpstreamPolicyFetch((nextInput, nextInit) =>
+      fetchWithDispatcher(
+        nextInput as unknown as string,
+        { ...nextInit, dispatcher } as Omit<RequestInit, "dispatcher"> & { dispatcher: Dispatcher },
+      ),
+    )(input, init);
   };
 
   const startDispose = (mode: "close" | "destroy"): Promise<void> => {

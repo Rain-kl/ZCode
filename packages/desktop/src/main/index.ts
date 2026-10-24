@@ -1,3 +1,6 @@
+import { subscribeBeforeRequest } from "./observeBeforeRequest.js";
+// FORK(local-mode): 业务启动前统一阻断未审核的上游连接。
+import "@zcode/shared/upstream-network-policy/node";
 import { installRequestSecurityDiagnostics } from "./request-security-edition/index.js";
 import { createLocalTtftExporter } from "./localTtftExporter.js";
 /* eslint-disable max-lines */
@@ -711,6 +714,22 @@ const UPDATE_STATUS_WINDOW_COMPACT_HEIGHT = 205;
 const UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT = 224;
 const UPDATE_STATUS_WINDOW_READY_HEIGHT = UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT - 54;
 const UPDATE_STATUS_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 10, y: 10 } as const;
+// FORK-BEGIN(local-mode)
+app.on("session-created", (createdSession) => {
+  subscribeBeforeRequest(
+    createdSession.webRequest,
+    ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"],
+    () => {},
+  );
+});
+app.whenReady().then(() => {
+  subscribeBeforeRequest(
+    session.defaultSession.webRequest,
+    ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"],
+    () => {},
+  );
+});
+// FORK-END(local-mode)
 const mainSettingService = createSettingService();
 const webRemoteControlCredentialService = createCredentialService();
 const appLaunchGate = createAppLaunchGate();
@@ -770,6 +789,8 @@ function awaitFirstHostSpawnDecision(): Promise<void> {
   return firstHostSpawnDecisionPromise;
 }
 const appTelemetryCore = createTelemetryCore({
+  // FORK(local-mode): 埋点不属于匿名实用功能。
+  enabled: false,
   loadUserId: createTelemetryUserIdLoader(appTelemetryCredentialService),
   loadAuthorization: createTelemetryAuthorizationLoader(appTelemetryCredentialService),
   loadMarketingParams: createTelemetryMarketingParamsLoader(appTelemetryCredentialService),
@@ -870,7 +891,8 @@ const rendererActionTraceRollout = createRendererActionTraceRollout({
   logger,
 });
 const localTtftExporter = createLocalTtftExporter({
-  env: { ...hostProcessLocalEnv, ...process.env },
+  // FORK(local-mode): 不向 OTLP 采集端点导出 TTFT。
+  env: {},
   version: ZCODE_VERSION || app.getVersion(),
   logger,
 });
@@ -878,10 +900,8 @@ ipcMain.on(PlatformChannels.ReportLocalTtftBatch, (_event, batch: unknown) =>
   localTtftExporter.enqueue(batch),
 );
 const rendererActionTraceBroker = createRendererActionTraceBroker({
-  exporter: createRendererActionTraceExporter({
-    ...hostProcessLocalEnv,
-    ...process.env,
-  }),
+  // FORK(local-mode): 不向 OTLP 采集端点导出界面动作。
+  exporter: createRendererActionTraceExporter({}),
   logger,
 });
 let disposeRendererActionTraceIpc: (() => void) | undefined;

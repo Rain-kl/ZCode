@@ -20,6 +20,49 @@
  */
 export const REGISTRY = [
   {
+    featureId: "local-mode",
+    absentFiles: [],
+    absentPatterns: [],
+    requiredFiles: [],
+    absentPatternsInFile: [
+      {
+        path: "packages/ui/src/Root.tsx",
+        pattern: /<MarketingTouchProvider\b/,
+        reason: "本地模式不挂载上游营销轮询及素材",
+      },
+    ],
+    requiredPatterns: [
+      ...[
+        "packages/desktop/src/main/index.ts",
+        "packages/desktop/src/host/index.ts",
+        "apps/zcode-cli/packages/cli/src/run.ts",
+        "apps/zcode-cli/packages/bootstrap/src/index.ts",
+        "packages/server/src/entry-http.ts",
+        "packages/server/src/stdio.ts",
+        "packages/zcode-server-cli/src/main.ts",
+      ].map((path) => ({
+        path,
+        pattern: /import "@zcode\/shared\/upstream-network-policy\/node"/,
+        reason: "业务入口先安装上游默认拒绝门禁",
+      })),
+      {
+        path: "packages/desktop/src/main/observeBeforeRequest.ts",
+        pattern: /cancel:\s*!isUpstreamRequestAllowed\(details.url, details.method\)/,
+        reason: "网络观测共用 listener 必须保持请求门禁",
+      },
+      {
+        path: "packages/desktop/src/main/pluginSandbox/session.ts",
+        pattern: /!isUpstreamRequestAllowed\(details.url, details.method\)/,
+        reason: "专用沙箱 listener 不得绕过门禁",
+      },
+      {
+        path: "packages/desktop/src/main/appARMSBootstrap.ts",
+        pattern: /FORK_LOCAL_MODE\s*\?\s*Promise.resolve\(\)/,
+        reason: "本地模式禁止 ARMS 初始化",
+      },
+    ],
+  },
+  {
     // 见 FEATURES.md 的 github-update 条目与 docs/features/github-update/design.md
     featureId: "github-update",
     absentFiles: [
@@ -131,14 +174,12 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
         pattern: /runWithModelInvocationContext|web_fetch_processing|processFetchedContent/,
-        reason:
-          "WebFetch handler 不得再调用任何加工模型：上游版本胜出会让每次抓取多付一次模型往返",
+        reason: "WebFetch handler 不得再调用任何加工模型：上游版本胜出会让每次抓取多付一次模型往返",
       },
       {
         path: "apps/zcode-cli/packages/contracts/src/tools/webfetch.ts",
         pattern: /^\s*prompt:/m,
-        reason:
-          "prompt 参数必须缺席——它没有接收方，留着等于让模型传入一个会被静默忽略的字段",
+        reason: "prompt 参数必须缺席——它没有接收方，留着等于让模型传入一个会被静默忽略的字段",
       },
     ],
     requiredFiles: [
@@ -158,8 +199,7 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
         pattern: /maxModelChars:\s*MAX_WEBFETCH_PERSIST_CHARS/,
-        reason:
-          "上下文封顶必须接在字符阈值上，否则「取消摘要」会退化成整页正文进上下文",
+        reason: "上下文封顶必须接在字符阈值上，否则「取消摘要」会退化成整页正文进上下文",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",

@@ -1,5 +1,7 @@
 import type { WebRequest, OnBeforeRequestListenerDetails } from "electron";
 
+import { isUpstreamRequestAllowed } from "@zcode/shared/upstream-network-policy";
+
 type Observer = (details: OnBeforeRequestListenerDetails) => void;
 type RequestSource = Pick<WebRequest, "onBeforeRequest">;
 const sources = new WeakMap<RequestSource, Map<Observer, { urls: string[]; patterns: RegExp[] }>>();
@@ -25,7 +27,8 @@ export function subscribeBeforeRequest(
     source.onBeforeRequest(
       { urls: [...new Set([...entries.values()].flatMap((entry) => entry.urls))] },
       (details, callback) => {
-        callback({});
+        // FORK(local-mode): 每个重定向与 WebSocket 握手先审核，不让观测器覆盖网络门禁。
+        callback({ cancel: !isUpstreamRequestAllowed(details.url, details.method) });
         for (const [listener, entry] of entries) {
           try {
             if (entry.patterns.some((pattern) => pattern.test(details.url))) listener(details);

@@ -5,7 +5,8 @@
  */
 export const pluginSandboxModule = {
   id: "plugin-sandbox",
-  requires: ["desktop", "shared", "mcp-apps-protocol", "gen-ui-protocol"],
+  // FORK(local-mode): 沙箱专用 listener 复用集中出网判定。
+  requires: ["desktop", "shared", "mcp-apps-protocol", "gen-ui-protocol", "fork-upstream-network"],
   provides: ["plugin-sandbox-registry", "plugin-sandbox-platform"],
   publicEntrypoints: ["index.ts", "contract.ts", "aliasRuntime.ts", "aliasApi.ts"],
 } as const;
