@@ -111,17 +111,23 @@ CLI 的未处理异常边界会关闭协议进程；尚未证明现场 API 错�
 
 | 工具 | 输入 | 行为 |
 | --- | --- | --- |
-| spawn_agent | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后立即返回身份、路径和有效设置，不等待最终答案 |
+| spawn_agent | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后返回 `{task_name}`，不等待最终答案；身份和有效设置保留在内部事件 |
 | send_message | target, message | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次 |
 | followup_task | target, message | 运行中递送任务；空闲、报错或被中断的子代理恢复同一会话并启动新轮次 |
 | interrupt_agent | target | 只中断目标当前轮次，返回此前状态；身份、历史和邮箱继续存在 |
-| list_agents | path_prefix? | 返回当前根会话树中已加载代理的身份、路径、父关系和状态 |
-| wait_agent | timeout_ms? | 等待邮箱活动、终态通知、用户 steer 或超时，只返回等待摘要 |
+| list_agents | path_prefix? | 返回 `{agents:[{agent_name,agent_status}]}`，仅列当前树中已加载代理 |
+| wait_agent | timeout_ms? | 等待邮箱活动、终态通知、用户 steer 或超时，返回 `{message,timed_out}` |
 
 具体 JSON schema、工具描述及状态输出对照 Codex 的
 `codex-rs/core/src/tools/handlers/multi_agents_spec.rs` 和 `multi_agents_v2/`。
 沿用 ZCode 的 schema 校验、权限、hook、ToolSearch、结果预算和调用追踪入口，
 不能从新工具绕过现有执行链。
+
+send_message / followup_task 成功时返回空文本；interrupt_agent 返回 `{previous_status}`。
+内部 agentId、childSessionId、父关系及模型设置供宿主事件与 UI 使用，不额外塞进 Codex
+默认模型返回。输入禁止未知字段，wire schema 沿用 Codex 的 strict:false，执行端严格校验。
+工具面只接受文档公开的 fork_turns all/none，不接入源实现兼容的旧数字字符串。
+拒绝 root 作为任务名，路径不能含空段、`.`、`..` 或末尾斜杠。
 
 `wait_agent` 默认 30 秒，最短 10 秒，最长 3,600 秒；小于最短值时夹紧并在结果说明，
 超过最长值拒绝。超时不会停止任何代理；邮箱正文另由唯一收件路径注入上下文。
@@ -138,13 +144,18 @@ CLI 的未处理异常边界会关闭协议进程；尚未证明现场 API 错�
   send_message 不等于“对方已读”，返回的是接受结果。
 - 子代理完成时自动向直接父代理投递最终答案和状态通知，保留任务发起者关联。
   父代理忙时在安全边界消费；父代理已结束时通知留待下次轮次消费，不自行生成无限空轮次。
+  中断只产生状态变化，不伪造 FINAL_ANSWER。
 
 ### 2.2 提示词与上下文
 
 - 移植 Codex 的 root/subagent 角色文本、六工具指引、消息信封和 fork 规则。
-  角色提示在 developer 层装配；新子代理的 fork 历史删除父角色片段，加入自身身份和角色。
+  Codex 使用 developer 角色；ZCode 的跨提供商模型合同仅支持 system/user/assistant/tool，
+  因而将角色块作为宿主所有的 system section 装配，保留私有来源标记。
+  新子代理的 fork 历史删除父协作角色/模式片段，加入自身身份和角色；不扩大公共协议角色集合。
 - 消息使用 NEW_TASK / MESSAGE / FINAL_ANSWER，携带 Task name、Sender、Payload；
   保留源身份，不能把子代理消息当真实用户指令，也不能重复包装。
+  对齐 Codex 的 provider 可见 assistant 身份；持久化复用带协作 metadata 的 synthetic
+  record，在唯一投影边界转换，冷恢复须保留同一来源信息。
 - `fork_turns` 只允许 all / none，默认 all。all 继承父模型和推理等级，不接受覆盖；
   none 时允许经过验证的 model / reasoning_effort，保留 ZCode 现有提供商选择边界。
 - 保留自定义 profile、skills、memory、AGENTS.md 和允许工具配置作为角色扩展，
@@ -184,6 +195,9 @@ sequenceDiagram
 
 - spawn 接受前由临时所有者负责失败清理；接受后归控制器所有，调用者取消或结果发布失败
   不能撤销已接受子任务。按调用 ID 查回接受记录，避免重试产生重复子代理。
+  接受边界要求图和 child 已持久化、邮箱端点已安装、初始任务已经 admission；
+  不能用当前 onSessionReady 在 executeTurn 前触发的顺序，也不能靠轮询等待 sink。
+  按调用 ID 去重是 ZCode 的恢复约束，不宣称是已确认的 Codex 原生保证。
 - steer、主轮次结束、wait 超时或取消均不停止已接受子代理。
   UI 普通停止按钮中断所选会话轮次；“停止所有代理”及宿主关闭才显式停止整棵树。
 - interrupt_agent 只中断目标轮次；正常完成、错误、中断都释放运行名额并保留会话。
@@ -192,9 +206,19 @@ sequenceDiagram
   使用递增 generation，旧轮次迟到结果不能覆盖新状态或释放新名额。
 - 冷恢复从现有 session store 和代理关系记录重建身份；不会把崩溃前 running 直接当成仍在运行。
   followup 恢复使用原 transcript；缺失或损坏时报出可诊断错误，不创建空白替身。
-- 对齐 Codex 的运行容量与驻留身份分离：默认每个根树最多 4 个运行中的子代理，
-  根代理不占名额；完成、报错和中断均释放执行名额。并发上限可配置。
+- 对齐 Codex 的运行容量、驻留 runtime 和已知身份分离：默认每树 4 个总并发名额，
+  其中为根保留 1 个，允许 3 个运行中的子代理。完成、报错和中断释放执行名额。
+  同时限制驻留子 runtime 数；空闲 runtime 可以卸载，稳定身份和未读邮箱不能丢失。
+  list_agents 只列已加载的代理；中断已知但未加载的代理不强行唤醒，返回先前 not_found 状态。
+  并发上限可配置，配置总名额包含根。
   嵌套深度默认 1，沿用 Codex 默认；配置提高后子代理使用同一根树容量，不能绕过上限。
+
+持久化复用带版本和运行时 schema 校验的根 session entry；保存身份图、generation、
+接受调用 ID 和未读消息，不新增数据库表。需要持久化的运行必须明确取得 sessionEntries /
+saveSessionEntry 能力；缺失时报出诊断，不能假装冷恢复可靠。临时会话使用显式内存适配器。
+deliver 必须确认消息所有权转移后才出箱；旧 runner 终态清理会删除 pendingMessages，
+因此不能继续把它当作邮箱所有者。旧 branchGeneration 继续保护 rewind，独立 run generation
+保护同一代理后续轮次，二者不能替代。
 
 ## 4. 兼容与落地边界
 

@@ -79,6 +79,8 @@ spawn 接受边界、路径隔离、并发名额、generation 和冷恢复身份
 - [ ] 实现身份树、顺序 admission、邮箱与 wait、运行名额和显式 interrupt。
   旧 runtimeTaskRegistry 对子代理是单一控制器的投影，不能新增另一份可写状态真相。
   completion/error/interrupted 释放运行名额，但保留身份、历史和未读消息。
+  Codex 默认是 4 个总名额（含根），即 3 个 child 执行名额；另有驻留 runtime 限额，
+  卸载空闲 runtime 不删除身份和邮箱。图快照复用版本化根 session entry，无 DB migration。
 - [ ] 跑控制器合同和生命周期回归，同批更新合同/笔记，提交 feat(agent)。
   规范审查通过后做质量审查，修复后再进入下一任务。
 
@@ -99,12 +101,17 @@ wait_agent(timeout_ms?)
 
 默认工具面只宣传新工具；旧 Agent/Task/SendMessage 只做兼容入口，保留历史识别。
 ToolSearch、权限、结果限额和 hook 必须走现有链。新名字同步 fork/tool-modes。
+模型返回对齐 Codex：spawn `{task_name}`，消息成功空文本，interrupt `{previous_status}`，
+list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内部身份留在事件。
 
 - [ ] 根 runtime 创建唯一控制器，子 runtime 共享按身份绑定的端口。
   spawn 接受后 signal 独立；wait 只取消订阅；interrupt 创建新轮次时更换 controller。
   父正常完成不释放 child 运行句柄；宿主关闭显式清理树。
 - [ ] 移植固定 Codex 提交的主/子角色、消息信封、fork all/none 和模型继承规则。
   补 Apache-2.0 归属；保留 profile/skills/memory/AGENTS.md 权限边界。
+  ZCode 角色合同无 developer，将宿主角色片段放 system section；协作消息在唯一 provider
+  投影转换为 assistant envelope，并保存可冷恢复的私有来源，不扩大全局消息角色协议。
+  接受须在持久化、sink 安装和任务 admission 后；投递须 ACK 才出箱，禁用 20×10ms 轮询补偿。
 - [ ] 保留旧会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
 - [ ] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
   独立规范/质量审查均通过。
