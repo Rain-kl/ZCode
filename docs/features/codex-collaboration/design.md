@@ -1,0 +1,211 @@
+# Codex 协作调度与模型 API 恢复
+
+日期：2026-10-29。状态：设计草案，等待评审；尚未修改产品代码。
+
+## 目标与来源
+
+按用户要求先同步当前仓库，再解决长任务遇到 API 错误退出、子代理不能续跑、
+父会话 steer 连带停止子代理的问题。调度、工具和提示词以 OpenAI Codex 的
+MultiAgent V2 为移植基准，重试次数和间隔以用户明确要求为准。
+
+- ZCode 基线：`adbc5993122039d292cb42120f287f86d6183601`；已 fetch origin/main，
+  fast-forward 检查结果为 Already up to date。
+- Codex 基准：[`6b3b3349f3f559d65b101998a65cad44e5b2ee7b`](https://github.com/openai/codex/tree/6b3b3349f3f559d65b101998a65cad44e5b2ee7b)。
+- 源码是 Rust，ZCode runtime 是 TypeScript。本方案移植该版本的协作契约、
+  状态所有权和提示词，通过 ZCode 自有执行器实现；不引入另一个模型服务。
+- 移植的代码和提示词保留 Apache-2.0 归属、原始许可证及适用的 NOTICE；
+  引用固定提交，后续升级通过契约差异审查。
+
+## 已确认的代码事实
+
+| 位置 | 当前行为 | 影响 |
+| --- | --- | --- |
+| adapters/src/model/retry-policy.ts | 默认 10 次重试，最长 60 秒；配置可放大 | 不满足 20 次、30 秒的边界 |
+| adapters/src/model/runner-retry.ts | 合理 Retry-After 可以越过 maxDelayMs | 单改默认间隔仍可能等待数分钟 |
+| core/src/runtime/methods/streaming-recovery.ts | 输出后的恢复另外计算 10 次 | 与 adapter 预算分离，不能保证统一上限 |
+| core/src/runtime/methods/model-request-session-type.ts | workflow child 使用无上限预算 | 需要一并收敛 |
+| core/src/subagent/runner.ts | 前台 run 将调用者 signal 传入 child AbortController | 父工具取消会取消已开始的子任务 |
+| core/src/subagent/runner.ts | SendMessage 可以恢复 registry 中的终态子任务 | 并非完全没有恢复机制；必须保留和改善现有历史恢复 |
+| core/src/runtime/methods/subagent.ts | 子 runtime 配置 subagents.enabled=false | 与 Codex 的可嵌套协作工具面不一致 |
+| core/src/subagent/runner.ts | 创建及消息投递存在会话 ready、消息 sink 注册等异步边界 | 必须覆盖 steer、失败和续跑竞争 |
+
+上述 CLI 路径相对于 `apps/zcode-cli/packages/`。用户描述的具体 steer 操作尚未通过
+真实 UI 场景复现；signal 耦合是确认存在的缺陷机制，不把它表述为所有现场的唯一根因。
+
+## 方案选择
+
+| 方案 | 适用性 | 决策 |
+| --- | --- | --- |
+| 移植 Codex V2 协作契约至 TypeScript，由 ZCode runtime 执行 | 保留现有提供商、权限、工具执行、存储和客户端；可逐条对照源码 | 推荐 |
+| 嵌入 Codex Rust app-server，另起执行进程 | 还要迁移模型协议、工具执行和会话桥接，改动远超调度 | 不采用 |
+| 继续修补旧 Agent/SendMessage 前后台分支 | 无法完成用户要求的完整 Codex 工具、提示词和生命周期替换 | 不采用 |
+
+## 1. 模型请求统一重试
+
+### 1.1 次数与时间
+
+- 一条连续失败的模型请求恢复链，首次请求后最多重试 **20 次**，最多 21 次物理请求。
+  收到完整成功的模型响应后结束本链；下一次正常模型步骤创建新预算。
+- 退避上限序列为 `2s → 4s → 8s → 16s → 30s → 30s ...`。
+  保留现有抖动时，实际等待在本次上限的 50%～100%，避免并发同时重试。
+- Retry-After 可影响等待，但最终等待不得超过 30,000ms；环境变量和调用者配置
+  可以降低次数或间隔，不能提高用户规定的硬上限。
+- SDK 内置重试不得叠加；adapter、流恢复、鉴权刷新、空响应恢复、模型退回
+  都必须消耗同一失败链预算。没有 workflow 无限重试或供应商豁免分支。
+- 单次加速模型失败后仍可按已有声明退回会话模型；退回消耗本链下一次请求机会，
+  不在两个模型之间反复切换，不另起预算。
+
+### 1.2 错误范围
+
+已经发起的模型 API 请求失败，包括 HTTP 4xx/5xx、供应商 API 错误、网络中断、
+超时和流中错误，进入同一重试预算。401/403 先尝试已有合法凭据刷新机制，
+仍失败则按预算等待重试，不循环弹出登录或权限对话框。
+真实上下文超限继续走现有压缩恢复路径；产生的新物理请求同样计入失败链。
+
+用户显式停止、权限拒绝、本地配置/输入校验、找不到模型和
+`FORK_UPSTREAM_REQUEST_BLOCKED` 是本地控制结果，不伪装成 API 失败反复发送。
+工作区、工具执行和程序错误保留原始错误语义。
+
+预算耗尽后，该轮次进入可恢复错误态并展示最后的错误、次数和原因；
+保留主、子会话历史和身份，允许用户或父代理续跑，不退出整个应用。
+不得把失败伪装为成功，也不得在第 20 次后继续自动重试。
+
+### 1.3 流恢复与副作用
+
+- 尚未提交可见输出时，adapter 可以安全重开请求。
+- 已输出文字或接受工具调用时，由 runtime 选择现有安全锚点，结算已接受工具，
+  丢弃未提交尾部，再发起请求。不能在 adapter 隐式重播整条流。
+- 已提交的工具结果按原 toolCallId 保留，不能重做文件写入、命令或已接受的 spawn。
+  副作用不明的工具结果明确标记，提示模型先检查当前状态。
+- 每次物理请求使用新的 requestId；恢复链 ID、traceId 和累计次数保持关联。
+- 重试等待必须立即响应显式取消，完成后移除 timer 和 abort listener。
+- 正在退避、等待用户权限、等待消息是明确状态；activity watchdog 不得把这些
+  合法等待判为“子代理死亡”。网络请求自己的 idle timeout 仍保留。
+
+## 2. Codex V2 工具与交互契约
+
+新会话只向模型曝光一套协作工具，不同时宣传旧 Agent 与新调度方案。
+
+| 工具 | 输入 | 行为 |
+| --- | --- | --- |
+| spawn_agent | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后立即返回身份、路径和有效设置，不等待最终答案 |
+| send_message | target, message | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次 |
+| followup_task | target, message | 运行中递送任务；空闲、报错或被中断的子代理恢复同一会话并启动新轮次 |
+| interrupt_agent | target | 只中断目标当前轮次，返回此前状态；身份、历史和邮箱继续存在 |
+| list_agents | path_prefix? | 返回当前根会话树中已加载代理的身份、路径、父关系和状态 |
+| wait_agent | timeout_ms? | 等待邮箱活动、终态通知、用户 steer 或超时，只返回等待摘要 |
+
+具体 JSON schema、工具描述及状态输出对照 Codex 的
+`codex-rs/core/src/tools/handlers/multi_agents_spec.rs` 和 `multi_agents_v2/`。
+沿用 ZCode 的 schema 校验、权限、hook、ToolSearch、结果预算和调用追踪入口，
+不能从新工具绕过现有执行链。
+
+`wait_agent` 默认 30 秒，最短 10 秒，最长 3,600 秒；小于最短值时夹紧并在结果说明，
+超过最长值拒绝。超时不会停止任何代理；邮箱正文另由唯一收件路径注入上下文。
+先建立订阅，再检查未读活动，避免注册等待时漏掉并发完成或 steer。
+
+### 2.1 身份与消息
+
+- 根路径 `/root`，子路径 `/root/<task_name>`；task_name 使用小写字母、数字和下划线，
+  同一父路径下不可重复。稳定 agentId 和 childSessionId 独立于显示路径。
+- target 接受 ID、相对任务路径或规范绝对路径；解析范围限制为当前根树，不能跨会话寻址。
+- 子代理能够向父代理和同树其他代理发送消息。followup_task 不允许以 root 为目标；
+  interrupt_agent 不允许以 root 或自身为目标。
+- 邮箱由一个协作控制器所有，按接收顺序 admission；消息 ID 保证恢复与事件重放不重复消费。
+  send_message 不等于“对方已读”，返回的是接受结果。
+- 子代理完成时自动向直接父代理投递最终答案和状态通知，保留任务发起者关联。
+  父代理忙时在安全边界消费；父代理已结束时通知留待下次轮次消费，不自行生成无限空轮次。
+
+### 2.2 提示词与上下文
+
+- 移植 Codex 的 root/subagent 角色文本、六工具指引、消息信封和 fork 规则。
+  角色提示在 developer 层装配；新子代理的 fork 历史删除父角色片段，加入自身身份和角色。
+- 消息使用 NEW_TASK / MESSAGE / FINAL_ANSWER，携带 Task name、Sender、Payload；
+  保留源身份，不能把子代理消息当真实用户指令，也不能重复包装。
+- `fork_turns` 只允许 all / none，默认 all。all 继承父模型和推理等级，不接受覆盖；
+  none 时允许经过验证的 model / reasoning_effort，保留 ZCode 现有提供商选择边界。
+- 保留自定义 profile、skills、memory、AGENTS.md 和允许工具配置作为角色扩展，
+  但不能通过 profile 获得父会话没有的权限或绕过网络限制。
+- 基础协作规则允许子代理继续委派；是否实际暴露 spawn 由继承权限和深度限制决定。
+  工具不可用时提示词不能宣称可以调用。显式委派/主动委派模式使用同一配置来源。
+- 只移植当前环境实际具备的能力说明；不复制 Codex 专用 functions.exec/recipient
+  语法，也不声称 ZCode 具备未接入的宿主能力。
+
+## 3. 生命周期和唯一所有者
+
+根 runtime 所属的协作控制器拥有代理树、运行句柄、邮箱、取消控制器、并发名额和恢复入口。
+child runtime 只执行自己的会话轮次；UI、TUI 和事件投影不创建第二份调度状态。
+现有 runtimeTaskRegistry 继续拥有 Bash/workflow 任务；子代理记录由协作控制器派生投影，
+旧入口只转发给同一控制器，不保留独立可写的子代理注册表。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant R as 主代理 runtime
+    participant C as 协作控制器
+    participant A as 子代理 runtime
+    R->>C: spawn_agent（调用 ID）
+    C->>C: 校验、占名、保存身份与会话、接受初始任务
+    C->>A: 独立取消控制器启动轮次
+    C-->>R: 返回 agentId / path（接受边界）
+    R->>C: wait_agent（仅订阅活动）
+    U->>R: steer
+    R->>C: 唤醒本次等待
+    C-->>R: steered 摘要
+    Note over C,A: 子代理继续；父等待取消不传给子代理
+    A-->>C: 完成或预算耗尽，保留可恢复会话
+    C-->>R: 邮箱消息与终态通知
+    R->>C: followup_task（同一 agentId）
+    C->>A: 恢复已有历史并启动后续轮次
+```
+
+- spawn 接受前由临时所有者负责失败清理；接受后归控制器所有，调用者取消或结果发布失败
+  不能撤销已接受子任务。按调用 ID 查回接受记录，避免重试产生重复子代理。
+- steer、主轮次结束、wait 超时或取消均不停止已接受子代理。
+  UI 普通停止按钮中断所选会话轮次；“停止所有代理”及宿主关闭才显式停止整棵树。
+- interrupt_agent 只中断目标轮次；正常完成、错误、中断都释放运行名额并保留会话。
+  宿主关闭才销毁活跃资源。不得用已 abort 的 controller 启动下一轮。
+- 同一代理 followup、interrupt 和消息递送经同一 admission 串行化；启动新轮次
+  使用递增 generation，旧轮次迟到结果不能覆盖新状态或释放新名额。
+- 冷恢复从现有 session store 和代理关系记录重建身份；不会把崩溃前 running 直接当成仍在运行。
+  followup 恢复使用原 transcript；缺失或损坏时报出可诊断错误，不创建空白替身。
+- 对齐 Codex 的运行容量与驻留身份分离：默认每个根树最多 4 个运行中的子代理，
+  根代理不占名额；完成、报错和中断均释放执行名额。并发上限可配置。
+  嵌套深度默认 1，沿用 Codex 默认；配置提高后子代理使用同一根树容量，不能绕过上限。
+
+## 4. 兼容与落地边界
+
+- fork 新能力集中到 core/adapters 各自的 `src/fork/codex-collaboration/`，
+  新模块先声明 managed 架构边界与 contract；避免在既有大 runner 中继续堆分支。
+- 契约/schema 在 `@zcode/contracts` 公共入口导出；计时和 API IO 留在 adapters，
+  生命周期 admission 在 core app 层；不让纯领域规则依赖 timer、文件或 provider SDK。
+- 旧 Agent/Task、SendMessage、RespondToCoordinator 仅用于历史识别和兼容调用适配，
+  统一接入新所有者。旧 SendMessage 仍按旧合同允许唤醒终态代理；新 send_message 不唤醒。
+  TaskOutput/TaskStop 对 Bash/workflow 的现有功能不变。
+- ZCode Protocol V4、TUI 和 desktop 的子会话下钻、usage、权限请求和文件 checkpoint
+  继续使用同一 childSessionId；新增状态字段经过 schema 校验后投影。
+  desktop continuous 与 mobile replayable 都消费同一有序事件，恢复序号不能倒退。
+- 不恢复账号服务、营销、遥测或被切断的上游请求；API 重试不得绕过本地网络政策。
+
+## 5. 验收场景
+
+以下是实现后的验收标准，当前没有执行产品测试：
+
+1. 主、子、工作流模型均覆盖连续 API 失败后成功，以及 20 次重试耗尽；核对真实请求数。
+2. Retry-After 很大、配置超限、流恢复与 adapter 交替失败时，总预算和 30 秒上限仍成立。
+3. 文字后断流、完整工具调用后断流可恢复；已完成写入和 spawn 不重复执行。
+4. 用户在等待退避时停止能及时返回；取消、权限拒绝和上游网络禁止不产生 API 重试。
+5. 主线程 spawn 后 wait，期间 steer：主线程处理新输入，所有已接受子代理继续并返回结果。
+6. 子代理报错或中断后 followup：同一身份、历史和文件状态延续，无永久死亡句柄。
+7. send_message 对空闲代理只入箱；followup 才唤醒；并发消息与完成不丢、不重复消费。
+8. 父子/兄弟寻址、根树隔离、fork all/none、模型限制、角色提示和真实工具曝光一致。
+9. 并发上限、嵌套深度、名额释放、旧 generation 回报和接受前后取消边界均符合合同。
+10. 冷恢复、旧会话、桌面 steer、手机重放、TUI 以及显式停止整棵树保持一致。
+
+## 评审与实施
+
+本设计按根 AGENTS.md 指定的 Superpowers 流程准备。仓库中的
+`apps/zcode-cli/packages/superpowers-plugin/skills/brainstorming/SKILL.md`
+明确要求：先呈现设计并获得用户批准，才能修改实现。当前提交只保存可审阅的设计和调查记录。
+设计通过后再进入 writing-plans，按模型重试、协作控制器、工具/提示词、客户端适配分别提交，
+并在用户授权验证后执行对应检查与回归。

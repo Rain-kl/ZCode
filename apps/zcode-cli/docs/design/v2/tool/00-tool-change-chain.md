@@ -1,5 +1,18 @@
 # Tool Change Chain Spec
 
+## Fork：Codex 协作调度设计评审（2026-10-29）
+
+当前仅设计，产品行为尚未改变。拟引入 Codex MultiAgent V2 的 spawn_agent、
+send_message、followup_task、interrupt_agent、list_agents、wait_agent，完整合同见
+[协作与重试设计](../../../../../../docs/features/codex-collaboration/design.md)。
+
+实施时必须覆盖：模型可见 schema/描述和角色提示 → ToolSearch/权限/执行器 →
+根 runtime 协作控制器的任务 admission、邮箱和独立取消信号 → 子 session 持久化 →
+有序事件 → V4/TUI/Desktop/mobile 投影。旧 Agent/SendMessage 的兼容入口只能
+转发到同一所有者；TaskOutput/TaskStop 的 Bash/workflow 合同不变。
+重点验收 spawn 接受前后取消、wait 被 steer 唤醒而 child 继续、API 预算耗尽后的
+同身份 followup，以及已执行工具和已接受 spawn 在流恢复中不重复。
+
 ## Bash 临时输出路径隔离
 
 主应用及 workflow 子运行时装配 tmp 父目录 → execution adapter 实际准备具名输出文件 →
