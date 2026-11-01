@@ -40,6 +40,14 @@ success complete -> release budget; next model step creates a fresh budget
 缺少 terminal finish 的 EOF 一律是结构化 provider stream failure，不能当作成功半句。
 compact 原生 raw message_delta 中明确的 stop_reason 也是终态证据；SDK 后续合成 other、
 或随后 raw message_delta 的空 stop_reason 不能抹去已观察到的真实终态。
+同一 compact attempt 的 Core collector 与 Adapter 都单调保留此正向证据，不能因后续
+`provider_stop_reason.present=false` 触发一次不必要的 HTTP fallback。
+compact 的 SSE→HTTP fallback 也必须先检查完整 cause 链上的 `localControl`：权限拒绝、
+upstream blocked、prepare failed 与 local invalid request 均原样抛出已有错误，不发起 HTTP。
+该控制事实优先于 `streamFailurePhase=response_body`；真实可恢复 API 错误仍按既有提交边界、
+上下文/取消排除和剩余共享物理预算决定 transport fallback。
+SDK `error` chunk 的类型化本地控制错误必须在 provider 业务错误扫描前原样进入统一 catch；
+不能把其稳定 code 包装成 ProviderBusinessError 并丢失原 cause/localControl。
 输出后的失败通过现有安全锚点恢复，丢弃失败 assistant tail，保留已完成工具结果；
 不得重放已完成写入、命令或 spawn。所有异步 request/iterator 清理应观察 rejection，
 不得让可恢复 API 失败漏至 CLI unhandledRejection；不得全局吞掉进程错误。

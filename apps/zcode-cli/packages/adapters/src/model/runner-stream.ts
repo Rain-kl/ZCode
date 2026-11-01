@@ -1162,6 +1162,15 @@ async function handleStreamChunk(input: {
     ? toProviderStreamBoundaryEvent(input.chunk)
     : undefined;
   const emittedRetryBoundaryEvent = input.emittedRetryBoundaryEvent || providerEventObserved;
+  // FORK(codex-collaboration): 本地 code 不能被业务扫描包装为 provider 错误并抹去禁止重试的事实。
+  if (
+    input.chunk.type === "error" &&
+    input.chunk.error instanceof Error &&
+    classifyModelFailure(input.chunk.error, input.input.request.abortSignal).localControl !==
+      undefined
+  ) {
+    throw input.chunk.error;
+  }
   const providerBusinessFinishError = detectProviderBusinessFinishError({
     providerId: String(input.statusContext.providerId),
     providerKind: input.statusContext.providerKind,

@@ -471,7 +471,7 @@ describe("runCompactSummaryModelRequest", () => {
     expect(generateText).not.toHaveBeenCalled();
   });
 
-  it("falls back when a later provider delta clears the stop reason", async () => {
+  it("keeps native stop evidence when a later provider delta has no stop reason", async () => {
     const { logger } = createCapturingLogger();
     const { modelExecutor, generateText } = createScriptedModelExecutor({
       streamEvents: [
@@ -489,8 +489,8 @@ describe("runCompactSummaryModelRequest", () => {
 
     const result = await runCompactSummaryModelRequest({ logger, modelExecutor, request });
 
-    expect(result).toEqual(DEFAULT_RESULT);
-    expect(generateText).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ text: "", finishReason: "other", usage: { totalTokens: 2 } });
+    expect(generateText).not.toHaveBeenCalled();
   });
 
   it("falls back for a provider content block that precedes response start", async () => {
@@ -973,3 +973,129 @@ it("preserves the last compact API error when no physical fallback attempt remai
   expect(generateText).not.toHaveBeenCalled();
 });
 // FORK-END(codex-collaboration)
+
+it.each(
+  ["permission_denied", "upstream_blocked", "prepare_failed", "invalid_request"].flatMap(
+    (localControl) => [false, true].map((wrapped) => ({ localControl, wrapped })),
+  ),
+)(
+  "preserves $localControl controls without compact HTTP fallback (nested=$wrapped)",
+  async ({ localControl, wrapped }) => {
+    const original = Object.assign(new Error("local control denied compact request"), {
+      name: "AiSdkModelAdapterError",
+      code: "model_request_failed",
+      context: {
+        localControl,
+        reason: "unknown",
+        retryable: false,
+        streamFailurePhase: "response_body",
+      },
+    });
+    const streamError = wrapped
+      ? Object.assign(new Error("compact wrapper", { cause: original }), {
+          context: { streamFailurePhase: "response_body", retryable: true },
+        })
+      : original;
+    const { modelExecutor, generateText } = createScriptedModelExecutor({ streamError });
+    const { request } = createRequest({ preserveProviderStreamBoundaries: true });
+    await expect(runCompactSummaryModelRequest({ modelExecutor, request })).rejects.toBe(
+      streamError,
+    );
+    expect(generateText).not.toHaveBeenCalled();
+    if (wrapped) expect(streamError.cause).toBe(original);
+  },
+);
+
+it.each(["EACCES", "EPERM", "FORK_UPSTREAM_REQUEST_BLOCKED"] as const)(
+  "does not issue compact HTTP after an actual adapter %s control",
+  async (code) => {
+    const { TestAiSdkModelAdapter, TestProviderConfigFixture } =
+      await import("../../adapters/tests/test-provider-config.js");
+    const { createTestModelProperties } = await import("../../adapters/tests/test-model-format.js");
+    let streamRequests = 0;
+    let httpRequests = 0;
+    const original = Object.assign(new Error("local control"), { code });
+    const adapter = new TestAiSdkModelAdapter({
+      registry: new TestProviderConfigFixture({
+        providers: { test: { kind: "custom", createLanguageModel: (modelId) => ({ modelId }) } },
+      }),
+      retry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+      runtime: {
+        streamText() {
+          streamRequests += 1;
+          return {
+            fullStream: (async function* () {
+              yield { type: "error", error: original };
+            })(),
+          } as never;
+        },
+        async generateText() {
+          httpRequests += 1;
+          return DEFAULT_RESULT as never;
+        },
+      },
+    });
+    const model = adapter.createModel({
+      providerId: "test",
+      modelId: "test",
+      properties: createTestModelProperties(),
+      options: { maxOutputTokens: 1000 },
+    });
+    const { request } = createRequest({ preserveProviderStreamBoundaries: true });
+    await expect(runCompactSummaryModelRequestWithModel({ model, request })).rejects.toMatchObject({
+      cause: original,
+      context: {
+        localControl:
+          code === "FORK_UPSTREAM_REQUEST_BLOCKED" ? "upstream_blocked" : "permission_denied",
+      },
+    });
+    expect({ streamRequests, httpRequests }).toEqual({ streamRequests: 1, httpRequests: 0 });
+  },
+);
+
+it("keeps ordinary provider error-chunk fallback within the same physical budget", async () => {
+  const { TestAiSdkModelAdapter, TestProviderConfigFixture } =
+    await import("../../adapters/tests/test-provider-config.js");
+  const { createTestModelProperties } = await import("../../adapters/tests/test-model-format.js");
+  const budgets: Array<ModelInvocationContext["modelRecoveryBudget"]> = [];
+  let streamRequests = 0;
+  let httpRequests = 0;
+  const adapter = new TestAiSdkModelAdapter({
+    registry: new TestProviderConfigFixture({
+      providers: { test: { kind: "custom", createLanguageModel: (modelId) => ({ modelId }) } },
+    }),
+    retry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+    runtime: {
+      streamText() {
+        streamRequests += 1;
+        budgets.push(getCurrentModelInvocationContext()?.modelRecoveryBudget);
+        return {
+          fullStream: (async function* () {
+            yield {
+              type: "error",
+              error: { code: "invalid_model_request", message: "provider rejected request" },
+            };
+          })(),
+        } as never;
+      },
+      async generateText() {
+        httpRequests += 1;
+        budgets.push(getCurrentModelInvocationContext()?.modelRecoveryBudget);
+        return DEFAULT_RESULT as never;
+      },
+    },
+  });
+  const model = adapter.createModel({
+    providerId: "test",
+    modelId: "test",
+    properties: createTestModelProperties(),
+    options: { maxOutputTokens: 1000 },
+  });
+  const { request } = createRequest({ preserveProviderStreamBoundaries: true });
+  const result = await runCompactSummaryModelRequestWithModel({ model, request });
+  expect(result.text).toBe("fallback summary");
+  expect({ streamRequests, httpRequests }).toEqual({ streamRequests: 1, httpRequests: 1 });
+  expect(budgets[0]).toBeDefined();
+  expect(budgets[1]).toBe(budgets[0]);
+  expect(budgets[0]?.attempts).toBe(2);
+});

@@ -135,6 +135,26 @@ PAT 恢复 fixture 使用两次物理预算，另断言预算1不会出现额外
 runtime admission fixture 区分主请求与 web_search_tool 请求，复用真实 tool_call 投影，
 保留准入端口与调用层不能覆盖宿主的全部断言。并发 spec 同步移除 workflow 无界恢复规则。
 
+## Task 1 spec review 修正轮 1
+
+spec review 在 `f1857b94` 确认两个 compact transport 入口缺口：
+
+- Core 仅按 response_body/commit 判断 SSE→HTTP fallback，未优先检查嵌套 localControl；
+  现在沿 cause/lastError/error 链检查稳定控制事实，原样抛出已有错误，不发 replacement request。
+- Core collector 将 stop_reason.present=true 覆盖为后续 false；现在同一 attempt 内用 OR
+  单调保留真实 native 终态，和 Adapter 已有规则一致。真实缺失终态与既有提交边界继续保留。
+
+真实 Adapter error-chunk 回归进一步证明：provider 业务码扫描会把 `Error(code=EPERM)` 等
+本地错误先包装成 ProviderBusinessError，导致后续归一化失去 localControl 和原 cause。
+现在实际 Error 实例若经统一分类器确认为本地控制错误，先原样进入 catch；普通 provider JSON
+错误仍走既有业务码映射。正向回归使用 provider `invalid_model_request` payload，确认仍可
+SSE1次→HTTP1次 fallback、共享同一个 budget 且 attempts=2。
+
+RED：12例先失败（4种控制×direct/nested共8例、真实 Adapter EACCES/EPERM/blocked共3例、
+native true→false终态1例）；额外 provider payload 正向回归捕获过宽准入，先红再收窄。
+GREEN：5个相关文件391/391通过，含整个 compact63例与 Adapter/native/业务码/分类回归。
+该轮 fresh CLI typecheck、架构与 lint 结果在任务报告记录；未重跑6872例大范围套件。
+
 ## 后续交接与边界
 
 - Task 2/3 必须让 permission/message 明确等待与 scheduler 状态停止盲目 watchdog；不得新增另一套模型重试 owner。

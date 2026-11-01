@@ -70,3 +70,15 @@ MFJS/迁移 wire fixture 显式 maxAttempts1 保留一次载荷断言；PAT换�
 不越界断言；runtime admission fixture恢复实际主工具调用后保留全部端口继承验证。
 最终21文件633测试通过，CLI类型32/32；架构0新增。CLIlint两个既有max-lines错误如实保留，
 大范围153失败的基线归因与局限记录在implementation.md及任务报告；未宣称完整CLI全绿。
+
+## 2026-11-01：Task 1 spec review 修正轮 1
+
+compact SSE→HTTP fallback 也是恢复入口，必须在 response_body/commit 判断之前读取
+完整 cause 链的 localControl。权限、网络门禁、准备失败、无效本地输入均保留原错误，
+不得发 replacement HTTP。Core collector 的 native stop_reason 正向证据在同一 attempt
+内单调保留；后续 null 不是撤销终态的命令。
+
+真实 Adapter error chunk 回归揭示业务扫描会把带 EPERM 等 code 的 Error 误包装为
+ProviderBusinessError 并抹去 cause/localControl。修复点只提前处理实际 Error 的类型化
+本地控制；普通 provider JSON payload 继续业务映射。正向测试锁定后者仍 SSE1+HTTP1，
+同预算attempts2。12例先红，补充providerpayload正向用例也先红；最终5文件391通过。

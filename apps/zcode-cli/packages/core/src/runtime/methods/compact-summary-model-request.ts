@@ -225,7 +225,8 @@ function applyCompactProviderBoundary(
 
   switch (event.boundary) {
     case "provider_stop_reason":
-      state.providerStopReasonPresent = event.present;
+      // FORK(codex-collaboration): 原生终态证据在同一 attempt 内单调成立，后续空 delta 不能触发重放。
+      state.providerStopReasonPresent ||= event.present;
       return;
 
     case "provider_response_start":
@@ -275,6 +276,8 @@ async function handleCompactSummaryStreamFailure(
     isTurnCancellationError(error, input.request.abortSignal) ||
     isModelContextExceededError(error) ||
     isModelMediaTooLargeError(error) ||
+    // FORK(codex-collaboration): 本地控制拒绝不能因 response_body 阶段而绕到另一 transport。
+    hasCompactSummaryLocalControlFailure(error) ||
     isCompactSummarySetupFailure(error) ||
     state.committedContentBlock
   ) {
@@ -347,6 +350,26 @@ function invocationContext(request: CompactSummaryModelRequest) {
     refreshRuntimeHeadersBeforeAttempt: request.refreshRuntimeHeadersBeforeAttempt,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+function hasCompactSummaryLocalControlFailure(error: unknown): boolean {
+  let record = asRecord(error);
+  const seen = new Set<object>();
+  // 各层包装只增加诊断；必须保留内层禁止请求的事实，同时防止循环 cause 卡住清理。
+  while (record && !seen.has(record)) {
+    seen.add(record);
+    const context = asRecord(record.context);
+    if (
+      [record.localControl, context?.localControl].some(
+        (value) => typeof value === "string" && value.length > 0,
+      )
+    )
+      return true;
+    record = asRecord(record.cause ?? record.lastError ?? record.error);
+  }
+  return false;
+}
+// FORK-END(codex-collaboration)
 
 function isCompactSummarySetupFailure(error: unknown): boolean {
   const errorRecord = asRecord(error);
