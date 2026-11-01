@@ -1,3 +1,4 @@
+// FORK(codex-collaboration): offpeak 排队探测也占物理请求预算。
 import { describe, expect, it } from "vitest";
 import type { AiSdkModelRuntime } from "../src/model/runner.js";
 import { ProviderBusinessError } from "../src/model/model-execution.js";
@@ -92,14 +93,15 @@ describe("off-peak 排队重试（generate 路径）", () => {
       },
     };
     const adapter = makeAdapter(runtime, 2); // 预算仅 2 次
-    const result = await executeAdapterGenerateText(adapter, {
-      providerId: TEST_QUEUE_PROVIDER_ID as never,
-      modelId: "GLM-5.2" as never,
-      accountMode: "off-peak",
-      messages: [{ role: "user", content: "ping" }],
-    });
-    expect(result.text).toBe("done");
-    expect(calls).toBe(5); // 4 次排队 + 1 次成功 > maxAttempts=2
+    await expect(
+      executeAdapterGenerateText(adapter, {
+        providerId: TEST_QUEUE_PROVIDER_ID as never,
+        modelId: "GLM-5.2" as never,
+        accountMode: "off-peak",
+        messages: [{ role: "user", content: "ping" }],
+      }),
+    ).rejects.toBeInstanceOf(Error);
+    expect(calls).toBe(2); // 4 次排队 + 1 次成功 > maxAttempts=2
   });
 
   it("排队等待不吞真实错误预算：排队探测后出现真实 5xx 仍有完整预算", async () => {
@@ -125,7 +127,7 @@ describe("off-peak 排队重试（generate 路径）", () => {
         throw new Error("not used");
       },
     };
-    const adapter = makeAdapter(runtime, 3);
+    const adapter = makeAdapter(runtime, 5);
     const result = await executeAdapterGenerateText(adapter, {
       providerId: TEST_QUEUE_PROVIDER_ID as never,
       modelId: "GLM-5.2" as never,
@@ -210,16 +212,20 @@ describe("off-peak 排队重试（stream 路径）", () => {
     };
     const adapter = makeAdapter(runtime, 2);
     const events: unknown[] = [];
-    for await (const event of executeAdapterStreamText(adapter, {
-      providerId: TEST_QUEUE_PROVIDER_ID as never,
-      modelId: "GLM-5.2" as never,
-      accountMode: "off-peak",
-      messages: [{ role: "user", content: "ping" }],
-    })) {
-      events.push(event);
-    }
-    expect(calls).toBe(4); // 3 次排队 + 1 次成功 > maxAttempts=2
-    expect(events.some((e) => (e as { type: string }).type === "text_delta")).toBe(true);
+    await expect(
+      (async () => {
+        for await (const event of executeAdapterStreamText(adapter, {
+          providerId: TEST_QUEUE_PROVIDER_ID as never,
+          modelId: "GLM-5.2" as never,
+          accountMode: "off-peak",
+          messages: [{ role: "user", content: "ping" }],
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toBeInstanceOf(Error);
+    expect(calls).toBe(2); // 3 次排队 + 1 次成功 > maxAttempts=2
+    expect(events.some((e) => (e as { type: string }).type === "text_delta")).toBe(false);
   });
 
   it("stream 3102 落败信息携带续跑标记", async () => {

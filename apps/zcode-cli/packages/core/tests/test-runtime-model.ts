@@ -78,6 +78,8 @@ export function createTestRuntimeModel(input: {
         yield { id: "test-text", type: "text_delta", text: result.text };
         yield { id: "test-text", type: "text_end" };
       }
+      // FORK(codex-collaboration): nonstream-via-stream 消费真实 stream；桩必须投影 tool_call，不能把已返回工具静默丢掉。
+      for (const toolCall of result.toolCalls ?? []) yield { type: "tool_call", toolCall };
       yield {
         type: "finish",
         finishReason: result.finishReason,

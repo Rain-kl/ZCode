@@ -1376,6 +1376,8 @@ describe("AgentRuntime model selection event", () => {
         modelFactory: createTestModelFactory({
           async generateText(_request, observation) {
             const providerId = String(observation.model.providerId);
+            // FORK(codex-collaboration): 假 adapter 与真实请求一样领取全链物理预算。
+            observation.invocationContext?.modelRecoveryBudget?.claimAttempt();
             providers.push(providerId);
             throw Object.assign(new Error("Provider returned a server error."), {
               code: "model_request_failed",
@@ -1414,7 +1416,10 @@ describe("AgentRuntime model selection event", () => {
     ).rejects.toThrow();
 
     // 加速模型失败一次即退回；退回后的会话模型再失败按真实错误整轮失败，不再二次降级。
-    expect(providers).toEqual([highspeedProviderId, "user-provider"]);
+    expect(providers).toEqual([
+      highspeedProviderId,
+      ...Array.from({ length: 20 }, () => "user-provider"),
+    ]);
     const events = await eventStore.getEvents(sessionId);
     const fallbackEvents = events.filter(
       (event) => event.type === SessionEventType.TurnExecutionModelFallback,

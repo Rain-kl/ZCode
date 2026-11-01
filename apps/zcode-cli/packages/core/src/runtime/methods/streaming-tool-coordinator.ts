@@ -23,6 +23,8 @@ import {
   emitStreamRecoveryRetryEvents,
   emitStreamRecoveryStarted,
   hasStreamRecoveryBudget,
+  // FORK(codex-collaboration): 工具锚点也不能重试本地/取消失败。
+  isRetryableStreamRecoveryFailure,
   recoverPartialAssistantOutputFailure,
 } from "./streaming-recovery.js";
 import { executeToolCallsForModelStep } from "./turn-tools.js";
@@ -196,7 +198,13 @@ export function createStreamingToolCoordinator(
       assistantCreatedAt: number,
       recoveryOptions: { failedRequestId?: string } = {},
     ) {
-      if (state.turnAbortSignal.aborted || !hasStreamRecoveryBudget(state)) return false;
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      if (
+        state.turnAbortSignal.aborted ||
+        !hasStreamRecoveryBudget(state) ||
+        !isRetryableStreamRecoveryFailure(error)
+      )
+        return false;
       const recoveryEventOptions = {
         ...options,
         ...(recoveryOptions.failedRequestId

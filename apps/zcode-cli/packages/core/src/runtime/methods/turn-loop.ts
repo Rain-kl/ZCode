@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): 失败链中的 preflight compact 沿用现有预算。
+import { runWithModelInvocationContext } from "@zcode/contracts";
 import { getTurnTools } from "./turn-tool-visibility.js";
 import { refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
 import { appendRuntimeAgentListing } from "../helpers/agent-listing.js";
@@ -91,20 +93,26 @@ export async function runRegularTurnLoop(
     throwIfTurnAborted(state.turnAbortSignal);
 
     const rapidRefill = evaluateRapidRefill(state.compactTracking);
-    const autoCompactOutcome = await this.autoCompactIfNeeded(
-      state.turnTraceContext,
-      state.events,
-      state.turnAbortSignal,
-      {
-        getAgentListingTools: () => getTurnTools(this, state),
-        compactReason: CompactReason.ContextLimit,
-        modelStepIndex: state.modelStepCount,
-        phase: compactPhase,
-        rapidRefill,
-        model: state.model,
-        turnRequestState: state.turnRequestState,
-        getContinuationTools: () => getTurnTools(this, state),
-      },
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    const autoCompactOutcome = await runWithModelInvocationContext(
+      { modelRecoveryBudget: state.modelRecoveryBudget },
+      () =>
+        this.autoCompactIfNeeded(
+          state.turnTraceContext,
+          state.events,
+          state.turnAbortSignal,
+          {
+            getAgentListingTools: () => getTurnTools(this, state),
+            compactReason: CompactReason.ContextLimit,
+            modelStepIndex: state.modelStepCount,
+            phase: compactPhase,
+            rapidRefill,
+            model: state.model,
+            turnRequestState: state.turnRequestState,
+            getContinuationTools: () => getTurnTools(this, state),
+          },
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        ),
     );
     if (autoCompactOutcome === "rapid_refill_blocked") {
       throw createCompactRapidRefillError({

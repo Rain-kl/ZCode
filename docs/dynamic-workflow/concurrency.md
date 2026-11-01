@@ -53,9 +53,9 @@ rise to **twice D** on its own, and further only as far as a live run asked for:
 growth limit is the larger of 2D and the largest bound among the live runs that have sent
 requests on that key ("The governor"). Provider refusals still cut the cap wherever it stands.
 
-Where this document ends: the runner retries a model request inside the subagent's turn,
-without limit, until the request succeeds, the user cancels, or the error is one the
-policy table calls deterministic. What the run does *then*, stopping as `stopped(provider)`,
+Where this document ends: one logical model step shares a bounded recovery counter
+across the runner, core reconnect, compaction and provider fallback: at most 21 physical
+requests, until success, caller cancellation or a typed local control failure. What the run does *then*, stopping as `stopped(provider)`,
 failing the node with `ContextLimit`, or redriving the turn after backoff, is the engine's
 contract, described in `execution-engine.md`. The engine core itself takes no decision on
 any of this: it records the observations the driver reports (`node-waiting`,
@@ -589,48 +589,47 @@ plan; it counts as a throttle and, in the runner, does not consume a retry attem
 The concurrency cap only shapes *when* requests go out. What keeps a provider error from
 becoming a workflow error is the retry budget on the request.
 
-### Unbounded retries for workflow traffic
+### Bounded retries for workflow traffic (fork: codex-collaboration)
 
-`modelRetryBudget` is a runtime-only request field with two values, `default` and
-`unbounded`. The runtime layer sets it from the session's task type: `workflow_child` and
-`nested_workflow_child` get `unbounded`; everything else keeps the adapter default of ten
-retries. The budget is per request, not per adapter, because a subagent shares its parent
-session's live model adapter and must keep seeing provider registry updates. The legacy
-`Workflow` tool's subagents are built by the same factory with the same task type, so they
-get the unbounded budget too, even though they pass no admission gate.
+`modelRetryBudget` is runtime-only. Workflow children, nested workflow children and
+ordinary sessions use `default`; the legacy `unbounded` enum remains readable for wire
+compatibility and cannot remove the limit. `single-attempt` limits the current provider
+invocation for declared fallback, while the logical step retains its shared counter.
 
-`unbounded` relaxes exactly two checks in the runner, the attempt loop's continue condition
-and the "may we try again after this failure" gate, and nothing else:
+Core owns `ModelRecoveryBudget` per logical step. Every physical SDK request claims one
+attempt, including auth/PAT refresh retries, signature repair, empty completion retry,
+stream reconnect and compact transport fallback. Only a complete semantic model response
+ends the chain. Nonempty context overflow and reactive compact retain the same counter.
+Adapter options and environment values can tighten the bound, never increase it above
+21 requests (first request plus 20 retries).
 
-| Unchanged under `unbounded` | Why |
-|---|---|
-| the backoff curve | waiting longer is not the same as giving up |
-| the empty-completion retry and the compaction path | different problems, with their own bounds |
-| no retry after the stream has emitted a visible event | the core's stream recovery owns that case, with its own anchor and a cap of ten |
+Backoff defaults to 2/4/8/16/30 seconds, with existing jitter and a 30 second hard ceiling
+for every delay, including Retry-After. A configured factor must exceed 1; invalid values
+fall back according to the existing configuration precedence. Abort interrupts backoff
+and admission waits. Visible stream output moves recovery to the core safe anchor without
+replaying completed tool effects; it does not create a new counter.
 
-The backoff curve is the runner's: 2 s doubling to a 60 s ceiling, multiplied by a jitter in
-[0.5, 1]. A Retry-After header replaces the computed delay when it is at most five minutes,
-or shorter than the exponential delay would have been. After the ceiling the runner probes
-forever; the only exits are success, user cancel, which interrupts the sleep and the gate
-wait alike, and the policy table below.
+Unknown provider errors, 4xx/5xx, parsing errors and SDK internal AbortError use bounded
+recovery. Explicit caller cancellation, typed local SDK/configuration errors, permission
+failures and upstream network blocking are excluded. Adapter context preserves
+`localControl` and `recoveryBudgetExhausted`; workflow inspection follows nested causes
+and stops, so the driver cannot reopen an exhausted or forbidden request chain.
 
-Status events carry `maxAttempts: 0` to mean unbounded, since `Infinity` does not
-serialize; consumers that render "attempt n of N" special-case zero.
+Status events report the effective bounded attempts. The schema still accepts the legacy
+zero sentinel for old persisted/wire events; current workflow runners do not emit an
+unbounded budget.
 
 ### The policy table
 
-The failure classifier's `retryable` flag answers "should the main conversation retry on
-its own", and for some provider codes the product answer is no: a Start Plan concurrency
-limit shows the user a banner instead. Workflow traffic asks a different question, "must a
-person fix this before the run can continue", and reads a separate table,
-`resolveWorkflowModelFailurePolicy` in `packages/adapters`
-(`model/workflow-model-failure-policy.ts`). The runner's retry gate and the driver read the
-same function, so a failure the runner retries can never reach the driver as a stop, and a
-failure the runner declines is one the driver will stop on.
+The runner uses the same bounded classifier for all session types. The driver inspects
+terminal adapter facts through `inspectWorkflowModelFailure`, retaining the existing
+`ProviderStop` vocabulary and context-compaction handoff. Exhaustion and local controls
+take precedence over the legacy provider table below.
 
 | Input, in order | Decision |
 |---|---|
 | reason `cancelled` | `cancelled` |
+| `localControl` or exhausted shared recovery budget | `stop` (local validation retains `invalid_request`; other controls use `other`) |
 | provider code in the quota set (`1005`, `1308`, `1310`, `1313`, `1316`–`1321`, `2056`, `20097`, `insufficient_quota`, `credit_balance_exhausted`, the spend- and usage-limit codes) | `stop`, kind `quota` |
 | reason `auth_failed` | `stop`, kind `auth` |
 | reason `provider_not_configured`, or an error code in the not-configured family (`provider_not_found`, `provider_not_configured`, `model_config_missing`, `invalid_model_selection`, `model_request_auth_missing`) | `stop`, kind `not_configured` |
@@ -639,11 +638,10 @@ failure the runner declines is one the driver will stop on.
 | reason `invalid_request`, unless the code is `invalid_model_response` | `stop`, kind `invalid_request` |
 | anything else: rate limits, overload, 5xx, timeouts, network and TLS errors, unknown provider codes, a response the adapter could not parse | `retry` |
 
-Under `unbounded`, `retry` means retry; `stop` and `context_exceeded` mean the attempt loop
-ends and the turn rejects. Under `default` the classifier's flag is consulted exactly as
-before, so main-conversation behaviour is untouched. The quota check comes before the
-reason check on purpose: code `1005` classifies as `invalid_request`, and a stopped run
-that reads "quota" is the one the user can act on.
+Every actual API error first uses the shared bounded classifier. The table describes
+how the driver contains a terminal error; it grants no extra requests. Context overflow
+hands off immediately to core compaction using the same counter. Local controls and
+exhaustion must never schedule an outer transient redrive.
 
 The `stop` kinds are the vocabulary of `ProviderStop`; how a stopped run is presented and
 resumed is in `execution-engine.md`.
@@ -654,18 +652,18 @@ A model error that leaves the runner reaches the driver, which reads the same ta
 
 - `stop`: the driver stops the run as `stopped(provider)`, without settling the node.
 - `context_exceeded`: the node fails with `ContextLimit`, which the script may catch.
-- `retry` or `cancelled` (the residual case: a transient failure after the stream had already
-  produced visible output and the core's ten stream recoveries ran out): the driver waits
-  out the same backoff curve, Retry-After first, reports `askWaiting(backoff)` for the node,
-  and then sends the subagent one more turn telling it to continue where it left off. The
-  attempt count is per ask and resets on the next ask; only cancel ends the loop.
+- `cancelled`: caller cancellation is handled before model failure inspection and does not
+  schedule another turn.
+- `retry`: the legacy residual driver path remains for failures without terminal budget or
+  local control facts. Actual adapter requests retain those facts: exhausted recovery,
+  visible-output recovery exhaustion and local controls stop and never enter this path.
 
 Only the first bullet's consequences and the shape of a stopped run belong to the engine
 document; the redrive itself is a concurrency mechanism and stays here.
 
 ### The stall clock
 
-A run that is retrying forever must still be visible. The driver keeps one clock per run,
+A run waiting on provider recovery must still be visible. The driver keeps one clock per run,
 shared by every subagent's turn and tool requests: any `model_request_completed` resets it,
 and a `model_retry_scheduled` (signature repair and auth refresh excepted) arms it for
 twenty minutes after the last success. If it fires with at least one retry recorded, the
@@ -913,7 +911,7 @@ carries it.
   against a tight provider, but a run raised from 8 to 32 needed about 96 successful requests
   before the side pane showed 32, and the user reads that as the setting not having taken. The
   seed pays for immediacy with at most a few waves of refused requests — refused before any
-  output, retried without limit, and damped to one cut per wave — which settle where the climb
+  output, retried within the shared recovery budget, and damped to one cut per wave — which settle where the climb
   would have ended; the five-minute guard keeps it from rerunning a burst the provider just
   refused.
 
@@ -926,8 +924,8 @@ carries it.
   are always throttled together, a provider-level bucket would learn faster.
 - Token-rate limits. AIMD converges on a concurrency limit; against a tokens-per-minute
   limit it keeps probing and oscillates a few levels below the growth limit.
-- The stream-recovery budget stays at ten. If "ten recoveries and still failing" shows up
-  in workflow runs, that budget could follow the task type like the retry budget does.
+- Stream recovery shares the same 21 physical request budget with adapter retry; future
+  policy changes must preserve one counter across both layers and compaction.
 - A per-project default for the run's own bound, which `max_concurrency` would override and
   the hub launch would read too. Today a user who always wants this project's runs throttled
   has to say so on every call that starts one.

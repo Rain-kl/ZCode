@@ -14,7 +14,9 @@ import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-ada
 /** 旧 adapter 直接返回 AsyncIterableIterator；夹具返回 AsyncIterable，这里取它的迭代器以逐步驱动。 */
 function iterateAdapterStream(
   ...args: Parameters<typeof executeAdapterStreamText>
-): AsyncIterator<Awaited<ReturnType<typeof executeAdapterStreamText>> extends AsyncIterable<infer T> ? T : never> {
+): AsyncIterator<
+  Awaited<ReturnType<typeof executeAdapterStreamText>> extends AsyncIterable<infer T> ? T : never
+> {
   return executeAdapterStreamText(...args)[Symbol.asyncIterator]();
 }
 import {
@@ -89,7 +91,11 @@ function usage(inputTokens: number, outputTokens: number) {
     inputTokens,
     outputTokens,
     totalTokens: inputTokens + outputTokens,
-    inputTokenDetails: { noCacheTokens: inputTokens, cacheReadTokens: undefined, cacheWriteTokens: undefined },
+    inputTokenDetails: {
+      noCacheTokens: inputTokens,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+    },
     outputTokenDetails: { textTokens: outputTokens, reasoningTokens: undefined },
   };
 }
@@ -134,7 +140,12 @@ describe("runner request admission (generate)", () => {
           // 不带 Retry-After：让本地退避（backoffMs）生效，才能量「release 在 sleep 之前」。
           throw apiError("rate limited", { isRetryable: true, statusCode: 429 });
         }
-        return { text: "ok", finishReason: "stop", usage: usage(1, 1), totalUsage: usage(1, 1) } as never;
+        return {
+          text: "ok",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
       },
       streamText() {
         throw new Error("not used");
@@ -158,7 +169,14 @@ describe("runner request admission (generate)", () => {
     expect(result.text).toBe("ok");
     expect(admission.acquires).toHaveLength(2);
     expect(String(admission.acquires[0]!.model.modelId)).toBe("model-a");
-    expect(admission.log).toEqual(["acquire#1", "generate#1", "release#1", "acquire#2", "generate#2", "release#2"]);
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "generate#1",
+      "release#1",
+      "acquire#2",
+      "generate#2",
+      "release#2",
+    ]);
     expect(admission.tickets.map((ticket) => ticket.releases)).toEqual([1, 1]);
     expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
       "model_request_started",
@@ -170,7 +188,9 @@ describe("runner request admission (generate)", () => {
       "model_request_completed",
     ]);
     // 退避期间不持票：第 2 次 acquire 与第 1 次 release 之间隔着整段 backoff。
-    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(backoffMs - 10);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      backoffMs - 10,
+    );
     // 请求级 sink 照常收到全部事件（票据是并列的一路投递，不替代）。
     expect(events.map((event) => event.type)).toEqual([
       "model_request_started",
@@ -181,10 +201,12 @@ describe("runner request admission (generate)", () => {
     ]);
   });
 
-  it("releases the ticket exactly once when the attempt throws a permanent failure", async () => {
+  it("releases every ticket exactly once while bounded recovery handles HTTP 400", async () => {
     const admission = fakeAdmission();
+    let requests = 0;
     const runtime: AiSdkModelRuntime = {
       async generateText() {
+        requests += 1;
         throw apiError("bad request", { isRetryable: false, statusCode: 400 });
       },
       streamText() {
@@ -199,18 +221,20 @@ describe("runner request admission (generate)", () => {
     await expect(
       executeAdapterGenerateText(adapter, {
         providerId: "test" as never,
-      modelId: "model-a" as never,
+        modelId: "model-a" as never,
         messages: [{ role: "user", content: "Ping" }],
         modelRequestAdmission: admission,
       }),
     ).rejects.toBeInstanceOf(Error);
-    expect(admission.acquires).toHaveLength(1);
-    expect(admission.tickets[0]!.releases).toBe(1);
-    expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
+    expect(requests).toBe(3);
+    expect(admission.acquires).toHaveLength(3);
+    expect(admission.tickets.map((ticket) => ticket.releases)).toEqual([1, 1, 1]);
+    expect(admission.tickets[2]!.events.map((event) => event.type)).toEqual([
       "model_request_started",
       "model_request_failed",
     ]);
-    expect(admission.tickets[0]!.events[1]).toMatchObject({ retryable: false });
+    expect(admission.tickets[0]!.events[1]).toMatchObject({ retryable: true });
+    expect(admission.tickets[2]!.events[1]).toMatchObject({ retryable: false });
   });
 
   it("cancels while waiting for admission like a cancelled backoff: connect-phase cancelled failure, no request sent", async () => {
@@ -220,7 +244,12 @@ describe("runner request admission (generate)", () => {
     const runtime: AiSdkModelRuntime = {
       async generateText() {
         attempts += 1;
-        return { text: "never", finishReason: "stop", usage: usage(1, 1), totalUsage: usage(1, 1) } as never;
+        return {
+          text: "never",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
       },
       streamText() {
         throw new Error("not used");
@@ -257,7 +286,12 @@ describe("runner request admission (generate)", () => {
     const events: ModelNetworkStatusEvent[] = [];
     const runtime: AiSdkModelRuntime = {
       async generateText() {
-        return { text: "ok", finishReason: "stop", usage: usage(1, 1), totalUsage: usage(1, 1) } as never;
+        return {
+          text: "ok",
+          finishReason: "stop",
+          usage: usage(1, 1),
+          totalUsage: usage(1, 1),
+        } as never;
       },
       streamText() {
         throw new Error("not used");
@@ -275,7 +309,10 @@ describe("runner request admission (generate)", () => {
       statusSink: { publish: (event) => void events.push(event) },
     });
     expect(result.text).toBe("ok");
-    expect(events.map((event) => event.type)).toEqual(["model_request_started", "model_request_completed"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_started",
+      "model_request_completed",
+    ]);
   });
 });
 
@@ -292,7 +329,9 @@ describe("runner request admission (stream)", () => {
         admission.log.push(`stream#${attempts}`);
         if (attempts === 1) {
           return {
-            fullStream: failingStream(apiError("rate limited", { isRetryable: true, statusCode: 429 })),
+            fullStream: failingStream(
+              apiError("rate limited", { isRetryable: true, statusCode: 429 }),
+            ),
           } as never;
         }
         return { fullStream: stream(okChunks()) } as never;
@@ -315,8 +354,21 @@ describe("runner request admission (stream)", () => {
       seen.push(event);
     }
 
-    expect(seen.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "finish"]);
-    expect(admission.log).toEqual(["acquire#1", "stream#1", "release#1", "acquire#2", "stream#2", "release#2"]);
+    expect(seen.map((event) => event.type)).toEqual([
+      "start",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "finish",
+    ]);
+    expect(admission.log).toEqual([
+      "acquire#1",
+      "stream#1",
+      "release#1",
+      "acquire#2",
+      "stream#2",
+      "release#2",
+    ]);
     expect(admission.tickets.map((ticket) => ticket.releases)).toEqual([1, 1]);
     expect(admission.tickets[0]!.events.map((event) => event.type)).toEqual([
       "model_request_started",
@@ -327,7 +379,9 @@ describe("runner request admission (stream)", () => {
       "model_request_started",
       "model_request_completed",
     ]);
-    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(backoffMs - 10);
+    expect(admission.acquires[1]!.at - admission.tickets[0]!.releasedAt!).toBeGreaterThanOrEqual(
+      backoffMs - 10,
+    );
   });
 
   it("releases the ticket when the consumer abandons the stream early", async () => {
@@ -405,7 +459,9 @@ interface QueueingAdmission extends ModelRequestAdmission {
 }
 
 /** 有快路径的端口：`fastHits` 次快路径命中后转排队；排队由测试 `grant()` 兑现。 */
-function queueingAdmission(options: { fastHits?: number; hasFastPath?: boolean } = {}): QueueingAdmission {
+function queueingAdmission(
+  options: { fastHits?: number; hasFastPath?: boolean } = {},
+): QueueingAdmission {
   const hasFastPath = options.hasFastPath ?? true;
   let fastHits = options.fastHits ?? 0;
   let pending: (() => void) | undefined;
@@ -443,7 +499,12 @@ function queueingAdmission(options: { fastHits?: number; hasFastPath?: boolean }
 function okRuntime(): AiSdkModelRuntime {
   return {
     async generateText() {
-      return { text: "ok", finishReason: "stop", usage: usage(1, 1), totalUsage: usage(1, 1) } as never;
+      return {
+        text: "ok",
+        finishReason: "stop",
+        usage: usage(1, 1),
+        totalUsage: usage(1, 1),
+      } as never;
     },
     streamText() {
       return { fullStream: stream(okChunks()) } as never;
@@ -479,7 +540,10 @@ describe("runner request admission — queued / admitted 状态事件（v3 决�
       "model_request_started",
       "model_request_completed",
     ]);
-    const admitted = events[1] as Extract<ModelNetworkStatusEvent, { type: "model_request_admitted" }>;
+    const admitted = events[1] as Extract<
+      ModelNetworkStatusEvent,
+      { type: "model_request_admitted" }
+    >;
     expect(admitted.queuedMs).toBeGreaterThanOrEqual(25);
     // 两端事件与该尝试的其余事件同一 requestId：消费方能把它们归到同一条链。
     expect(events.every((event) => event.requestId === events[0]!.requestId)).toBe(true);
@@ -532,7 +596,10 @@ describe("runner request admission — queued / admitted 状态事件（v3 决�
       statusSink: { publish: (event) => void events.push(event) },
     });
     expect(admission.tryAcquires).toBe(1);
-    expect(events.map((event) => event.type)).toEqual(["model_request_started", "model_request_completed"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_started",
+      "model_request_completed",
+    ]);
   });
 
   it("端口没有快路径：分不清排队与放行，一律不发", async () => {
@@ -553,7 +620,10 @@ describe("runner request admission — queued / admitted 状态事件（v3 决�
     await new Promise((resolve) => setTimeout(resolve, 5));
     admission.grant();
     await pending;
-    expect(events.map((event) => event.type)).toEqual(["model_request_started", "model_request_completed"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_started",
+      "model_request_completed",
+    ]);
   });
 
   it("排队中被取消：queued 之后只有 connect 阶段的 cancelled failed，没有 admitted", async () => {
@@ -576,7 +646,10 @@ describe("runner request admission — queued / admitted 状态事件（v3 决�
     await new Promise((resolve) => setTimeout(resolve, 5));
     controller.abort();
     await expect(pending).rejects.toMatchObject({ code: ModelErrorCode.ModelRequestCancelled });
-    expect(events.map((event) => event.type)).toEqual(["model_request_queued", "model_request_failed"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "model_request_queued",
+      "model_request_failed",
+    ]);
     expect(events[1]).toMatchObject({ reason: ModelFailureReason.Cancelled });
   });
 });

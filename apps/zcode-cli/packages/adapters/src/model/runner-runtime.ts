@@ -3,6 +3,8 @@ import { generateText as aiGenerateText, streamText as aiStreamText } from "ai";
 import type {
   ModelProperties,
   ModelRequestAuth,
+  // FORK(codex-collaboration): 内部物理请求读取 invocation budget，不进入公共请求 JSON。
+  ModelRecoveryBudget,
   ModelTextRequest,
   TraceContext,
 } from "@zcode/contracts";
@@ -24,6 +26,8 @@ export interface AiSdkModelRuntime {
 }
 
 export interface AiSdkModelTextRequest extends ModelTextRequest {
+  // FORK(codex-collaboration): 与 Core 持有的同一恢复 owner。
+  modelRecoveryBudget?: ModelRecoveryBudget;
   abortSignal?: AbortSignal;
   traceContext?: TraceContext;
   // Start Plan 的账号鉴权材料按 attempt 刷新；adapter 内部 retry 也是真实模型请求，

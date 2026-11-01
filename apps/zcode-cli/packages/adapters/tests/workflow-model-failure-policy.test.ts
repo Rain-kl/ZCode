@@ -164,8 +164,8 @@ describe("retryAllowedByFailurePolicy", () => {
       true,
     );
   });
-  it("无上限预算读策略表", () => {
-    expect(retryAllowedByFailurePolicy(busy, ModelRetryBudget.Unbounded, "3008")).toBe(true);
+  it("旧无上限档位同样读取分类器", () => {
+    expect(retryAllowedByFailurePolicy(busy, ModelRetryBudget.Unbounded, "3008")).toBe(false);
     expect(
       retryAllowedByFailurePolicy(
         failure({ reason: ModelFailureReason.AuthFailed }),
@@ -232,3 +232,20 @@ describe("inspectWorkflowModelFailure", () => {
     ).toBeUndefined();
   });
 });
+
+// FORK-BEGIN(codex-collaboration)
+it("stops workflow redrive after the shared physical recovery budget is exhausted", () => {
+  const error = new AiSdkModelAdapterError(ModelErrorCode.ModelRequestFailed, "provider failed", {
+    context: {
+      reason: ModelFailureReason.NetworkError,
+      retryable: true,
+      recoveryBudgetExhausted: true,
+    },
+  });
+  expect(
+    inspectWorkflowModelFailure(
+      new Error("turn failed", { cause: new Error("wrapped", { cause: error }) }),
+    )?.policy,
+  ).toEqual({ decision: "stop", kind: "other" });
+});
+// FORK-END(codex-collaboration)

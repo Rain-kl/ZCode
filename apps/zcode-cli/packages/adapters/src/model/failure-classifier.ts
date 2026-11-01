@@ -1,3 +1,16 @@
+// FORK(codex-collaboration): SDK 本地输入/配置校验发生在 HTTP 前，不能当作实际 API 失败恢复。
+import {
+  InvalidPromptError,
+  InvalidArgumentError,
+  NoSuchModelError,
+  LoadAPIKeyError,
+  LoadSettingError,
+  UnsupportedFunctionalityError,
+  UnsupportedModelVersionError,
+  InvalidMessageRoleError,
+  MessageConversionError,
+  MissingToolResultsError,
+} from "ai";
 import {
   ModelErrorCode,
   ModelFailureReason as ModelFailureReasonValue,
@@ -37,6 +50,8 @@ import { isModelStreamIdleTimeoutError } from "./stream-idle-timeout.js";
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 
 export interface ClassifiedModelFailure {
+  // FORK(codex-collaboration): 本地控制拒绝必须跨 adapter/driver 保留，不能被外层重新解释为 API 重试。
+  localControl?: "invalid_request" | "permission_denied" | "upstream_blocked" | "prepare_failed";
   code: ModelErrorCodeType;
   message: string;
   reason: ModelFailureReason;
@@ -78,11 +93,91 @@ export function inspectProviderFailure(error: unknown): ProviderFailureDetails {
     : {};
 }
 
+// FORK-BEGIN(codex-collaboration)
+export function isLocalModelRequestFailure(error: unknown): boolean {
+  return (
+    findFailureCause(
+      error,
+      (value) =>
+        [
+          InvalidPromptError,
+          InvalidArgumentError,
+          NoSuchModelError,
+          LoadAPIKeyError,
+          LoadSettingError,
+          UnsupportedFunctionalityError,
+          InvalidMessageRoleError,
+          MessageConversionError,
+          MissingToolResultsError,
+        ].some((kind) => kind.isInstance(value)) ||
+        // 此 SDK 类继承的 isInstance 仅判断 AISDKError，会误收所有 APICallError。
+        value instanceof UnsupportedModelVersionError,
+    ) !== undefined
+  );
+}
+
+// SDK、fetch 和 runtime 可叠加包装；按稳定结构遍历并防循环，不依赖错误文案。
+function findFailureCause(error: unknown, matches: (value: unknown) => boolean): unknown {
+  let current = error;
+  const seen = new Set<unknown>();
+  while (current !== undefined && current !== null && !seen.has(current)) {
+    seen.add(current);
+    const value = unwrapRetryError(current);
+    if (matches(value)) return value;
+    current =
+      typeof value === "object" && value !== null
+        ? (value as { cause?: unknown }).cause
+        : undefined;
+  }
+  return undefined;
+}
+
 export function classifyModelFailure(
   error: unknown,
   abortSignal?: AbortSignal,
 ): ClassifiedModelFailure {
+  const failure = classifyModelFailureDetails(error, abortSignal);
+  // FORK(codex-collaboration): 超窗必须交给 Core 压缩并共享预算，重复同一请求无法缩短上下文。
+  if (abortSignal?.aborted || failure.reason === ModelFailureReasonValue.ContextExceeded)
+    return failure;
   const unwrapped = unwrapRetryError(error);
+  const blocked = findFailureCause(
+    unwrapped,
+    (value) => getErrorCode(value) === "FORK_UPSTREAM_REQUEST_BLOCKED",
+  );
+  if (blocked !== undefined)
+    return { ...failure, localControl: "upstream_blocked", retryable: false };
+  const denied = findFailureCause(unwrapped, (value) =>
+    ["EACCES", "EPERM"].includes(getErrorCode(value) ?? ""),
+  );
+  if (denied !== undefined)
+    return { ...failure, localControl: "permission_denied", retryable: false };
+  const localRequestError =
+    failure.code === ModelErrorCode.InvalidModelRequest &&
+    failure.statusCode === undefined &&
+    !findProviderBusinessError(unwrapped);
+  // API 的未知错误及内部 AbortError 曾直接终止进程；本地校验仍由请求前边界拒绝。
+  return localRequestError
+    ? { ...failure, localControl: "invalid_request" }
+    : { ...failure, retryable: true };
+}
+// FORK-END(codex-collaboration)
+
+function classifyModelFailureDetails(
+  error: unknown,
+  abortSignal?: AbortSignal,
+): ClassifiedModelFailure {
+  const unwrapped = unwrapRetryError(error);
+  // FORK(codex-collaboration): 结构化 SDK 校验错误保留原始 message/cause，并归本地准备阶段。
+  if (isLocalModelRequestFailure(unwrapped))
+    return {
+      code: ModelErrorCode.InvalidModelRequest,
+      message:
+        unwrapped instanceof Error ? unwrapped.message : "Local model request validation failed.",
+      reason: ModelFailureReasonValue.InvalidRequest,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: false,
+    };
   const statusCode = getStatusCode(unwrapped);
   const code = getErrorCode(unwrapped);
   const headers = getResponseHeaders(unwrapped);

@@ -240,17 +240,22 @@ describe("empty delta retry boundaries", () => {
     expect(run.status.some((event) => event.type === "model_retry_scheduled")).toBe(false);
   });
 
-  it.each<Failure>(["auth", "cancel"])(
-    "keeps %s terminal before visible output",
-    async (failure) => {
-      const run = harness({ chunks: [...prelude("signature"), ...TOOL_INPUT], failure });
-      await expect(run.read()).rejects.toMatchObject({ name: "AiSdkModelAdapterError" });
+  it.each<Failure>(["cancel"])("keeps %s terminal before visible output", async (failure) => {
+    const run = harness({ chunks: [...prelude("signature"), ...TOOL_INPUT], failure });
+    await expect(run.read()).rejects.toMatchObject({ name: "AiSdkModelAdapterError" });
 
-      expect(run.attempts).toBe(1);
-      expect(run.visible).toEqual([]);
-      expect(run.status.some((event) => event.type === "model_retry_scheduled")).toBe(false);
-    },
-  );
+    expect(run.attempts).toBe(1);
+    expect(run.visible).toEqual([]);
+    expect(run.status.some((event) => event.type === "model_retry_scheduled")).toBe(false);
+  });
+
+  // FORK(codex-collaboration): 403 是实际 API 失败，成功前继续消耗同一有界预算。
+  it("recovers provider auth failures before visible output", async () => {
+    const run = harness({ chunks: [...prelude("signature"), ...TOOL_INPUT], failure: "auth" });
+    await run.read();
+    expect(run.attempts).toBe(2);
+    expect(run.visible.some((event) => event.type === "text_delta")).toBe(true);
+  });
 
   it("stops at the existing adapter retry budget without committing the failed prelude", async () => {
     const run = harness({

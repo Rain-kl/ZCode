@@ -33,7 +33,7 @@ describe("CLI 旧输出上限从首次导入到请求", () => {
         const chunks: Buffer[] = [];
         for await (const chunk of request) chunks.push(Buffer.from(chunk));
         requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-        // 本地服务只捕获真实 SDK wire；400 终止本轮，避免重试或调用真实模型。
+        // 本地服务只捕获真实 SDK wire；fixture 显式限制一次请求，400 本身属于有界恢复。
         response.writeHead(400, { "content-type": "application/json" });
         response.end(
           JSON.stringify({ error: { type: "invalid_request_error", message: "fixture captured" } }),
@@ -46,6 +46,7 @@ describe("CLI 旧输出上限从首次导入到请求", () => {
       const personalPath = join(directory, "provider_config.json");
       const env = {
         ZCODE_DATA_BASE_DIR: directory,
+        ZCODE_STORAGE_DIR: join(directory, "storage"),
         ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: builtinPath,
         ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: personalPath,
       };
@@ -89,7 +90,11 @@ describe("CLI 旧输出上限从首次导入到请求", () => {
             env,
             providerRegistry: processRuntime.runtime.registryService,
             configuredDefaultModelSelection: processRuntime.configuredDefaultModelSelection,
-            modelAdapter: new AiSdkModelAdapter({ env: {}, network: { noProxy: "*" } }),
+            modelAdapter: new AiSdkModelAdapter({
+              env: {},
+              network: { noProxy: "*" },
+              retry: { maxAttempts: 1 },
+            }),
             sessionStore: store,
             skipUserConfig: true,
             runtimeConfig: { mcp: { enabled: false }, workingDirectory: directory },

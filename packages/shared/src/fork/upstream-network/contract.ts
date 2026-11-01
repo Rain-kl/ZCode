@@ -46,6 +46,12 @@ export function assertUpstreamRequestAllowed(
   if (!isUpstreamRequestAllowed(raw, method, aliases)) {
     const url = new URL(raw);
     // 仅记录 origin/path，不暴露 query 中的一次性 token 或账号凭据。
-    throw new Error(`FORK_UPSTREAM_REQUEST_BLOCKED: ${method} ${url.origin}${url.pathname}`);
+    // FORK(codex-collaboration): 模型恢复必须通过结构化 code 识别请求前门禁，禁止重发被阻止请求。
+    throw Object.assign(
+      new Error(`FORK_UPSTREAM_REQUEST_BLOCKED: ${method} ${url.origin}${url.pathname}`),
+      {
+        code: "FORK_UPSTREAM_REQUEST_BLOCKED",
+      },
+    );
   }
 }

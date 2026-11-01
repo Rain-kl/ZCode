@@ -14,6 +14,23 @@
 
 标记自查：`rg -n "FORK\(|FORK-BEGIN\(" --glob '!AGENTS.md' --glob '!FEATURES.md'`
 
+## Codex 协作迁移与有界模型恢复 (codex-collaboration)
+
+- **状态**：2026-10-30 已实施 Task 1（模型恢复）；调度器、六工具、角色提示词与 mailbox 生命周期待后续任务。
+- **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
+  用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
+- **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
+  未知 API/4xx/5xx/内部 AbortError 自动恢复，明确超窗交给共享预算下的 compact；显式取消、本地配置/权限/网络门禁不重试。
+  partial/EOF 从安全工具锚点恢复，保留已完成副作用；独立/反应式 compact 的 transport fallback 也共用预算。
+  修复迟到 SDK rejection、abort listener 与合法 backoff watchdog；恢复继续投影既有 UI 状态事件。
+- **修改文件**：CLI `contracts/src/fork/codex-collaboration/model-recovery/**`、`adapters/src/fork/codex-collaboration/model-failure-policy/**`；
+  contracts invocation、adapter model runner/retry/failure、core runtime model/loop/compact/recovery/subagent 接线与就近测试；
+  `packages/shared/src/fork/upstream-network/contract.ts`、`architecture-policy.yaml`。逐文件列表与验证见实现文档。
+- **上游改动标记**：`FORK(codex-collaboration)`；新模块均登记 managed/public entrypoints。
+- **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
+- **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
+- **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
+
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。

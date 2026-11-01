@@ -66,6 +66,13 @@ import {
   type RuntimeTaskSnapshot,
 } from "../runtime-task/registry.js";
 
+// FORK(codex-collaboration): 活动请求 deadline 与退避都是声明式 liveness；显式用户取消仍立即生效。
+export interface SubagentActivity {
+  retryDelayMs?: number;
+  modelStreamIdleTimeoutMs?: number;
+  modelRequestActive?: boolean;
+}
+
 export interface ExploreSubagentRuntimeRequest {
   agentId: string;
   agentType: string;
@@ -82,7 +89,8 @@ export interface ExploreSubagentRuntimeRequest {
   prompt: string;
   profile: AgentProfile;
   registerMessageSink?: (sink: RuntimeTaskMessageSink) => void;
-  reportActivity?: () => void;
+  // FORK(codex-collaboration): 合法 API 退避时间不计入 child 无活动超时。
+  reportActivity?: (activity?: SubagentActivity) => void;
   resumeFromStore?: boolean;
   systemPrompt?: string;
   workingDirectory: string;
@@ -1130,7 +1138,8 @@ async function runAgentToCompletion(
   lifecycle: SubagentLifecycle,
   registry: RuntimeTaskRegistry,
   runOptions?: SubagentRunOptions,
-  monitorOptions: { reportActivity?: () => void } = {},
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  monitorOptions: { reportActivity?: (activity?: SubagentActivity) => void } = {},
   executionOptions: SubagentExecutionOptions = {},
 ): Promise<{ events: SessionEvent[]; output: AgentCompletedOutput }> {
   let sessionReady = false;
@@ -1207,7 +1216,8 @@ function createSubagentActivityWatchdog(options: {
   signal: AbortSignal;
   timeoutMs: number;
 }): {
-  reportActivity: () => void;
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  reportActivity: (activity?: SubagentActivity) => void;
   start: () => void;
   stop: () => void;
 } {
@@ -1220,6 +1230,9 @@ function createSubagentActivityWatchdog(options: {
   }
 
   let lastActivityAt = Date.now();
+  // FORK(codex-collaboration): watchdog 唯一拥有等待豁免的截止时间。
+  let retryWaitUntil = 0;
+  let activeStreamTimeoutMs: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const stop = () => {
@@ -1232,41 +1245,65 @@ function createSubagentActivityWatchdog(options: {
   const schedule = () => {
     stop();
     if (options.signal.aborted) return;
-    timer = setTimeout(() => {
-      const idleMs = Date.now() - lastActivityAt;
-      const error = createCoreError(
-        CoreErrorType.ToolTimeout,
-        `Subagent was inactive for ${options.timeoutMs}ms`,
-        {
-          context: {
-            code: AgentErrorCode.CHILD_RUNTIME_FAILED,
-            agentId: options.lifecycle.agentId,
-            agentType: options.request.agentType,
-            idleMs,
-            parentToolCallId: options.request.parentToolCallId,
-            timeoutMs: options.timeoutMs,
+    timer = setTimeout(
+      () => {
+        const idleMs = Date.now() - lastActivityAt;
+        const error = createCoreError(
+          CoreErrorType.ToolTimeout,
+          `Subagent was inactive for ${options.timeoutMs}ms`,
+          {
+            context: {
+              code: AgentErrorCode.CHILD_RUNTIME_FAILED,
+              agentId: options.lifecycle.agentId,
+              agentType: options.request.agentType,
+              idleMs,
+              parentToolCallId: options.request.parentToolCallId,
+              timeoutMs: options.timeoutMs,
+            },
+            recoverable: true,
+            retryable: true,
           },
-          recoverable: true,
-          retryable: true,
-        },
-      );
-      options.logger?.warn("Explore subagent activity watchdog fired", {
-        ...traceContextToLogContext(options.lifecycle.runTraceContext),
-        agentId: options.lifecycle.agentId,
-        agentType: options.request.agentType,
-        event: "subagent.activity_timeout",
-        idleMs,
-        module: "core.subagent",
-        parentToolCallId: options.request.parentToolCallId,
-        status: "failed",
-        timeoutMs: options.timeoutMs,
-      });
-      options.abort(error);
-    }, options.timeoutMs);
+        );
+        options.logger?.warn("Explore subagent activity watchdog fired", {
+          ...traceContextToLogContext(options.lifecycle.runTraceContext),
+          agentId: options.lifecycle.agentId,
+          agentType: options.request.agentType,
+          event: "subagent.activity_timeout",
+          idleMs,
+          module: "core.subagent",
+          parentToolCallId: options.request.parentToolCallId,
+          status: "failed",
+          timeoutMs: options.timeoutMs,
+        });
+        options.abort(error);
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      },
+      Math.max(
+        options.timeoutMs + (activeStreamTimeoutMs ?? 0),
+        retryWaitUntil - Date.now() + options.timeoutMs,
+      ),
+    );
   };
 
-  const reportActivity = () => {
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  const reportActivity = (activity?: SubagentActivity) => {
     lastActivityAt = Date.now();
+    // FORK(codex-collaboration): 活动 SSE 的 idle owner 加本地 setup grace，terminal 清理旧 allowance。
+    if (activity?.modelRequestActive !== undefined) {
+      activeStreamTimeoutMs =
+        activity.modelRequestActive &&
+        Number.isFinite(activity.modelStreamIdleTimeoutMs) &&
+        (activity.modelStreamIdleTimeoutMs ?? 0) > 0
+          ? activity.modelStreamIdleTimeoutMs
+          : undefined;
+      retryWaitUntil = 0;
+    }
+    if (activity?.retryDelayMs !== undefined) {
+      retryWaitUntil = Math.max(
+        retryWaitUntil,
+        lastActivityAt + Math.min(30_000, Math.max(0, activity.retryDelayMs)),
+      );
+    }
     schedule();
   };
 

@@ -5,13 +5,19 @@ import {
   TurnMachineImpl,
 } from "../deps.js";
 import type { MessageId, Model, ToolCallId, TraceContext } from "../deps.js";
-import { createStreamRecoveryAnchorId, createStreamingToolAttemptId } from "../helpers/index.js";
+// FORK(codex-collaboration): 超窗的类型化语义必须先交给 compact，不能被通用断流恢复截走。
+import {
+  createStreamRecoveryAnchorId,
+  createStreamingToolAttemptId,
+  isModelContextExceededMarker,
+} from "../helpers/index.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
 
 // 越过 adapter 重试边界后，SSE stall 只能靠 core recovery 从安全锚点重开流；
 // 只恢复 1 次会让连续短暂抖动直接失败，和模型默认 10 次 retry 的用户预期差距过大。
-const STREAM_RECOVERY_MAX_RETRIES = 10;
+// FORK(codex-collaboration): 所有恢复只读取同一物理请求预算，20 为旧测试/手工 state 的兼容上限。
+const STREAM_RECOVERY_MAX_RETRIES = 20;
 const PREVIOUS_MESSAGE_ANCHOR_SUFFIX = "previous-message-anchor";
 const START_PLAN_BUSY_PROVIDER_CODES = new Set(["3008", "3009", "3010"]);
 const START_PLAN_BUSY_RETRY_PROVIDER_IDS = new Set([
@@ -20,32 +26,19 @@ const START_PLAN_BUSY_RETRY_PROVIDER_IDS = new Set([
 ]);
 const START_PLAN_BUSY_MAIN_TURN_ADMISSION_RETRY_DELAYS_MS = [1_000, 2_000] as const;
 export const START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE =
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
   "Start Plan is busy and automatic model stream recovery reached the maximum retry count.";
-const TRANSIENT_ERROR_CODES = new Set([
-  "model_request_timeout",
-  "model_rate_limited",
-  "model_server_error",
-  "model_network_error",
-  "MODEL_REQUEST_TIMEOUT",
-  "MODEL_RATE_LIMITED",
-  "MODEL_SERVER_ERROR",
-  "MODEL_NETWORK_ERROR",
-]);
-const TRANSIENT_ERROR_REASONS = new Set([
-  "stream_idle_timeout",
-  "rate_limited",
-  "server_error",
-  "network_error",
-  "timeout",
-]);
-
 interface StreamRecoveryAttempt {
   maxRetries: number;
   retryNumber: number;
 }
 
 export function hasStreamRecoveryBudget(state: RegularTurnLoopState): boolean {
-  return state.streamRecoveryRetryCount < STREAM_RECOVERY_MAX_RETRIES;
+  // FORK(codex-collaboration): 不能在 adapter 已耗尽后额外获得 20 个 reconnect。
+  return state.modelRecoveryBudget
+    ? state.modelRecoveryBudget.attempts < state.modelRecoveryBudget.maxAttempts &&
+        state.streamRecoveryRetryCount < state.modelRecoveryBudget.maxAttempts - 1
+    : state.streamRecoveryRetryCount < STREAM_RECOVERY_MAX_RETRIES;
 }
 
 export function isStartPlanBusyStreamRecoveryFailure(error: unknown): boolean {
@@ -85,8 +78,9 @@ export function createStartPlanBusyAutoRetryExhaustedError(error: unknown): Erro
 export function beginStreamRecoveryAttempt(state: RegularTurnLoopState): StreamRecoveryAttempt {
   state.streamRecoveryRetryCount += 1;
   return {
-    retryNumber: state.streamRecoveryRetryCount,
-    maxRetries: STREAM_RECOVERY_MAX_RETRIES,
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    retryNumber: Math.max(state.streamRecoveryRetryCount, state.modelRecoveryBudget?.attempts ?? 0),
+    maxRetries: (state.modelRecoveryBudget?.maxAttempts ?? STREAM_RECOVERY_MAX_RETRIES + 1) - 1,
   };
 }
 
@@ -220,10 +214,8 @@ export async function recoverPartialAssistantOutputFailure(input: {
   state: RegularTurnLoopState;
   turnAbortListener: () => void;
 }): Promise<boolean> {
-  if (
-    input.discardedReasoningBytes + input.discardedTextBytes <= 0 ||
-    !isRetryableStreamRecoveryFailure(input.error)
-  ) {
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  if (!isRetryableStreamRecoveryFailure(input.error)) {
     return false;
   }
 
@@ -294,22 +286,30 @@ function findStartPlanBusyProviderCode(error: unknown): string | undefined {
   return undefined;
 }
 
-function isRetryableStreamRecoveryFailure(error: unknown): boolean {
+// FORK-BEGIN(codex-collaboration)
+export function isRetryableStreamRecoveryFailure(error: unknown): boolean {
+  let retryable = false;
   for (const record of walkErrorRecords(error)) {
-    if (record.retryable === true) return true;
     const context = asRecord(record.context);
-    if (context?.retryable === true) return true;
-    const code = stringValue(record.code) ?? stringValue(context?.code);
-    if (code && TRANSIENT_ERROR_CODES.has(code)) return true;
-    const reason = stringValue(record.reason) ?? stringValue(context?.reason);
-    if (reason && TRANSIENT_ERROR_REASONS.has(reason)) return true;
-    const name = stringValue(record.name);
-    if (name === "ModelStreamIdleTimeoutError") return true;
-    const message = stringValue(record.message);
-    if (message && isTransientMessage(message)) return true;
+    // 必须先扫描完整 cause 链的控制事实；外层 retryable=true 不能覆盖内层取消、门禁或超窗。
+    if (
+      [record.type, record.code, record.reason, context?.type, context?.code, context?.reason].some(
+        (value) => isModelContextExceededMarker(stringValue(value)),
+      ) ||
+      stringValue(record.localControl) !== undefined ||
+      stringValue(context?.localControl) !== undefined ||
+      record.type === "turn_cancelled" ||
+      record.reason === "cancelled" ||
+      context?.reason === "cancelled" ||
+      context?.recoveryBudgetExhausted === true
+    )
+      return false;
+    if (record.retryable === false || context?.retryable === false) return false;
+    retryable ||= record.retryable === true || context?.retryable === true;
   }
-  return false;
+  return retryable;
 }
+// FORK-END(codex-collaboration)
 
 function classifyStreamRecoveryFailure(
   error: unknown,
@@ -341,22 +341,19 @@ function classifyStreamRecoveryFailure(
   return error instanceof Error ? "provider_stream_error" : "unknown";
 }
 
-function isTransientMessage(message: string): boolean {
-  return /\b(stream idle|stream stalled|timeout|timed out|ECONNRESET|EPIPE|ETIMEDOUT)\b/i.test(
-    message,
-  );
-}
+// FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
 
 function* walkErrorRecords(error: unknown): Generator<Record<string, unknown>> {
   let current = error;
   const seen = new WeakSet<object>();
-  for (let depth = 0; depth <= 6; depth += 1) {
+  // FORK(codex-collaboration): 所有包装层共享同一控制事实，循环 cause 由 seen 终止。
+  while (current !== undefined && current !== null) {
     const record = asRecord(current);
     if (!record) return;
     if (seen.has(record)) return;
     seen.add(record);
     yield record;
-    current = record.cause;
+    current = record.cause ?? record.lastError ?? record.error;
   }
 }
 

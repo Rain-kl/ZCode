@@ -106,3 +106,6 @@ export * from "./tracing/local-turn-preparation.js";
 export type { LocalTtftDetail } from "@zcode/shared";
 
 export * from "./interfaces/permission-full-access.js";
+
+// FORK(codex-collaboration): Core 与 Adapter 必须使用同一请求预算合同。
+export * from "./fork/codex-collaboration/model-recovery/contract.js";

@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): watchdog 从统一 model network event 读取退避。
+import { SessionEventType } from "@zcode/contracts";
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
 import {
   RESPOND_TO_COORDINATOR_TOOL_NAME,
@@ -375,7 +377,24 @@ export function createDefaultSubagentPort(
             appVersion: this.appVersion,
             eventSink: {
               onSessionEvent: async (event) => {
-                request.reportActivity?.();
+                // FORK(codex-collaboration): 声明式 retry 状态延长 watchdog 等待，避免退避被误判为死亡。
+                const retryStatus =
+                  event.type === SessionEventType.ModelNetworkStatus
+                    ? (event.payload as { type?: string; delayMs?: number; timeoutMs?: number })
+                    : undefined;
+                request.reportActivity?.(
+                  retryStatus?.type === "model_retry_scheduled"
+                    ? { retryDelayMs: retryStatus.delayMs }
+                    : retryStatus?.type === "model_request_started"
+                      ? {
+                          modelRequestActive: true,
+                          modelStreamIdleTimeoutMs: retryStatus.timeoutMs,
+                        }
+                      : retryStatus?.type === "model_request_failed" ||
+                          retryStatus?.type === "model_request_completed"
+                        ? { modelRequestActive: false }
+                        : undefined,
+                );
                 // child runtime 的事件已经按 childSessionId 落库，但旧链路只把
                 // 少量工具事件镜像给 parent sink，导致 UI 订阅 child topic 后只能拿到打开时
                 // 的 hydration，后续流式内容不会更新。raw child event 只通知父 runtime 的

@@ -14,16 +14,13 @@ export function resolveModelRequestSessionTypeFromTaskType(
   return ModelRequestSessionType.Main;
 }
 
-/**
- * workflow actor（含嵌套 workflow 的 actor）的模型请求拿**无上限**重试预算：模型错误绝不是
- * workflow 错误，由 runner 以最大努力恢复。
- * 其余 session（主会话、subagent、fork…）沿用 adapter 的默认预算。
- */
+// FORK-BEGIN(codex-collaboration)
+/** 所有宿主均受同一有界 API 恢复政策约束；旧 unbounded 枚举仅保留兼容读取。 */
 export function resolveModelRetryBudgetFromTaskType(
-  taskType: SessionTaskType | undefined,
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  _taskType: SessionTaskType | undefined,
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
 ): ModelRetryBudget {
-  if (taskType === "workflow_child" || taskType === "nested_workflow_child") {
-    return ModelRetryBudget.Unbounded;
-  }
   return ModelRetryBudget.Default;
 }
+// FORK-END(codex-collaboration)

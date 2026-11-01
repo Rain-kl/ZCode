@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): 运行时调用显式携带同一预算引用。
+import type { ModelRecoveryBudget } from "@zcode/contracts";
 import type { ToolSearchExecutionContext, ToolSearchMode } from "@zcode/contracts";
 import type { RequestVerificationReason } from "@zcode/shared";
 import type { GetAgentDefinitions, LoadAgentDefinitions } from "../subagent/definitions.js";
@@ -883,6 +885,8 @@ export interface ProviderContextUsageSnapshot {
 }
 
 export interface RunModelTextRequestOptions {
+  // FORK(codex-collaboration): 非序列化调用端口。
+  modelRecoveryBudget?: ModelRecoveryBudget;
   toolSearchEnabled?: boolean;
   abortSignal?: AbortSignal;
   assistantMessageId: MessageId;

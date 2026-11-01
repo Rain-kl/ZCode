@@ -10,7 +10,7 @@ import {
 import { createRuntimeModel } from "../src/runtime/methods/runtime-model.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
-import { createTestModelFactory } from "./test-runtime-model.js";
+import { createTestModelFactory, createTestRuntimeModel } from "./test-runtime-model.js";
 
 // docs/dynamic-workflow/concurrency.md「Where the port is bound」：准入端口与重试预算绑定在 runtime 的模型工厂上，
 // runtime 交出的每一个句柄——turn step 与工具内部的模型调用——都带它们；调用层设什么都压不过。
@@ -29,32 +29,37 @@ type SeenRequest = Record<string, unknown> & Partial<ModelInvocationContext>;
 /** 一轮：主请求发一次 WebSearch，工具内部发流式 web_search 请求，再收口。 */
 function modelFactoryWithWebSearch(requests: SeenRequest[]) {
   let mainRequestCount = 0;
-  return createTestModelFactory({
-    properties: { supportsNativeWebSearch: true },
-    async generateText(request, observation) {
-      requests.push({ ...request, ...observation.invocationContext });
-      mainRequestCount += 1;
-      if (mainRequestCount === 1) {
-        return {
-          finishReason: "tool-calls",
-          model: request.model,
-          providerMetadata: undefined,
-          text: "",
-          toolCalls: [
-            { id: "call_websearch", input: { query: "latest zcode" }, name: "WebSearch" },
-          ],
-          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-        };
-      }
+  const generateMain: NonNullable<
+    Parameters<typeof createTestModelFactory>[0]["generateText"]
+  > = async (request, observation) => {
+    requests.push({ ...request, ...observation.invocationContext });
+    mainRequestCount += 1;
+    if (mainRequestCount === 1) {
       return {
-        finishReason: "stop",
-        model: request.model,
+        finishReason: "tool-calls",
         providerMetadata: undefined,
-        text: "done",
+        text: "",
+        toolCalls: [{ id: "call_websearch", input: { query: "latest zcode" }, name: "WebSearch" }],
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       };
-    },
+    }
+    return {
+      finishReason: "stop",
+      providerMetadata: undefined,
+      text: "done",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    };
+  };
+  return createTestModelFactory({
+    properties: { supportsNativeWebSearch: true },
+    generateText: generateMain,
     async *streamText(request, observation) {
+      if (request.metadata?.querySource !== "web_search_tool") {
+        yield* createTestRuntimeModel({
+          generateText: (innerRequest) => generateMain(innerRequest, observation),
+        }).streamText(request);
+        return;
+      }
       requests.push({ ...request, ...observation.invocationContext });
       yield { type: "start" };
       yield { id: "t", type: "text_start" };
@@ -72,11 +77,11 @@ function modelFactoryWithWebSearch(requests: SeenRequest[]) {
         },
       };
     },
-  } as never);
+  });
 }
 
 describe("runtime model factory binds admission and retry budget (v3 决策 42)", () => {
-  it("WebSearch 工具内部的模型请求带 runtime 的准入端口与 workflow_child 的无上限预算", async () => {
+  it("WebSearch 工具内部的模型请求带 runtime 的准入端口与 workflow_child 的有界默认预算", async () => {
     const admission = admissionStub();
     const requests: SeenRequest[] = [];
     const runtime = createTestAgentRuntime(
@@ -101,9 +106,9 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
     expect(tool).toBeDefined();
     expect(turn).toBeDefined();
     expect(tool!.modelRequestAdmission).toBe(admission);
-    expect(tool!.modelRetryBudget).toBe("unbounded");
+    expect(tool!.modelRetryBudget).toBe("default");
     expect(turn!.modelRequestAdmission).toBe(admission);
-    expect(turn!.modelRetryBudget).toBe("unbounded");
+    expect(turn!.modelRetryBudget).toBe("default");
   });
 
   it.each([
@@ -167,6 +172,6 @@ describe("runtime model factory binds admission and retry budget (v3 决策 42)"
       },
       () => model.generateText({ messages: [{ role: "user", content: "hi" }] } as never),
     );
-    expect(seen).toEqual([[admission, "unbounded"]]);
+    expect(seen).toEqual([[admission, "default"]]);
   });
 });

@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): Core 持有跨断流/降级的模型步骤预算。
+import { createModelRecoveryBudget, runWithModelInvocationContext } from "@zcode/contracts";
 import type { ToolSearchExecutionContext } from "@zcode/contracts";
 import { getTurnTools } from "./turn-tool-visibility.js";
 import { isOffPeakUserTakeover, refreshOffPeakTurnAfterTakeover } from "../off-peak/turn.js";
@@ -154,6 +156,8 @@ async function runModelBackedTurnStepImpl(
   },
   assistantMessageId: MessageId,
 ): Promise<ModelStepResult> {
+  // FORK(codex-collaboration): 只有完整成功后释放；partial/tool settlement 仍是同一失败链。
+  const recoveryBudget = (state.modelRecoveryBudget ??= createModelRecoveryBudget());
   const model = state.model;
   const modelStepIndex = state.modelStepCount;
   const modelStartedAt = Date.now();
@@ -268,6 +272,8 @@ async function runModelBackedTurnStepImpl(
       onStreamTextDelta: (text) => streamingToolCoordinator.recordTextDelta(text),
       onStreamToolCall: (toolCall) => streamingToolCoordinator.accept(toolCall),
       streamRecovery: streamRecoveryRequest,
+      // FORK(codex-collaboration): 继续沿用失败链的剩余预算。
+      modelRecoveryBudget: state.modelRecoveryBudget,
       tools: options.tools,
       toolSearchEnabled: options.toolSearch?.mode === "native",
       traceContext: modelTraceContext,
@@ -292,7 +298,9 @@ async function runModelBackedTurnStepImpl(
       error: finalError,
       executionProviderId: String(executionModelSelection.providerId),
       selectionFallback: state.selectionFallback,
-      turnAborted: state.turnAbortSignal.aborted,
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      turnAborted:
+        state.turnAbortSignal.aborted || recoveryBudget.attempts >= recoveryBudget.maxAttempts,
     });
     const toolCallCountBeforeSelectionFallback = state.toolCallCount;
     const selectionFallbackResult = selectionFallbackMatch
@@ -332,6 +340,8 @@ async function runModelBackedTurnStepImpl(
     }
     if (
       !state.turnAbortSignal.aborted &&
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      recoveryBudget.attempts < recoveryBudget.maxAttempts &&
       isOffPeakUserTakeover(error) &&
       refreshOffPeakTurnAfterTakeover(this, state)
     ) {
@@ -363,7 +373,9 @@ async function runModelBackedTurnStepImpl(
     if (
       !selectionFallbackMatch &&
       !state.turnAbortSignal.aborted &&
-      admissionRetryDelayMs !== undefined
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      admissionRetryDelayMs !== undefined &&
+      recoveryBudget.attempts < recoveryBudget.maxAttempts
     ) {
       // 第二轮及以后 Start Plan 可能在首 token 前被 admission 并发限制拒绝；
       // 这时没有文本或 tool anchor，旧 stream recovery 不会启动，必须关闭空 assistant 后短重试。
@@ -503,6 +515,8 @@ async function runModelBackedTurnStepImpl(
       model,
     );
     if (
+      // FORK(codex-collaboration): 耗尽后不能再用 compact 的独立模型请求重开恢复链。
+      recoveryBudget.attempts < recoveryBudget.maxAttempts &&
       isModelContextExceededError(finalError) &&
       (await recoverModelStepAfterContextExceeded.call(
         this,
@@ -621,6 +635,11 @@ async function runModelBackedTurnStepImpl(
       rawFinishReason,
     });
   }
+  // FORK-BEGIN(codex-collaboration)
+  // SDK 返回不等于语义成功；先排除超窗/空响应，压缩仍须占用同一恢复预算。
+  state.modelRecoveryBudget = undefined;
+  state.streamRecoveryRetryCount = 0;
+  // FORK-END(codex-collaboration)
   // AI SDK 可能把非标准 output-limit 归一化为 other；Runtime 已确认恢复语义后，
   // live 事件与持久化必须统一使用 length，同时由上方 diagnostics 保留 provider 原始事实。
   if (outputTokenContinuation !== "none") result.finishReason = "length";
@@ -850,20 +869,26 @@ async function recoverModelStepAfterContextExceeded(
   }
 
   state.reactiveCompactAttemptedInCurrentModelStep = true;
-  const compactOutcome = await this.reactiveCompactAfterContextExceeded(
-    contextError,
-    state.turnTraceContext,
-    state.events,
-    state.turnAbortSignal,
-    {
-      activeEntries,
-      modelStepIndex,
-      agentListingTools: getTurnTools(this, state),
-      rapidRefillCount: rapidRefill.consecutiveRapidRefills,
-      model: state.model,
-      turnRequestState: state.turnRequestState,
-      getContinuationTools: () => getTurnTools(this, state),
-    },
+  // FORK(codex-collaboration): reactive compact 的物理请求属于触发它的失败链，显式正常压缩不带此预算。
+  const compactOutcome = await runWithModelInvocationContext(
+    { modelRecoveryBudget: state.modelRecoveryBudget },
+    () =>
+      this.reactiveCompactAfterContextExceeded(
+        contextError,
+        state.turnTraceContext,
+        state.events,
+        state.turnAbortSignal,
+        {
+          activeEntries,
+          modelStepIndex,
+          agentListingTools: getTurnTools(this, state),
+          rapidRefillCount: rapidRefill.consecutiveRapidRefills,
+          model: state.model,
+          turnRequestState: state.turnRequestState,
+          getContinuationTools: () => getTurnTools(this, state),
+        },
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      ),
   );
   if (compactOutcome !== "compacted") {
     return false;

@@ -9957,7 +9957,9 @@ describe("AgentRuntime tool loop", () => {
             await toolCompleted.promise;
             yield { type: "text_delta", text: "partial tail" };
             runtime.setSessionModelSelection(createTestModelSelection(selectedModel));
-            throw new Error("Model request timed out.");
+            throw Object.assign(new Error("Model request timed out."), {
+              context: { retryable: true, source: "provider" },
+            });
           },
         } as never),
       },
@@ -10642,18 +10644,18 @@ describe("AgentRuntime tool loop", () => {
     expect(recoveryStartedPayload).toMatchObject({
       failedRequestId: "model_req_partial_recovery_1",
       retryNumber: 1,
-      maxRetries: 10,
+      maxRetries: 20,
     });
     expect(recoveryRetryStartedPayload).toMatchObject({
       failedRequestId: "model_req_partial_recovery_1",
       retryNumber: 1,
-      maxRetries: 10,
+      maxRetries: 20,
     });
     expect(recoveredRequestStartedPayload).toMatchObject({
       streamRecovery: {
         recoveredFromRequestId: "model_req_partial_recovery_1",
         retryNumber: 1,
-        maxRetries: 10,
+        maxRetries: 20,
       },
       type: "model_request_started",
     });
@@ -10734,7 +10736,7 @@ describe("AgentRuntime tool loop", () => {
     expect(retryStartedPayloads.map((payload) => payload.retryNumber)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     ]);
-    expect(retryStartedPayloads.every((payload) => payload.maxRetries === 10)).toBe(true);
+    expect(retryStartedPayloads.every((payload) => payload.maxRetries === 20)).toBe(true);
   });
 
   it("marks Start Plan busy stream recovery exhaustion in the final turn error", async () => {
@@ -10777,10 +10779,10 @@ describe("AgentRuntime tool loop", () => {
     const turnErrorPayload = events.find((event) => event.type === SessionEventType.TurnError)
       ?.payload as any;
 
-    expect(modelCallCount).toBe(11);
+    expect(modelCallCount).toBe(21);
     expect(
       events.filter((event) => event.type === SessionEventType.StreamRecoveryRetryStarted),
-    ).toHaveLength(10);
+    ).toHaveLength(20);
     expect(turnErrorPayload.error).toMatchObject({
       code: "3010",
       message: START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE,
@@ -10985,7 +10987,9 @@ describe("AgentRuntime tool loop", () => {
               },
             };
             yield { type: "text_delta", text: "partial write tail" };
-            throw new Error("Turn failed");
+            throw Object.assign(new Error("Turn failed"), {
+              context: { retryable: true, source: "provider" },
+            });
           },
         } as never),
       },
@@ -11082,7 +11086,10 @@ describe("AgentRuntime tool loop", () => {
               },
             };
             yield { type: "text_delta", text: "partial tail" };
-            throw new Error("Turn failed");
+            // FORK(codex-collaboration): API 错误由 adapter 提供结构化恢复事实。
+            throw Object.assign(new Error("Turn failed"), {
+              context: { retryable: true, source: "provider" },
+            });
           },
         } as never),
       },

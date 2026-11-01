@@ -916,3 +916,60 @@ function createCapturingLogger(): {
     warn,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+it("preserves an existing failed-step budget through compact transport fallback", async () => {
+  const { createModelRecoveryBudget, runWithModelInvocationContext } =
+    await import("@zcode/contracts");
+  const budget = createModelRecoveryBudget(3);
+  budget.claimAttempt();
+  const { modelExecutor, streamContexts, generateContexts } = createScriptedModelExecutor({
+    streamError: new Error("compact stream interrupted"),
+  });
+  const { request } = createRequest();
+  await runWithModelInvocationContext({ modelRecoveryBudget: budget }, () =>
+    runCompactSummaryModelRequest({ modelExecutor, request }),
+  );
+  expect(streamContexts[0]?.modelRecoveryBudget).toBe(budget);
+  expect(generateContexts[0]?.modelRecoveryBudget).toBe(budget);
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it("creates one budget for a standalone compact including transport fallback", async () => {
+  const { modelExecutor, streamContexts, generateContexts } = createScriptedModelExecutor({
+    streamError: new Error("compact stream interrupted"),
+  });
+  const { request } = createRequest();
+  await runCompactSummaryModelRequest({ modelExecutor, request });
+  expect(streamContexts[0]?.modelRecoveryBudget).toBeDefined();
+  expect(generateContexts[0]?.modelRecoveryBudget).toBe(streamContexts[0]?.modelRecoveryBudget);
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it("preserves the last compact API error when no physical fallback attempt remains", async () => {
+  const { createModelRecoveryBudget, runWithModelInvocationContext } =
+    await import("@zcode/contracts");
+  const budget = createModelRecoveryBudget(2);
+  budget.claimAttempt();
+  const original = new Error("last provider diagnostic");
+  const generateText = vi.fn(async () => DEFAULT_RESULT);
+  const modelExecutor = {
+    generateText,
+    streamText() {
+      return (async function* (): AsyncGenerator<ModelStreamEvent> {
+        budget.claimAttempt();
+        throw original;
+      })();
+    },
+  };
+  const { request } = createRequest();
+  await expect(
+    runWithModelInvocationContext({ modelRecoveryBudget: budget }, () =>
+      runCompactSummaryModelRequest({ modelExecutor, request }),
+    ),
+  ).rejects.toBe(original);
+  expect(generateText).not.toHaveBeenCalled();
+});
+// FORK-END(codex-collaboration)

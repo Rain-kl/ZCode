@@ -1,5 +1,9 @@
+// FORK(codex-collaboration): compact 独立调用也必须拥有跨 transport 的单一预算。
+import { createModelRecoveryBudget } from "@zcode/contracts";
 import {
   ModelErrorCode,
+  // FORK(codex-collaboration): reactive compact 继承失败模型步骤的共享预算。
+  getCurrentModelInvocationContext,
   runWithModelInvocationContext,
   traceContextToLogContext,
 } from "../deps.js";
@@ -22,6 +26,8 @@ import {
 import type { RuntimeModelTextResult } from "../types.js";
 
 type CompactSummaryModelRequest = {
+  // FORK(codex-collaboration): 一次 compact 的 transport fallback 共用单个 owner。
+  modelRecoveryBudget?: ModelInvocationContext["modelRecoveryBudget"];
   toolSearchEnabled?: boolean;
   abortSignal?: AbortSignal;
   maxOutputTokens?: number;
@@ -78,6 +84,11 @@ export async function runCompactSummaryModelRequest(
   const streamingLogicalCallId = crypto.randomUUID();
   const streamingRequest: CompactSummaryModelRequest = {
     ...input.request,
+    // FORK(codex-collaboration): 普通 compact 自建预算，reactive compact 继承原失败链。
+    modelRecoveryBudget:
+      input.request.modelRecoveryBudget ??
+      getCurrentModelInvocationContext()?.modelRecoveryBudget ??
+      createModelRecoveryBudget(),
     modelCall: {
       ...input.request.modelCall,
       callCause: input.request.modelCall?.callCause ?? "initial",
@@ -269,6 +280,9 @@ async function handleCompactSummaryStreamFailure(
   ) {
     throw error;
   }
+  // FORK(codex-collaboration): 耗尽时保留最后实际 API 的诊断，不让空预算 adapter guard 覆盖 cause。
+  const budget = input.request.modelRecoveryBudget;
+  if (budget && budget.attempts >= budget.maxAttempts) throw error;
   const normalizedError = error instanceof Error ? error : normalizeStreamError(error);
 
   // compact summary 的 stream delta 从未进入 session/UI，在 content block
@@ -322,6 +336,9 @@ function cleanRequest(request: CompactSummaryModelRequest) {
 
 function invocationContext(request: CompactSummaryModelRequest) {
   return {
+    // FORK(codex-collaboration): stream/nonstream fallback 都不能重新开启物理请求预算。
+    modelRecoveryBudget:
+      request.modelRecoveryBudget ?? getCurrentModelInvocationContext()?.modelRecoveryBudget,
     metadata: request.metadata,
     modelCall: request.modelCall,
     statusSink: request.statusSink,
@@ -340,7 +357,6 @@ function isCompactSummarySetupFailure(error: unknown): boolean {
   }
 
   if (streamFailurePhase === "request_setup") {
-
     // 其他同步 setup 或明确 HTTP 拒绝属于原请求错误，不能用第二种 transport 掩盖。
     return context?.httpResponseStatus !== 404;
   }

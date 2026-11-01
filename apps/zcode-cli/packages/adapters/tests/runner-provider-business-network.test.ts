@@ -478,7 +478,11 @@ describe("AiSdkModelAdapter provider business network retries", () => {
           throw new Error("not used");
         },
       };
-      const adapter = adapterWithRuntime(runtime);
+      const adapter = new AiSdkModelAdapter({
+        registry: registry(),
+        runtime,
+        retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 30_000 },
+      });
 
       const resultPromise = executeAdapterGenerateText(adapter, {
         metadata: {
@@ -493,13 +497,13 @@ describe("AiSdkModelAdapter provider business network retries", () => {
       await waitForRetryEvents(events, 1);
 
       expect(events[2]).toMatchObject({
-        delayMs: 41_000,
+        delayMs: 30_000,
         nextAttempt: 2,
         reason: "rate_limited",
         type: "model_retry_scheduled",
       });
 
-      await vi.advanceTimersByTimeAsync(41_000);
+      await vi.advanceTimersByTimeAsync(30_000);
       await expect(resultPromise).resolves.toMatchObject({
         text: "ok after provider retry-after",
       });
@@ -547,7 +551,11 @@ describe("AiSdkModelAdapter provider business network retries", () => {
           } as never;
         },
       };
-      const adapter = adapterWithRuntime(runtime);
+      const adapter = new AiSdkModelAdapter({
+        registry: registry(),
+        runtime,
+        retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 30_000 },
+      });
 
       const resultPromise = (async () => {
         const streamed: ModelStreamEvent[] = [];
@@ -568,14 +576,14 @@ describe("AiSdkModelAdapter provider business network retries", () => {
       await waitForRetryEvents(events, 1);
 
       expect(events[2]).toMatchObject({
-        delayMs: 37_000,
+        delayMs: 30_000,
         nextAttempt: 2,
         reason: "rate_limited",
         type: "model_retry_scheduled",
       });
       expect(attempts).toBe(1);
 
-      await vi.advanceTimersByTimeAsync(37_000);
+      await vi.advanceTimersByTimeAsync(30_000);
       await expect(resultPromise).resolves.toMatchObject([
         { id: "1", text: "ok after provider retry-after", type: "text_delta" },
         { finishReason: "stop", type: "finish" },

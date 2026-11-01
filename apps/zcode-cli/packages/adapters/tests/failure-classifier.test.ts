@@ -1,3 +1,4 @@
+// FORK(codex-collaboration): 所有实际 provider 错误现在进入有界恢复，分类与原始诊断仍保留。
 import { APICallError } from "ai";
 import { describe, expect, it } from "vitest";
 import { classifyModelFailure, inspectProviderFailure } from "../src/model/failure-classifier.js";
@@ -222,7 +223,7 @@ describe("classifyModelFailure context length errors", () => {
     expect(classifyModelFailure(error)).toMatchObject({
       code: "invalid_model_request",
       reason: "invalid_request",
-      retryable: false,
+      retryable: true,
       statusCode,
     });
   });
@@ -238,7 +239,7 @@ describe("classifyModelFailure TLS errors", () => {
     expect(classifyModelFailure(error)).toMatchObject({
       code: "model_request_failed",
       reason: "tls_error",
-      retryable: false,
+      retryable: true,
     });
   });
 
@@ -280,7 +281,7 @@ describe("classifyModelFailure provider business codes", () => {
         message: "当前系统繁忙，请稍后再试或升级账户。",
         reason: "rate_limited",
         retryReason: "rate_limited",
-        retryable: false,
+        retryable: true,
         statusCode: 429,
       });
     }
@@ -589,7 +590,7 @@ describe("classifyModelFailure provider business codes", () => {
       );
 
       expect(failure).toMatchObject({
-        retryable: false,
+        retryable: true,
         statusCode: undefined,
       });
     }
@@ -614,7 +615,7 @@ describe("classifyModelFailure provider business codes", () => {
     expect(failure).toMatchObject({
       code: "model_request_failed",
       reason: "unknown",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
@@ -633,7 +634,7 @@ describe("classifyModelFailure provider business codes", () => {
       code: "model_rate_limited",
       reason: "rate_limited",
       retryReason: "rate_limited",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
@@ -678,7 +679,7 @@ describe("classifyModelFailure provider business codes", () => {
         reason: "rate_limited",
         retryAfterMs: expectedRetryAfterMs,
         retryReason: "rate_limited",
-        retryable: false,
+        retryable: true,
         statusCode: 429,
       });
     },
@@ -714,7 +715,7 @@ describe("classifyModelFailure provider business codes", () => {
     );
 
     expect(failure).toMatchObject({
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
@@ -781,7 +782,7 @@ describe("classifyModelFailure provider business codes", () => {
       code: "model_rate_limited",
       message,
       reason: "rate_limited",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
@@ -808,7 +809,7 @@ describe("classifyModelFailure provider business codes", () => {
       code: "model_rate_limited",
       message,
       reason: "rate_limited",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
     expect(inspectProviderFailure(error)).toEqual({
@@ -1064,3 +1065,45 @@ function providerBusinessError(input: {
     statusCode: input.statusCode,
   });
 }
+
+it("keeps nested typed SDK local validation outside API recovery", async () => {
+  const { InvalidPromptError } = await import("ai");
+  const original = new InvalidPromptError({ prompt: [], message: "messages must be nonempty" });
+  const wrapped = new Error("SDK wrapper", {
+    cause: new Error("transport wrapper", { cause: original }),
+  });
+  expect(classifyModelFailure(wrapped)).toMatchObject({
+    code: "invalid_model_request",
+    retryable: false,
+  });
+});
+
+it("distinguishes the SDK model-version type from provider API errors", async () => {
+  const { UnsupportedModelVersionError } = await import("ai");
+  const local = new UnsupportedModelVersionError({
+    version: "v1",
+    provider: "test",
+    modelId: "model",
+  });
+  const api = new APICallError({
+    message: "provider unavailable",
+    url: "http://127.0.0.1/model",
+    requestBodyValues: {},
+    statusCode: 503,
+    isRetryable: false,
+  });
+  expect(classifyModelFailure(local)).toMatchObject({
+    code: "invalid_model_request",
+    localControl: "invalid_request",
+    retryable: false,
+  });
+  expect(classifyModelFailure(new Error("wrapper", { cause: local }))).toMatchObject({
+    retryable: false,
+  });
+  expect(classifyModelFailure(api)).toMatchObject({
+    code: "model_request_failed",
+    retryable: true,
+    statusCode: 503,
+  });
+  expect(classifyModelFailure(api)).not.toHaveProperty("localControl");
+});

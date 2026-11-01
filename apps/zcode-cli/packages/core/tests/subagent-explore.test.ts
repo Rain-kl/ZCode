@@ -1355,12 +1355,9 @@ describe("Explore subagent", () => {
     expect(parentRequests).toHaveLength(2);
     expect(childRequests).toHaveLength(2);
     expect(httpClientPort.request).toHaveBeenCalledTimes(1);
-    expect(webFetchProcessingRequests).toHaveLength(1);
-    expect(
-      webFetchProcessingRequests[0].messages
-        .map((message: any) => modelMessageContentToText(message.content))
-        .join("\n"),
-    ).toContain("http client port is wired");
+    // FORK(codex-collaboration): WebFetch direct-return 已移除二次模型处理，验证子请求保留真实工具结果。
+    expect(webFetchProcessingRequests).toHaveLength(0);
+    expect(JSON.stringify(childRequests[1].messages)).toContain("http client port is wired");
   });
 
   it("projects a custom profile prompt and tool allowlist", async () => {
@@ -4561,3 +4558,93 @@ function createMockMcpPort(overrides: Partial<McpPort> = {}): McpPort {
     ...overrides,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+it("keeps a child alive during a declared model retry backoff", async () => {
+  const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-subagent-backoff-"));
+  const sessionId = createSessionId("retry-backoff-parent");
+  const port = createExploreSubagentPort({
+    outputRootDir,
+    inactivityTimeoutMs: 20,
+    emitParentEvent: async () => {},
+    runExploreAgent: async (request) => {
+      await request.onSessionReady?.();
+      request.reportActivity?.({ retryDelayMs: 100 });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return { response: "backoff completed", events: [], traceId: request.traceContext.traceId };
+    },
+  });
+  const result = await port.run({
+    agentType: "Explore",
+    description: "Retry backoff",
+    parentToolCallId: createToolCallId("backoff"),
+    prompt: "recover",
+    sessionId,
+    trace: { traceId: createTraceId(), sessionId, turnId: createTurnId("backoff") },
+    turnId: createTurnId("backoff"),
+    workingDirectory: "/tmp",
+    workspaceRoot: "/tmp",
+  });
+  expect(result.status).toBe("completed");
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it("lets the adapter own an active retried stream beyond the base watchdog window", async () => {
+  const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-active-retry-watchdog-"));
+  const sessionId = createSessionId("active-retry-watchdog");
+  const started = Promise.withResolvers<void>();
+  const port = createExploreSubagentPort({
+    outputRootDir,
+    inactivityTimeoutMs: 20,
+    emitParentEvent: async () => {},
+    runExploreAgent: async (request) => {
+      await request.onSessionReady?.();
+      request.reportActivity?.({ modelStreamIdleTimeoutMs: 180_000, modelRequestActive: true });
+      request.reportActivity?.({ modelRequestActive: false });
+      request.reportActivity?.({ retryDelayMs: 0 });
+      request.reportActivity?.({ modelStreamIdleTimeoutMs: 210_000, modelRequestActive: true });
+      started.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 209_000));
+      request.reportActivity?.({ modelRequestActive: false });
+      return {
+        response: "adapter completed before its idle deadline",
+        events: [],
+        traceId: request.traceContext.traceId,
+      };
+    },
+  });
+  vi.useFakeTimers();
+  try {
+    let outcome: string | undefined;
+    const run = port
+      .run({
+        agentType: "Explore",
+        description: "active model recovery",
+        parentToolCallId: createToolCallId("active-stream"),
+        prompt: "recover",
+        sessionId,
+        trace: { traceId: createTraceId(), sessionId, turnId: createTurnId("active-stream") },
+        turnId: createTurnId("active-stream"),
+        workingDirectory: "/tmp",
+        workspaceRoot: "/tmp",
+      })
+      .then(
+        () => {
+          outcome = "completed";
+        },
+        () => {
+          outcome = "failed";
+        },
+      );
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(180_001);
+    expect(outcome).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(28_999);
+    await run;
+    expect(outcome).toBe("completed");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+// FORK-END(codex-collaboration)

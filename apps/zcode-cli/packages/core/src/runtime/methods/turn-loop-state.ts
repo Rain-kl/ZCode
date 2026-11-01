@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): 逻辑模型步骤拥有预算，失败恢复不重置。
+import type { ModelRecoveryBudget } from "@zcode/contracts";
 import { OFF_PEAK_EXECUTION_TOOL_DENYLIST } from "@zcode/shared";
 import type {
   CompactPhase,
@@ -125,6 +127,8 @@ export interface RegularTurnLoopState {
   /** 最终成功 assistant boundary；与 stableProductStartMessageId 成对出现。 */
   stableBoundaryAssistantMessageId?: MessageId;
   streamRecoveryRetryCount: number;
+  // FORK(codex-collaboration): adapter 重试、断流和 provider fallback 共用。
+  modelRecoveryBudget?: ModelRecoveryBudget;
   tokenCount: number;
   toolCallCount: number;
   /** 当前 Turn 的 provider-local history；Turn 结束后直接释放。 */

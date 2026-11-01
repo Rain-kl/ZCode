@@ -24,6 +24,7 @@ function fixture({
   toolOutput = false,
   chunkError = false,
   refreshFails = false,
+  maxAttempts = 2,
 } = {}) {
   let attempts = 0;
   const seen: string[] = [];
@@ -33,7 +34,7 @@ function fixture({
         idle: { kind: "anthropic", accountMode: "off-peak", baseURL: "https://model.test" },
       },
     }),
-    retry: { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+    retry: { maxAttempts, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
     runtime: {
       async generateText(options) {
         attempts++;
@@ -113,14 +114,25 @@ function fixture({
 }
 
 describe("真实 runner 的 PAT 401 恢复", () => {
-  it.each([false, true])("stream=%s 无输出 401 换 PAT 后重试，即使普通预算为 1", async (stream) => {
-    const f = fixture();
-    await f.run(stream);
-    expect(f.seen).toEqual(["pat-1", "pat-2"]);
-    expect(f.refresh.mock.calls[1]?.[0]).toMatchObject({
-      expectedAccountScope: scope,
-      rejectedProjectTokenFingerprint: await projectAccessTokenFingerprint("pat-1"),
-    });
+  it.each([false, true])(
+    "stream=%s 无输出 401 换 PAT 后重试，共用两次物理请求预算",
+    async (stream) => {
+      const f = fixture();
+      await f.run(stream);
+      expect(f.seen).toEqual(["pat-1", "pat-2"]);
+      expect(f.attempts()).toBe(2);
+      expect(f.refresh.mock.calls[1]?.[0]).toMatchObject({
+        expectedAccountScope: scope,
+        rejectedProjectTokenFingerprint: await projectAccessTokenFingerprint("pat-1"),
+      });
+    },
+  );
+  it.each([false, true])("stream=%s PAT 修复不能超出单次物理请求预算", async (stream) => {
+    const f = fixture({ maxAttempts: 1 });
+    await expect(f.run(stream)).rejects.toThrow();
+    expect(f.attempts()).toBe(1);
+    expect(f.seen).toEqual(["pat-1"]);
+    expect(f.refresh).toHaveBeenCalledTimes(1);
   });
   it.each([false, true])("stream=%s 二次 401 终止", async (stream) => {
     const f = fixture({ alwaysFail: true });
