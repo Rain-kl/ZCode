@@ -201,7 +201,10 @@ test("workflow gates desktop publication on Server and preserves versioned Serve
     "utf8",
   );
   assert.match(workflow, /build-source-server:/);
-  assert.match(workflow, /needs: \[resolve, build-macos, build-windows, build-source-server\]/);
+  assert.match(
+    workflow,
+    /needs: \[resolve, verify, unit-tests, build-macos, build-windows, build-source-server\]/,
+  );
   assert.match(workflow, /needs\.build-source-server\.result == 'success'/);
   const serverPublication = workflow.indexOf("source-server-release.mjs publish");
   const desktopPublication = workflow.indexOf("- name: Publish release");

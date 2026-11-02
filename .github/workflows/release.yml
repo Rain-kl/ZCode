@@ -121,7 +121,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
 
-      # 这里只跑静态检查，不需要原生模块和 Electron 运行时，跳过安装脚本可省掉一次 Electron 下载。
+      # 安装阶段先跳过脚本，再按测试依赖单独补装 Electron，避免执行全部 workspace 安装脚本。
       # 网络抖动时 pnpm 的默认重试次数不够；失败详情写成 annotation，便于无管理员权限时排查。
       - name: Install dependencies
         shell: bash
@@ -171,15 +171,11 @@ jobs:
       - name: Install Electron binary used by unit tests
         run: pnpm --filter @zcode/desktop rebuild electron
 
-      # 依赖契约与功能单测：上游 API 形状/默认值/语义变更的第一信号，见 AGENTS.md「依赖契约测试」。
-      - name: Unit tests
-        run: pnpm test:unit
-
       - name: Fork contract tests
         run: pnpm test:unit:fork
 
-      - name: Source Server publication contracts
-        run: node --test scripts/test/source-server-release.test.mjs
+      - name: Release workflow and publication contracts
+        run: node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs
 
       # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
       # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
@@ -188,11 +184,74 @@ jobs:
         continue-on-error: true
         run: node scripts/licenses.mjs check --strict
 
+  unit-tests:
+    name: Unit tests (${{ matrix.shard }}/4)
+    needs: [resolve]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      # 分片运行在独立 runner；保留全部失败信息，不取消其余分片。
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # 安装阶段先跳过脚本，再按测试依赖单独补装 Electron，避免执行全部 workspace 安装脚本。
+      # 网络抖动时 pnpm 的默认重试次数不够；失败详情写成 annotation，便于无管理员权限时排查。
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --ignore-scripts \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=10000 \
+              --fetch-retry-maxtimeout=60000 2>&1 | tee /tmp/pnpm-install.log
+            status=${PIPESTATUS[0]}
+            if [ "$status" -eq 0 ]; then break; fi
+            # hoisted linker 偶发丢失 esbuild 临时目录；只重试明确的临时安装错误。
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/pnpm-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          set -e
+          if [ "$status" -ne 0 ]; then
+            detail=$(tail -n 20 /tmp/pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=pnpm install failed::${detail}"
+            exit "$status"
+          fi
+
+      # apps/zcode-cli/packages/core/test 的单测会 import 上游 CLI 包（tool 入口等），
+      # 而这些包的 exports 指向 dist：verify 只 install 不 build，缺 dist 会 ERR_MODULE_NOT_FOUND
+      # 让整组失败。这里按依赖链构建 core 与 adapters（storage 协议用例直接 import bootstrap
+      # 源码，而 bootstrap 依赖 @zcode/adapters/storage 的 dist），其余组只 import 源码。
+      - name: Build CLI packages used by unit tests
+        run: pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." --filter "@zcode/adapters" run build
+
+      # --ignore-scripts 省掉了 Electron 下载，但 desktopAgentBytecode 用例要真实执行 Electron
+      # 二进制；只补装 Electron，保留其余安装脚本跳过的加速效果。
+      - name: Install Electron binary used by unit tests
+        run: pnpm --filter @zcode/desktop rebuild electron
+
+      # 官方分片覆盖根配置所有项目；fork-isolated 仍按原配置在每片内串行。
+      - name: Unit tests
+        run: pnpm test:unit --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    needs: [resolve, verify]
-    # canary 和 stable 都必须先通过完整 verify。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
+    needs: [resolve]
+    # 构建与门禁并行；仅 publish 可在所有门禁成功后写入 Release。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     strategy:
       fail-fast: false
       # 只发布 Apple Silicon 包。若将来要出 Intel 包，必须在 Intel runner 上构建：
@@ -324,9 +383,9 @@ jobs:
 
   build-windows:
     name: Build Windows (x64)
-    needs: [resolve, verify]
-    # canary 和 stable 都必须先通过完整 verify。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
+    needs: [resolve]
+    # 构建与门禁并行；仅 publish 可在所有门禁成功后写入 Release。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     runs-on: windows-2025
     timeout-minutes: 150
     env:
@@ -417,8 +476,8 @@ jobs:
 
   build-source-server:
     name: Build companion Source Server (Linux and macOS)
-    needs: [resolve, verify]
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -484,11 +543,9 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [resolve, build-macos, build-windows, build-source-server]
-    # 必须显式写条件：无 if 的作业隐式条件是 success()，而它要求依赖图上**所有祖先**作业成功，
-    # 被跳过的 verify 是 publish 的传递祖先，会把 publish 一起判掉（dev 渠道实测踩到）。
-    # 所有通道都要求 verify 以及桌面和配套 Server 构建成功，避免只发布桌面半套产物。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-source-server.result == 'success' }}
+    needs: [resolve, verify, unit-tests, build-macos, build-windows, build-source-server]
+    # 修复依据：构建不再以 verify 为祖先，发布必须直接检查全部门禁，失败/跳过/取消均禁止发布。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' && needs.unit-tests.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-source-server.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

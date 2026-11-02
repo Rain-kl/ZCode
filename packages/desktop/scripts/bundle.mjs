@@ -286,6 +286,14 @@ function normalizeArch(rawArch) {
   return normalizedArch;
 }
 
+export function createBundlePreparationPlan({ skipPrepare = false, skipBuild = false } = {}) {
+  // 修复依据：build 脚本自身包含 prepare；bundle 必须统一调度，避免 Agent 重建两次及跳过标志失效。
+  return [
+    ...(!skipPrepare ? ["prepare:runtime-assets"] : []),
+    ...(!skipBuild ? ["build:no-runtime-assets"] : []),
+  ];
+}
+
 function parseArgs(argv) {
   const options = {
     os: process.env.ZCODE_TARGET_OS ?? null,
@@ -732,12 +740,8 @@ async function main() {
     process.exit(0);
   }
 
-  if (!skipPrepare) {
-    run(pnpmCommand, ["prepare:runtime-assets"], buildEnv);
-  }
-
-  if (!skipBuild) {
-    run(pnpmCommand, ["build"], buildEnv);
+  for (const script of createBundlePreparationPlan({ skipPrepare, skipBuild })) {
+    run(pnpmCommand, [script], buildEnv);
   }
 
   await runTimedAsync("bundle:electron-builder", () =>
