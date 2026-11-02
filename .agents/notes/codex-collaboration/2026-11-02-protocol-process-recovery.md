@@ -18,3 +18,8 @@
 fixture 使用构建后的包依赖，运行前需要构建 bootstrap 的依赖闭包。它不证明生产启动包装器的
 账号/遥测/MCP 初始化，也不证明新六工具 runtime 或 GUI。新 runtime 接线后仍需重新构建和执行。
 测试构造过程中的缺失 fixture 失败不是产品 bug 的 RED 证据，本次不据此宣称修复了新产品缺陷。
+
+后续断言要求每次输入的 running→terminal，以及在所有实际关闭完成后写出的标记，避免上一轮迟到
+终态或 lifecycle 兜底退出码 0 导致假成功。新增断言曾捕获施工中 bootstrap SRC 调用新方法、Core
+dist 尚未重建的不一致；重新构建 contracts/Core 后 3/3，通过双审。清理错误聚合正文保留各原因，
+EOF 与强杀后 close 各 5 秒预算，置于 15 秒 hook 内。最终 runtime 完成后仍统一重建并复验。

@@ -67,6 +67,8 @@ try {
     server.disposeProjections();
     await store.close();
     model.dispose();
+    // 区分真正完成资源清理与 lifecycle 的兜底退出 deadline。
+    process.stderr.write("RECOVERY_FIXTURE_SHUTDOWN_COMPLETE\n");
   } catch (error) {
     exitCode = 1;
     console.error(error);

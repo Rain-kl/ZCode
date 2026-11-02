@@ -28,12 +28,19 @@ afterEach(async () => {
       errors.push(error);
     }
   }
-  if (errors.length) throw new AggregateError(errors, "Protocol recovery fixture cleanup failed");
-});
+  if (errors.length) throw cleanupError("Protocol recovery fixture cleanup failed", errors);
+}, 15_000);
 
-function deadline<T>(promise: Promise<T>, detail: () => string): Promise<T> {
+function cleanupError(context: string, errors: unknown[]): AggregateError {
+  return new AggregateError(
+    errors,
+    `${context}\n${errors.map((error) => (error instanceof Error ? error.stack : String(error))).join("\n")}`,
+  );
+}
+
+function deadline<T>(promise: Promise<T>, detail: () => string, timeoutMs = 25_000): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(detail())), 25_000);
+    const timer = setTimeout(() => reject(new Error(detail())), timeoutMs);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -183,7 +190,7 @@ async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
     const errors: unknown[] = [];
     child.stdin.end();
     try {
-      expect(await deadline(exit, () => `EOF shutdown timed out\n${stderr}`)).toEqual({
+      expect(await deadline(exit, () => `EOF shutdown timed out\n${stderr}`, 5_000)).toEqual({
         code: 0,
         signal: null,
       });
@@ -193,7 +200,7 @@ async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     try {
       // 进程退出不代表 stdio 已关闭；保留原始超时并等待 close 后再释放 SQLite 目录。
-      await deadline(closed, () => `Child did not close after cleanup\n${stderr}`);
+      await deadline(closed, () => `Child did not close after cleanup\n${stderr}`, 5_000);
     } catch (error) {
       errors.push(error);
     } finally {
@@ -201,10 +208,11 @@ async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
     }
     try {
       expect(stderr).not.toMatch(/unhandledRejection|uncaughtException|ZCODE_PROCESS_DIAGNOSTIC/u);
+      expect(stderr).toContain("RECOVERY_FIXTURE_SHUTDOWN_COMPLETE");
     } catch (error) {
       errors.push(error);
     }
-    if (errors.length) throw new AggregateError(errors, "Protocol child cleanup failed");
+    if (errors.length) throw cleanupError("Protocol child cleanup failed", errors);
   });
   let rpcId = 0;
   async function rpc(method: string, params: unknown): Promise<unknown> {
@@ -265,11 +273,19 @@ async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
     },
     send: (text: string) => command("sendText", sessionId, { text }),
     waitTerminal: (from: number) =>
-      until(() =>
-        controls(from).find((control) =>
-          ["completedSuccess", "error", "completedInterrupted"].includes(control.phase),
-        ),
-      ),
+      until(() => {
+        let started = false;
+        for (const control of controls(from)) {
+          if (control.phase === "running") started = true;
+          if (
+            started &&
+            ["completedSuccess", "error", "completedInterrupted"].includes(control.phase)
+          ) {
+            return control;
+          }
+        }
+        return undefined;
+      }),
   };
 }
 

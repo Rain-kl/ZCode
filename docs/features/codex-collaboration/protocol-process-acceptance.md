@@ -31,6 +31,11 @@
 修正后独立复跑 3/3 通过并批准。
 这是 Task3b 接线前的恢复证据；新运行时完成后需要重新构建并复验。
 
+后续强化断言：每次输入必须先观察到新的 running 再接受终态；退出后还必须存在实际完成 server、
+projection、store 和 model 清理的标记，不能仅凭 deadline 导致的退出码 0 推断清理成功。
+此断言曾抓出施工中 bootstrap 源码与旧 Core dist 混用的缺失方法；重建 contracts/Core 后
+3/3 通过，独立质量复跑同样 3/3 通过并批准。Task3b 最终提交仍须统一重建复验。
+
 ```sh
 PATH="$PWD/node_modules/.bin:$PATH" pnpm --dir apps/zcode-cli exec turbo run build --filter=@zcode/bootstrap...
 node apps/zcode-cli/node_modules/vitest/vitest.mjs run --root apps/zcode-cli packages/bootstrap/tests/fork-codex-protocol-recovery/process.test.ts
