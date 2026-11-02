@@ -411,3 +411,11 @@ dispose 调用同步封住新的普通 controller admission，避免新消息边
 RED：跨 setImmediate 检查 browser 已提前关闭；紧接 followup 提前返回忙错误；dispose 排队后新消息
 不能立即拒绝，三项均实际失败。GREEN：真实 runtime+生产关闭测试5文件45/45；controller3文件54/54。
 测试同时断言模型仍 gate 时共享依赖可用、browser未关闭，以及后续模型使用同一childSessionId。
+
+### Task3b spec 修正：显式 profile 的父权限交集
+
+独立实际runtime发现父allowlist排除了Write时，显式profile.tools仍能给child新增Write。
+统一以父完整可授权工具目录与父获准MCP启动描述符为上界，再与profile请求相交并应用deny。
+MCP/server selectors展开成具体名称，不能把广泛selector带到child绕过父限制；不依赖本轮ToolSearch曝光。
+四个真实RED覆盖fork all/none及两种MCPselector，修复后runtime/profile/ToolSearch7文件62/62 GREEN。
+保留fixture的profile/memory/deny/session断言，仅将父embedded分支不可用Grep标记替换为实际可用Bash。

@@ -22,6 +22,7 @@ import {
   filterSubagentChildToolNames,
 } from "../../subagent/tool-policy.js";
 import { toMcpToolName } from "../../mcp/index.js";
+import { getToolRuleName } from "../../tool/tool-visibility.js";
 import {
   SUBAGENT_COMPUTER_USE_UNAVAILABLE_CODE,
   SUBAGENT_COMPUTER_USE_UNAVAILABLE_MESSAGE,
@@ -64,29 +65,36 @@ export function resolveSubagentToolAllowlist(
   ]);
   const inheritsAvailableTools =
     request.allowedTools.length === 0 || request.allowedTools.includes("*");
-  if (inheritsAvailableTools) {
-    const parentAllowedMcpToolNames = filterMcpToolNamesByParentAllowlist(
-      visibleMcpToolNames,
-      this.config.toolAllowlist,
-    );
-    const availableToolNames = [
-      ...this.getTools()
-        // child MCP 必须与 parent 启动 snapshot 使用同一批 descriptor，
-        // 不能从另一份 registry 视图重新推导。
-        .filter((tool) => tool.permission?.permission !== "mcp")
-        .map((tool) => tool.name),
-      ...parentAllowedMcpToolNames,
-    ];
-    return identityTools(
-      [...new Set(availableToolNames)]
-
-        .filter((toolName) => filterSubagentChildToolNames([toolName], disallowedRules).length > 0),
-    );
-  }
-  if (request.allowedTools.length > 0) {
-    return identityTools(filterSubagentChildToolNames(request.allowedTools, disallowedRules));
-  }
-  return identityTools([]);
+  const parentAllowedMcpToolNames = filterMcpToolNamesByParentAllowlist(
+    visibleMcpToolNames,
+    this.config.toolAllowlist,
+  );
+  const availableToolNames = [
+    ...this.getTools()
+      // child MCP 必须与 parent 启动 snapshot 使用同一批 descriptor，
+      // 不能从另一份 registry 视图重新推导。
+      .filter((tool) => tool.permission?.permission !== "mcp")
+      .map((tool) => tool.name),
+    ...parentAllowedMcpToolNames,
+  ];
+  // profile 只能做父能力的减法；MCP selector 展开成具体父已获准工具，不能原样传给 child 扩权。
+  return identityTools(
+    [...new Set(availableToolNames)].filter(
+      (toolName) =>
+        (inheritsAvailableTools ||
+          request.allowedTools.some((rule) => matchesChildToolRule(toolName, rule))) &&
+        !disallowedRules.some((rule) => matchesChildToolRule(toolName, rule)) &&
+        filterSubagentChildToolNames([toolName], disallowedRules).length > 0,
+    ),
+  );
+}
+function matchesChildToolRule(toolName: string, rule: string): boolean {
+  const name = getToolRuleName(rule);
+  return (
+    name === toolName ||
+    (toolName.startsWith("mcp__") &&
+      (name === "mcp" || (isMcpServerSelector(name) && toolName.startsWith(name.slice(0, -1)))))
+  );
 }
 
 function filterMcpToolNamesByParentAllowlist(

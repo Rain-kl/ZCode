@@ -46,6 +46,9 @@ all 继承 spawn 时的父选择；none 可用实际目录解析覆盖。agent_t
 不随父配置后来删除/修改 profile 而换角色。MCP/skills/CUA 等活动资源仍通过当前宿主受控端口装配，
 不保存凭据或句柄。父 runtime 已卸载时，nested child 的新 prepare 明确失败并给出 parent/path，
 要求先恢复实际 parent；不得借 root 的历史、模型或权限配置冒充 parent。
+child 的工具只能取父当前实际可用工具与 profile 请求工具的交集，再应用父/profile deny。
+fork none/all 均不能借显式 profile 恢复父已排除的 Write 等工具。MCP 的 mcp/server selector 只可
+展开为父启动快照中实际获准的具体工具名，不能带宽泛 selector 到 child 重新扩大权限；deny 优先。
 
 六工具创建的执行均为异步。Host 的 `ChildModelExecutionOverride.background: deny` 明确拒绝 spawn
 以及会启动 idle/terminal child 的 followup；对 running child 的 followup 只交付消息，不受此拒绝影响。

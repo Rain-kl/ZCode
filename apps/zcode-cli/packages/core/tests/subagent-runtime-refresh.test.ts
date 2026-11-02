@@ -48,7 +48,7 @@ describe("subagent turn snapshot", () => {
     async ({ source, mode }) => {
       const profile = {
         ...snapshot("old").activeAgents[0]!,
-        tools: ["Grep"],
+        tools: ["Bash"],
         memory: "project" as const,
         ...(mode === "deny-edit" ? { disallowedTools: ["Edit"] } : {}),
       };
@@ -96,13 +96,13 @@ describe("subagent turn snapshot", () => {
         await vi.waitFor(() => expect(children).toHaveLength(2));
         for (const request of children) {
           const tools = request.tools?.map((tool) => tool.name);
-          expect(tools).toContain("Grep");
+          expect(tools).toContain("Bash");
           expect(tools).not.toContain("Read");
           expect(tools?.includes("Write")).toBe(mode === "enabled" || mode === "deny-edit");
           expect(tools?.includes("Edit")).toBe(mode === "enabled");
         }
         // 有效工具是 Runtime 的派生视图，不能回写 Host 配置或跨会话污染快照。
-        expect(profile.tools).toEqual(["Grep"]);
+        expect(profile.tools).toEqual(["Bash"]);
       } finally {
         await runtime.closeBrowserSession();
       }

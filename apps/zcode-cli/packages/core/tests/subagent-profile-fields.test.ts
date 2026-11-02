@@ -34,7 +34,7 @@ describe("single-field profile refresh through parent tools", () => {
       const updated = initial();
       if (field === "reasoning") updated.modelSelection!.options!.reasoningLevel = "high";
       if (field === "prompt") updated.systemPrompt = "PROFILE_CHANGED";
-      if (field === "tools") updated.tools = ["Grep"];
+      if (field === "tools") updated.tools = ["Bash"];
       scenario.update(updated);
       await scenario.turn([send(original.agentId, "RESUME_INPUT")]);
       await scenario.waitCompleted(original.agentId, 2);
@@ -101,7 +101,7 @@ describe("single-field profile refresh through parent tools", () => {
       const updated: AgentProfile = {
         ...initial(),
         systemPrompt: "PROFILE_NEXT_PARENT",
-        tools: ["Grep"],
+        tools: ["Bash"],
         modelSelection: {
           providerId: "custom",
           modelId: "replacement",
