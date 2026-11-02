@@ -2,12 +2,36 @@
 
 ## 当前状态
 
-2026-11-01：Task 1（有界模型 API 恢复）已实施，最终验证已完成，等待独立 spec/quality review。
+2026-11-02：Task 1（有界模型 API 恢复）已实施并通过独立 spec/quality review。
+Task 2 控制器通过双审，53 条回归；Task3a 正在实现合同、工具条目与角色，尚未切换默认 runtime。
 调度器、六工具迁移、角色提示词和 mailbox 生命周期属于后续任务，不代表本功能已全部交付。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
 Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
 2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；
-相关回归通过，桌面 GUI 回放仍有独立启动阻塞，详细结果见本文末节。
+相关回归通过，桌面启动阻塞已修复，隔离与默认模式实际 Electron 回放均为 5/5；
+见 [desktop-steer-acceptance.md](desktop-steer-acceptance.md)。
+
+## Task3a：六工具合同与旧入口移除
+
+2026-11-02：提供 strict 输入/输出、caller-scoped 端口、六个普通 ToolEntry、条件角色和消息信封。
+公开入口为 contracts/core 各自的 fork 模块；本阶段尚未接入默认 child driver，不能宣称六工具已在产品默认启用。
+Task3b 将统一根/子 runtime、持久 mailbox、冷恢复及原生 UI stop 的 controller 路由。
+
+用户要求完全移除旧工具：删除 Agent/Task、SendMessage、RespondToCoordinator 的 handler 和注册；
+移除旧开关、后台 AgentOutput 别名与旧工具指导。TaskOutput/TaskStop 拒绝 local_agent，
+Bash、dynamic workflow 与原 local_workflow 文件读取仍保留。fork 移除守卫与真实目录测试共同防回归。
+
+配置使用 subagents.delegationMode/maxTotalAgents/maxDepth/maxLoadedChildren；默认 explicit/4/1/3。
+Zod 3 contracts 与 Zod 4 adapter 通过公开 safeParse 结果桥接，逐字段错误完整保留，避免导出私有依赖类型。
+继承全部历史时拒绝模型/推理覆盖；等待零毫秒交给 controller 夹紧，深度要求正整数，与 Task2 一致。
+角色来源与调整见新模块 NOTICE/LICENSE；不复制不可用宿主语法，按实际权限/深度描述 spawn。
+
+RED：旧 Agent 仍能注册、spawn_agent 不存在、消息空成功被通用输出占位改写、后台工具仍接受 child、
+分层配置 getAll 缺字段及覆盖丢失。修复后新工具/配置与后台正向回归 75/75，另新增 resident ToolSearch 回归 9/9；独立 node:test 工具档 3/3。
+根 typecheck/lint 通过，完整 CLI typecheck 32/32；architecture 与 fork-removals 通过。所改 TS 在所属包执行 scoped lint 零错误。
+完整 CLI lint 已执行，仍有原有两个 max-lines 错误：adapters/src/fs/index.ts、bootstrap/src/zcode-protocol-v4/product-projection.ts，
+以及 71 条警告。未将它们记为通过。包原始 core lint 另报原有 session-fork/background-tasks 行数。
+实际 provider 空 tool result、child 权限/消息等待、完整 fork 与冷 UI 下钻仍由 Task3b/4 验证。
 
 ## Task 1：单一物理请求预算
 

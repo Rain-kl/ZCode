@@ -1,0 +1,15 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from [Ratatui](https://github.com/ratatui/ratatui), licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+ZCode adaptation: Codex multi-agent role instructions, message envelopes and tool shapes
+Source: https://github.com/openai/codex/tree/3026a8e54e0f48c4d8074cd700f35b0697abc329
+Sources: codex-rs/prompts/src/model_messages/multi_agent.rs;
+codex-rs/prompts/src/multi_agent_instructions.rs;
+codex-rs/core/src/context/inter_agent_message.rs;
+codex-rs/core/src/context/inter_agent_completion_message.rs;
+codex-rs/core/src/tools/handlers/multi_agents_spec.rs.
+Modified for ZCode system sections, actual capabilities, strict schemas and shared runtime.

@@ -42,6 +42,8 @@ export function mergeConfigs(...configs: PrioritizedConfig[]): RuntimeConfigPatc
         : inputConfig;
     const previousHooks = result.hooks;
     const previousPlugins = result.plugins;
+    // FORK(codex-collaboration): Object.assign 前捕获旧层，避免新 patch 清空低优先级字段。
+    const previousSubagents = result.subagents;
     Object.assign(result, config);
 
     // Deep merge nested objects
@@ -136,6 +138,8 @@ export function mergeConfigs(...configs: PrioritizedConfig[]): RuntimeConfigPatc
     if (config.toolConcurrency) {
       result.toolConcurrency = { ...result.toolConcurrency, ...config.toolConcurrency };
     }
+    // FORK(codex-collaboration): 项目覆盖不得丢失其他层声明的容量或委派模式。
+    if (config.subagents) result.subagents = { ...previousSubagents, ...config.subagents };
     if (config.modelAnomalyGuard) {
       result.modelAnomalyGuard = {
         ...result.modelAnomalyGuard,

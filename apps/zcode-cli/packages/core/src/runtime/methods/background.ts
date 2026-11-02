@@ -15,10 +15,7 @@ import type {
   RuntimeBackgroundStopTarget,
   TypedRuntimeBackgroundStopTarget,
 } from "./background-stop-types.js";
-import type {
-  RuntimeTaskSnapshot,
-  RuntimeTaskType,
-} from "../../runtime-task/registry.js";
+import type { RuntimeTaskSnapshot, RuntimeTaskType } from "../../runtime-task/registry.js";
 import {
   hasRunningBackgroundRuntimeTask,
   isTerminalRuntimeTask,
@@ -110,7 +107,8 @@ export async function stopBackgroundTask(
   }
 
   if (target.taskType === "local_agent") {
-    return stopLocalAgentBackgroundTask.call(this, target);
+    // FORK(codex-collaboration): 子代理停止不再交给旧 SubagentPort；唯一新入口在协作控制器。
+    return unsupportedBackgroundStopResult(target);
   }
 
   if (target.taskType === "local_bash") {
@@ -174,32 +172,6 @@ function unsupportedBackgroundStopResult(
     status: target.currentStatus,
     taskId: target.taskId,
     ...(target.taskType ? { type: target.taskType } : {}),
-  };
-}
-
-async function stopLocalAgentBackgroundTask(
-  this: AgentRuntimeInternal,
-  target: TypedRuntimeBackgroundStopTarget,
-): Promise<RuntimeBackgroundStopResult> {
-  if (!this.subagentPort?.stopTask) {
-    return unsupportedBackgroundStopResult(target);
-  }
-  const snapshot = await this.subagentPort.stopTask(target.taskId);
-  if (!snapshot) {
-    return {
-      ok: false,
-      reason: "background_task_not_found",
-      status: "lost",
-      taskId: target.taskId,
-      ...(target.taskType ? { type: target.taskType } : {}),
-    };
-  }
-  return {
-    command: commandFromRuntimeTask(target.registryTask, target.existing),
-    ok: true,
-    status: snapshot.status,
-    taskId: target.taskId,
-    type: "local_agent",
   };
 }
 
@@ -299,9 +271,7 @@ export async function cancelRunningRuntimeBackgroundTasks(
   const traceContext = input.traceContext ?? this.rootTraceContext;
   const tasks = Object.values(this.runtimeTaskRegistry.all()).filter(
     (task) =>
-      task.type === "local_bash" &&
-      task.isBackgrounded === true &&
-      task.status === "running",
+      task.type === "local_bash" && task.isBackgrounded === true && task.status === "running",
   );
 
   for (const task of tasks) {
@@ -396,8 +366,7 @@ export function buildBackgroundTaskPayload(
 function backgroundInfoFromRuntimeTask(task: RuntimeTaskSnapshot): BackgroundTaskInfo {
   return {
     taskId: task.taskId,
-    toolCallId:
-      typeof task.parentToolCallId === "string" ? task.parentToolCallId : undefined,
+    toolCallId: typeof task.parentToolCallId === "string" ? task.parentToolCallId : undefined,
     toolName: toolNameFromRuntimeTaskType(task.type),
     cancellable: task.status === "running",
     command: commandFromRuntimeTask(task, undefined),
@@ -457,9 +426,7 @@ function toolNameFromRuntimeTaskType(type: RuntimeTaskType): string {
   }
 }
 
-function isTerminalBackgroundTaskInfoStatus(
-  status: BackgroundTaskInfoStatus | undefined,
-): boolean {
+function isTerminalBackgroundTaskInfoStatus(status: BackgroundTaskInfoStatus | undefined): boolean {
   return Boolean(status && status !== "running");
 }
 

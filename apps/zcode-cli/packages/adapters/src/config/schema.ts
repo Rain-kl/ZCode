@@ -1,6 +1,22 @@
 /* eslint-disable max-lines -- zcode-cli 配置 schema 需要集中维护文件解析和 provider 继承，拆散会让配置语义更难对齐。 */
 import { z } from "zod";
-import type { RuntimeConfigPatch } from "@zcode/contracts";
+// FORK(codex-collaboration): 配置文件和运行时共享可执行的协作 schema。
+import {
+  CollaborationConfigPatchSchema,
+  type CollaborationConfig,
+  type RuntimeConfigPatch,
+} from "@zcode/contracts";
+
+// FORK(codex-collaboration): 两包分别使用 Zod 3/4；在本包 schema 桥接公开验证结果，保留逐字段错误。
+const collaborationConfigPatchSchema = z
+  .unknown()
+  .transform((value, context): Partial<CollaborationConfig> => {
+    const result = CollaborationConfigPatchSchema.safeParse(value);
+    if (result.success) return result.data;
+    for (const issue of result.error.issues)
+      context.addIssue({ code: "custom", path: issue.path, message: issue.message });
+    return z.NEVER;
+  });
 
 const stringRecordSchema = z.record(z.string(), z.string());
 const unknownRecordSchema = z.record(z.string(), z.unknown());
@@ -292,6 +308,8 @@ export const ZCodeConfigFileSchema = z
     storage: storageSchema.optional(),
     network: networkSchema.optional(),
     features: featuresSchema.optional(),
+    // FORK(codex-collaboration): 六工具模式与容量只从声明配置读取。
+    subagents: collaborationConfigPatchSchema.optional(),
     memory: memorySchema.optional(),
     mcp: mcpSchema.optional(),
     plugins: pluginsSchema.optional(),
@@ -418,6 +436,8 @@ function parsedConfigFileToRuntimePatch(parsed: ZCodeConfigFile): RuntimeConfigP
   if (parsed.logging) config.logging = parsed.logging;
   if (parsed.ui) config.ui = parsed.ui;
   if (parsed.toolConcurrency) config.toolConcurrency = parsed.toolConcurrency;
+  // FORK(codex-collaboration): 已校验 patch 进入现有优先级合并链。
+  if (parsed.subagents) config.subagents = parsed.subagents;
   if (parsed.modelAnomalyGuard) config.modelAnomalyGuard = parsed.modelAnomalyGuard;
   if (parsed.hooks) config.hooks = parsed.hooks;
 

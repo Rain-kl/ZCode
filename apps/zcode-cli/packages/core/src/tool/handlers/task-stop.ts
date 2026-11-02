@@ -49,6 +49,14 @@ const taskStopHandler: ToolHandler = async (input, context) => {
     );
   }
 
+  // FORK(codex-collaboration): 模型只能经协作控制器中断子代理，不能走旧后台入口。
+  if (context.runtimeTaskRegistry?.get(taskId)?.type === "local_agent") {
+    throw taskStopError("Use interrupt_agent to interrupt a subagent task", 1, {
+      taskId,
+      toolCallId: context.toolCallId,
+    });
+  }
+
   const result = await context.backgroundTaskControlPort.stopBackgroundTask(taskId, {
     // 模型自己停的：终态通知会说「stopped by you」，而不是把它写成用户的决定。
     initiator: "model",

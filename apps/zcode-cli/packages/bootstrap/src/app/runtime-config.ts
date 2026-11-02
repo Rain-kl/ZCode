@@ -167,6 +167,8 @@ export function resolveAppRuntimeConfig(input: {
       input.pluginHooks,
     ),
     subagents: {
+      // FORK(codex-collaboration): 先合并文件配置，再由显式 runtime patch 覆盖。
+      ...configResult.config.subagents,
       ...options.runtimeConfig?.subagents,
       enabled: options.runtimeConfig?.subagents?.enabled ?? configResult.config.features.subagent,
       outputRootDir: options.runtimeConfig?.subagents?.outputRootDir ?? subagentOutputRootDir,

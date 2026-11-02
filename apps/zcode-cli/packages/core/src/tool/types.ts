@@ -6,6 +6,7 @@ import type { McpToolUiDescriptor } from "@zcode/shared/mcp-apps";
 
 import type {
   CollaborationMode,
+  CollaborationToolPort,
   AutomationPort,
   BrowserControlPort,
   CoordinatorResponsePort,
@@ -138,6 +139,8 @@ export interface BackgroundTaskControlPort {
 }
 
 export interface ToolExecutionContext {
+  // FORK(codex-collaboration): 调用者身份绑定在运行时端口，不能接受模型伪造 caller。
+  collaborationPort?: CollaborationToolPort;
   toolSearch?: ToolSearchExecutionContext;
   toolCallId: string;
   /**
@@ -369,6 +372,8 @@ export interface ToolEntry extends ToolContractDeclaration {
     context: ToolInputResolutionContext,
   ) => ToolInputAdjustmentResult;
   formatModelContent?: (output: unknown) => ModelMessageContent;
+  // FORK(codex-collaboration): Codex 消息成功必须空文本，不能被通用空输出占位改写。
+  preserveEmptyModelContent?: boolean;
   formatPersistedModelContent?: (
     input: ToolPersistedModelContentInput,
   ) => ModelMessageContent | undefined;

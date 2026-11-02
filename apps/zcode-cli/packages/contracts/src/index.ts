@@ -109,3 +109,5 @@ export * from "./interfaces/permission-full-access.js";
 
 // FORK(codex-collaboration): Core 与 Adapter 必须使用同一请求预算合同。
 export * from "./fork/codex-collaboration/model-recovery/contract.js";
+// FORK(codex-collaboration): 工具跨边界必须从公共合同进入，避免调用方深层耦合。
+export * from "./fork/codex-collaboration/tools/contract.js";

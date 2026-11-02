@@ -514,6 +514,8 @@ async function executeToolCallImpl(
         },
         skillPort: deps.skillPort,
         subagentPort: deps.subagentPort,
+        // FORK(codex-collaboration): handler 仅得到当前调用者绑定的有限接口。
+        collaborationPort: deps.collaborationPort,
         coordinatorResponsePort: deps.coordinatorResponsePort,
         workflowSubmitPort: deps.workflowSubmitPort,
         workflowEscalatePort: deps.workflowEscalatePort,

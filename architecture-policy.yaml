@@ -2,6 +2,28 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: codex-collaboration-tools-contract
+    roots:
+      - apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/tools
+      - apps/zcode-cli/packages/contracts/test/fork-codex-collaboration-tools
+    managed: true
+    requires: [zcode-cli]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/tools/contract.ts
+    layers: { contract: . }
+    owner: agent
+  - id: codex-collaboration-tools
+    roots:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools
+      - apps/zcode-cli/packages/core/src/tool/handlers/task-output-projection.ts
+      - apps/zcode-cli/packages/core/test/fork-codex-collaboration-tools
+    managed: true
+    requires: [zcode-cli, codex-collaboration-tools-contract, codex-collaboration-controller]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/contract.ts
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/module.ts
+    layers: { app: . }
+    owner: agent
   - id: codex-collaboration-controller
     roots:
       - apps/zcode-cli/packages/core/src/fork/codex-collaboration

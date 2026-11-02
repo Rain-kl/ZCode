@@ -1,10 +1,13 @@
+// FORK(codex-collaboration): 用户要求新六工具替换，当前指导不得指向旧入口。
 // ============================================================
 // Plan Mode Tool Provider Prompts
 // ============================================================
 
-export function createEnterPlanModeProviderDescription(options: {
-  embeddedSearchEnabled?: boolean;
-} = {}): string {
+export function createEnterPlanModeProviderDescription(
+  options: {
+    embeddedSearchEnabled?: boolean;
+  } = {},
+): string {
   const explorationTools = options.embeddedSearchEnabled
     ? "`find`/Glob, `grep`/Grep, and Read"
     : "Glob, Grep, and Read";
@@ -49,7 +52,7 @@ Only skip EnterPlanMode for simple tasks:
 - Single-line or few-line fixes (typos, obvious bugs, small tweaks)
 - Adding a single function with clear requirements
 - Tasks where the user has given very specific, detailed instructions
-- Pure research/exploration tasks (use the Agent tool instead)
+- Pure research/exploration tasks (use the spawn_agent tool instead)
 
 ## What Happens in Plan Mode
 

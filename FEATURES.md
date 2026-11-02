@@ -31,6 +31,7 @@
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
 - **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
 - **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
+- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。默认 runtime driver 仍待 Task3b，不代表迁移完成；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
 
 ### 持久协作控制器（2026-11-02）
 

@@ -29,8 +29,13 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
   "EnterPlanMode",
   "ExitPlanMode",
   "AskUserQuestion",
-  "Agent",
-  "SendMessage",
+  // FORK(codex-collaboration): 用户要求统一六工具，旧名字不得从工具档重新进入。
+  "spawn_agent",
+  "send_message",
+  "followup_task",
+  "interrupt_agent",
+  "list_agents",
+  "wait_agent",
   "ReadSessionContext",
   "TaskOutput",
   "TaskStop",
@@ -59,10 +64,8 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
  */
 export const FORK_TOOL_MODE_STANDARD_EXTRA_TOOL_NAMES = [
   "js",
-  "Task",
   "submit_result",
   "escalate",
-  "RespondToCoordinator",
   "ReplyToChannel",
   "ToolSearch",
   "DeferredToolCall",

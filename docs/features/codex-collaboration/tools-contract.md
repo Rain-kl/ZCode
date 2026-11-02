@@ -11,6 +11,7 @@ spawn 仅返回 `{task_name}`，真实 agentId、childSessionId、parentId、pat
 send/followup 成功模型文本为空；interrupt 返回 `{previous_status}`；list 返回 `{agents}`；
 wait 返回 `{message,timed_out}`，消息正文通过唯一邮箱路径消费，不在 wait 重复输出。
 
+六工具为常驻直接调用工具，ToolSearch 目录保留发现能力，不要求 DeferredToolCall 包装。
 工具沿现有 registry → 权限 → hook → executor → schema/结果预算 → ToolSearch 链路执行。
 2026-11-02 用户明确要求全面切换，不做旧工具兼容。Agent/Task/SendMessage/
 RespondToCoordinator 的注册、直接执行、ToolSearch、别名和旧提示词均移除，
@@ -29,7 +30,7 @@ list 包含已加载 root，按规范路径排序。模型结果不携带私有�
 
 ## 配置与提示词
 
-唯一归一化来源 `subagents.collaboration`：delegationMode 默认 explicit，可显式选 proactive；
+唯一归一化来源 `subagents`：delegationMode 默认 explicit，可显式选 proactive；
 maxTotalAgents=4（包含根）、maxDepth=1、maxLoadedChildren=3。不新增环境变量。
 Task3b 从持久化根配置恢复这些设置，并先恢复已保存 root agentId/traceId 再构造控制器。
 fork_turns 默认 all，all 禁止 model/reasoning_effort 覆盖；none 允许经实际模型目录验证的覆盖。

@@ -149,6 +149,11 @@ export interface AgentRuntimeConfig {
     mode?: "auto" | "force";
   };
   subagents?: {
+    // FORK(codex-collaboration): 所有角色共享同一归一化配置来源。
+    delegationMode?: "explicit" | "proactive";
+    maxTotalAgents?: number;
+    maxDepth?: number;
+    maxLoadedChildren?: number;
     enabled?: boolean;
     // foreground subagent 没有任何 child 事件的最大静默时间；默认对齐模型流 idle timeout。
     inactivityTimeoutMs?: number;
