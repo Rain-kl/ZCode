@@ -87,8 +87,8 @@
 ### 移除首次启动 WebDAV 引导（2026-11-03）
 
 - **需求与行为**：首次打开不再被同步配置拦住；删除 Root 的首屏门禁与专用页面，不伪造跳过状态。设置 → 同步、已有自动同步、冲突弹窗与 footer 状态保留。
-- **修改文件与标记**：`packages/ui/src/Root.tsx`（保留冲突导入的 `FORK(local-mode)`）、删除 `fork/local-mode/FirstRunWebdavScreen.tsx`、精简 `WebdavConnectionForm.tsx`，就近回归与 settings 待审 E2E。
-- **移除守卫**：`scripts/fork-removal-rules.mjs` 登记首屏文件缺席、Root 门禁符号缺席与同步/冲突接线保留；历史 firstRunSkipped 继续兼容读取。
+- **修改文件与标记**：`packages/ui/src/Root.tsx`（保留冲突导入的 `FORK(local-mode)`）、删除 `fork/local-mode/FirstRunWebdavScreen.tsx`、精简 `WebdavConnectionForm.tsx`，并删除首屏专用翻译和状态字段。
+- **清理范围**：不新增替代逻辑；删除上次为此次移除新增的守卫、接线断言与未验证 E2E。同步服务的正常配置和已有测试保留。
 - **文档**：[design](docs/features/local-mode/design.md#2026-11-03移除首次启动-webdav-配置引导)、[implementation](docs/features/local-mode/implementation.md#2026-11-03首次启动不再要求-webdav)。验证状态见 implementation，不宣称未执行的桌面 E2E 已通过。
 
 ### 功能增强：是否注入动态提示词 / skills 清单（2026-09-29）

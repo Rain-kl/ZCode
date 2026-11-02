@@ -25,8 +25,6 @@ export interface ForkWebdavState {
   lastRemoteKey: string | null;
   /** 存在未解决的冲突；重启后仍提示用户处理。 */
   pendingConflict: boolean;
-  /** 首屏引导被跳过（不再自动弹 WebDAV 登录卡）。 */
-  firstRunSkipped: boolean;
   /** 本机标识，写入备份包 manifest.source。 */
   source: string;
 }
@@ -42,7 +40,6 @@ export function createDefaultForkWebdavState(source = "unknown"): ForkWebdavStat
     lastSyncAt: null,
     lastRemoteKey: null,
     pendingConflict: false,
-    firstRunSkipped: false,
     source,
   };
 }
@@ -69,7 +66,6 @@ function normalizeState(raw: unknown, source: string): ForkWebdavState {
     lastSyncAt: asString(record.lastSyncAt, null),
     lastRemoteKey: asString(record.lastRemoteKey, null),
     pendingConflict: record.pendingConflict === true,
-    firstRunSkipped: record.firstRunSkipped === true,
     source: asString(record.source, source) ?? source,
   };
 }

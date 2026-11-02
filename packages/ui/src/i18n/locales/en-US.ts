@@ -3206,12 +3206,6 @@ const enUS: Record<string, string> = {
     "Both this machine and the remote changed. Choose which side to keep.",
   "settings.configSync.conflictUseRemote": "Restore remote",
   "settings.configSync.conflictKeepLocal": "Keep local and back up",
-  "settings.configSync.firstRun.title": "Sync your ZCode setup",
-  "settings.configSync.firstRun.description":
-    "Connect your own WebDAV and your interface settings plus custom model providers are backed up automatically, ready to restore on another machine. You can skip this and configure it later in Settings -> Sync.",
-  "settings.configSync.firstRun.skip": "Skip",
-  "settings.configSync.firstRun.done": "Connected. Your configuration is synced.",
-  "settings.configSync.firstRun.enter": "Enter ZCode",
   "settings.configSync.status.notConfigured": "WebDAV not connected",
   "settings.configSync.status.connected": "WebDAV connected",
   "settings.configSync.status.syncing": "Syncing...",

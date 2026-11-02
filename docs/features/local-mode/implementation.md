@@ -40,7 +40,7 @@
 
 ## 3. 数据、状态与接口
 
-- 状态文件：`{configDir}/v2/fork-webdav.json`（url/username/directory/autoSync/retentionLimit/lastUploadedHash/lastSyncAt/lastRemoteKey/pendingConflict/firstRunSkipped/source），原子写、损坏回落默认值。
+- 状态文件：`{configDir}/v2/fork-webdav.json`（url/username/directory/autoSync/retentionLimit/lastUploadedHash/lastSyncAt/lastRemoteKey/pendingConflict/source），原子写、损坏回落默认值。
 - 凭据：`credentials.json` 的 `fork:webdav:password`（机器派生密钥加密，不参与同步）。
 - 远端：`<目录>/zcode-YYYYMMDD-HHmmss.zip`，包内 `manifest.json`（`schemaVersion/createdAt/appVersion/contentHash/source`）+ `setting.json`（白名单字段）+ `provider_config.json`。
 - 同步字段白名单：见设计 6.5（18 个键，`local-snapshot.ts` 落实现）。
@@ -91,10 +91,14 @@
 
 ## 2026-11-03：首次启动不再要求 WebDAV
 
-- Root 移除首屏 import、门禁 hook 与提前返回，删除专用页面。设置连接表单移除仅供首屏使用的 onSkip；保留连接动作及原服务。
-- 状态唯一所有者仍是 host，UI 不伪造 configured/firstRunSkipped，不写凭据或同步基准。
-- `scripts/fork-removal-rules.mjs` 的 local-mode 项登记移除不变量；FEATURES 更新现行行为。
-- 验证计划：先跑新回归观察旧 Root/页面/skip 仍存在导致失败，再执行相关 Root、同步表单回归、类型/Lint/架构/移除守卫。
-- 桌面交互候选：`packages/desktop/test/e2e/settings/manual-review/pending/webdav-optional-startup.test.ts`。
-  干净 HOME 启动不点 WebDAV 跳过，进入应用，再打开同步设置见连接表单；GUI/安装包实际结果待验证后记录。
-- 提交时用户明确要求「不用验证，直接提交」，因此不追加验证；本次不宣称完整门禁或桌面 E2E 已通过。
+删除 Root 首屏门禁、专用页面与表单跳过动作。设置、自动同步及冲突弹窗不变。
+复核时发现本地 renderer 产物生成于 00:38，仍含旧首屏；删除页面提交时间为 00:45。
+当前未发现对应 Electron 测试进程，无法追溯截图具体加载路径；不能据此宣称缓存机制有缺陷。
+按用户要求继续删除首屏翻译、firstRunSkipped 字段/状态处理、上次新增的守卫及两个测试文件，
+不新增替代代码或无效断言。
+
+重新执行 `build:no-runtime-assets` 成功；00:50 更新的 renderer 共 2742 个 JS 文件，
+首屏组件/门禁、firstRunSkipped、首屏翻译键与标题文本均无匹配。
+现有 WebDAV 测试 40 条通过，typecheck 与 lint 通过（102 warnings / 0 errors）。
+architecture:check --changed 因非本次改动的 `packages/shared/src/off-peak-execution.ts`
+未受管而失败；未修改该文件或更新架构基线。未重新启动 GUI，不能将产物检查称为 GUI 回放通过。

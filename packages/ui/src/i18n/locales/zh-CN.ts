@@ -3001,12 +3001,6 @@ const zhCN: Record<string, string> = {
   "settings.configSync.conflictBanner": "本机与远端都有改动，需要选择保留哪一侧。",
   "settings.configSync.conflictUseRemote": "用远端最新恢复",
   "settings.configSync.conflictKeepLocal": "以本地为准备份",
-  "settings.configSync.firstRun.title": "同步你的 ZCode 配置",
-  "settings.configSync.firstRun.description":
-    "连接你自己的 WebDAV 后，界面配置与自定义模型供应商会自动备份到远端，换机器时可直接恢复。也可以跳过，之后在「设置 → 同步」里配置。",
-  "settings.configSync.firstRun.skip": "跳过",
-  "settings.configSync.firstRun.done": "已连接，配置已同步。",
-  "settings.configSync.firstRun.enter": "进入 ZCode",
   "settings.configSync.status.notConfigured": "WebDAV 未连接",
   "settings.configSync.status.connected": "WebDAV 已连接",
   "settings.configSync.status.syncing": "正在同步…",
