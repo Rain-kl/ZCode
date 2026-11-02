@@ -8,5 +8,5 @@ export type * from "./contract.js";
 export const codexCollaborationToolsModule = {
   id: "codex-collaboration-tools",
   provides: ["collaboration-tool-entries", "collaboration-role"],
-  requires: ["zcode-cli", "codex-collaboration-tools-contract", "codex-collaboration-controller"],
+  requires: ["zcode-cli", "shared", "codex-collaboration-tools-contract", "codex-collaboration-controller"],
 } as const;

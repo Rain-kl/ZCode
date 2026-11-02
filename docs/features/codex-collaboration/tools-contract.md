@@ -42,6 +42,13 @@ agent_type 必须命中宿主传入的可用 profile 集，未知项携带名称
 能够 spawn，但仍可按已注册权限消息/续跑/等待。主代理同样只描述实际可用工具。
 不复制 Codex functions.exec/recipient、analysis/final channel 等 ZCode 未提供的宿主语法。
 
+EnterPlanMode 的探索提示同样依据本次 registry 注册条件：仅当 includeCollaboration 启用、
+allowedTools 允许 spawn_agent 且 disallowedTools 未禁止时才推荐该工具；否则指导直接使用
+当前搜索/读取工具探索。不得因 embedded search 开关推断协作能力。`/workflow` 内置命令
+明确要求 CreateWorkflow，不得以 spawn_agent 替代，也不再引用已删除的旧代理工具。
+ToolEntry factory 仅负责 schema 校验；可用 profile 与模型目录的语义校验由 Task3b
+宿主 adapter 负责，并须覆盖未知 profile/模型携带可用集合上下文的真实运行用例。
+
 ## 验收
 
 - strict schema 拒绝未知字段、非法路径名、all+override；wait 默认 30 秒、10 秒下限、3600 秒上限。

@@ -208,6 +208,11 @@ export function registerBuiltInTools(
 ): void {
   const allowedTools = options.allowedTools ? new Set(options.allowedTools) : undefined;
   const disallowedTools = createToolRuleNameSet(options.disallowedTools);
+  // FORK(codex-collaboration): 与下方注册使用同一组归一化权限，防止计划提示推荐被禁工具。
+  const spawnAgentAvailable =
+    options.includeCollaboration === true &&
+    (!allowedTools || allowedTools.has("spawn_agent")) &&
+    !disallowedTools?.has("spawn_agent");
 
   for (const entry of builtInTools) {
     if (
@@ -223,7 +228,10 @@ export function registerBuiltInTools(
       continue;
     }
     // FORK(codex-collaboration): 六工具只随新运行时能力注册。
-    if (COLLABORATION_TOOL_NAMES.some((name) => name === entry.metadata.name) && options.includeCollaboration !== true)
+    if (
+      COLLABORATION_TOOL_NAMES.some((name) => name === entry.metadata.name) &&
+      options.includeCollaboration !== true
+    )
       continue;
     if (entry.metadata.name === "Skill" && options.includeSkill === false) {
       continue;
@@ -256,7 +264,7 @@ export function registerBuiltInTools(
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
       continue;
     }
-    registry.register(resolveBuiltInToolEntryForBranch(entry, options), {
+    registry.register(resolveBuiltInToolEntryForBranch(entry, options, spawnAgentAvailable), {
       silentDuplicateWarning: options.silentDuplicateWarnings,
     });
   }
@@ -265,6 +273,7 @@ export function registerBuiltInTools(
 function resolveBuiltInToolEntryForBranch(
   entry: ToolEntry,
   options: RegisterBuiltInToolsOptions,
+  spawnAgentAvailable: boolean,
 ): ToolEntry {
   if (entry.metadata.name === "Bash") {
     return createBashToolEntry({
@@ -278,6 +287,8 @@ function resolveBuiltInToolEntryForBranch(
   if (entry.metadata.name === "EnterPlanMode") {
     return createEnterPlanModeToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,
+      // FORK(codex-collaboration): 能力来自本次注册条件，不能从搜索模式猜测。
+      spawnAgentAvailable,
     });
   }
   if (entry.metadata.name === "js") {

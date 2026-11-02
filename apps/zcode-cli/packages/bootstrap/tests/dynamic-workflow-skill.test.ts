@@ -102,6 +102,12 @@ function parseFlatFrontmatter(text: string): Record<string, string> {
 }
 
 describe("builtin /workflow command", () => {
+  it("keeps the actual expanded workflow prompt on CreateWorkflow instead of standalone spawn", () => {
+    const prompt = expandBuiltinWorkflowCommandPrompt("inspect the release");
+    expect(prompt).toContain("do not substitute the `spawn_agent` tool");
+    expect(prompt).not.toMatch(/`(?:Agent|Task|SendMessage|RespondToCoordinator)`/);
+    expect(prompt).toContain("`CreateWorkflow`");
+  });
   it("declares the skill it depends on and passes the user's request through", () => {
     // skills: 会让 contracts 的 formatCommandSkillInstructions 生成 "先调 Skill 工具" 前置指令。
     // 名字写错不会报错，只会静默失去技能加载——所以钉住它等于技能目录名。

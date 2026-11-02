@@ -15,3 +15,9 @@ TaskOutput 通用格式/等待/产物测试改为 dynamic workflow fixture，独
 仍未交付默认 controller runtime、持久 mailbox ACK/身份元信息、真实父子权限等待/续跑、完整 fork 和 UI 下钻；
 Task3b/4 继续。原生 UI stop 将走 controller interrupt；模型 TaskStop 不恢复子代理旁路。
 本提交只包含自己修改文件，保留用户 .gitignore 与 codex/；不推送。
+
+Spec review 补充：先更新工具/模块合同，再补注册器与实际 workflow prompt 回归。
+RED5/41：无协作、allowlist 排除、两种 disallowed 语法仍推荐 spawn，workflow 仍引用 Agent。
+从注册器已有归一化权限集合推导有限能力并传给描述 factory，不保存第二份工具状态。
+GREEN41/41；core/bootstrap tsc 与 scoped lint 通过。profile/model 的实际可用集合校验仍属3b，
+修正文档不再声称3a factory 已校验。架构将原有 workflow 提示文件纳入同一 managed tools 边界。

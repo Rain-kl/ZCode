@@ -37,7 +37,8 @@ const BUILTIN_WORKFLOW_COMMAND_BODY = [
   "Decide the subagent topology before writing any code: how many subagents, which of them",
   "share a context, what result each one returns. Then write the script and call the",
   "`CreateWorkflow` tool. (`CreateWorkflow` is the dynamic-workflow tool. Do not use the",
-  "legacy `Workflow` tool, and do not substitute the `Agent` tool.)",
+  // FORK(codex-collaboration): 独立协作不能替代工作流，当前指导只引用实际支持的入口。
+  "legacy `Workflow` tool, and do not substitute the `spawn_agent` tool.)",
   "",
 ].join("\n");
 

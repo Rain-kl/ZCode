@@ -141,6 +141,8 @@ export const enterPlanModeToolEntry: ToolEntry = {
 export function createEnterPlanModeToolEntry(
   options: {
     embeddedSearchEnabled?: boolean;
+    // FORK(codex-collaboration): 仅消费注册器推导的能力，不自行维护工具可用状态。
+    spawnAgentAvailable?: boolean;
   } = {},
 ): ToolEntry {
   return {

@@ -33,6 +33,17 @@ RED：旧 Agent 仍能注册、spawn_agent 不存在、消息空成功被通用�
 以及 71 条警告。未将它们记为通过。包原始 core lint 另报原有 session-fork/background-tasks 行数。
 实际 provider 空 tool result、child 权限/消息等待、完整 fork 与冷 UI 下钻仍由 Task3b/4 验证。
 
+### Task3a spec review：工具能力与提示一致
+
+实际注册器的 includeCollaboration、allowedTools 和归一化 disallowedTools 共同决定是否推荐
+spawn_agent；EnterPlanMode 在能力缺席或禁止时改为直接搜索/读取探索。内置 `/workflow`
+实际展开正文改用新工具名，避免要求已删除的 Agent。ToolEntry 合同明确仅校验 schema，
+profile/模型目录校验由 Task3b 宿主负责，不将未实现行为写为当前能力。
+
+RED：四种能力缺席/禁止场景与实际工作流展开共5例失败；GREEN：两个相关文件41/41通过。
+core/bootstrap typecheck 与所改文件 scoped lint 通过；该内置命令文件按上游基线属于新增文件，
+因此作为提示词接线点纳入既有 managed tools 模块，不改变业务状态所有者。
+
 ## Task 1：单一物理请求预算
 
 公开合同位于 `contracts/src/fork/codex-collaboration/model-recovery/contract.ts`，

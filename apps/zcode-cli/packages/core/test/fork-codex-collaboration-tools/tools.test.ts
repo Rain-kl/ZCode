@@ -33,11 +33,58 @@ function registry() {
   return tools;
 }
 describe("six collaboration tool entries", () => {
+  it.each([
+    { label: "present", options: { includeCollaboration: true }, available: true },
+    { label: "absent", options: {}, available: false },
+    {
+      label: "excluded by allowlist",
+      options: { includeCollaboration: true, allowedTools: ["EnterPlanMode", "Read"] },
+      available: false,
+    },
+    {
+      label: "disallowed by permission",
+      options: { includeCollaboration: true, disallowedTools: ["spawn_agent"] },
+      available: false,
+    },
+    {
+      label: "disallowed by permission rule",
+      options: { includeCollaboration: true, disallowedTools: ["spawn_agent(*)"] },
+      available: false,
+    },
+  ])("plan-mode guidance reflects spawn $label", ({ options, available }) => {
+    const tools = createToolRegistry();
+    registerBuiltInTools(tools, options);
+    const description = tools
+      .toContracts()
+      .find((tool) => tool.name === "EnterPlanMode")?.description;
+    expect(description).toBeDefined();
+    expect(tools.has("spawn_agent")).toBe(available);
+    expect(description?.includes("spawn_agent")).toBe(available);
+    if (!available) expect(description).toContain("explore directly using Glob, Grep, and Read");
+  });
   it("keeps collaboration directly callable with ToolSearch enabled", () => {
     const tools = registry();
-    const exposure = buildToolExposure({ registry: tools, tools: tools.toContracts(), entries: [], mode: "local", model: createTestRuntimeModel({ generateText: async () => ({ text: "", finishReason: "stop", usage: {} }) }) });
-    for (const name of ["spawn_agent", "send_message", "followup_task", "interrupt_agent", "list_agents", "wait_agent"]) {
-      expect(exposure.tools.some((tool) => tool.name === name), name).toBe(true);
+    const exposure = buildToolExposure({
+      registry: tools,
+      tools: tools.toContracts(),
+      entries: [],
+      mode: "local",
+      model: createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+    });
+    for (const name of [
+      "spawn_agent",
+      "send_message",
+      "followup_task",
+      "interrupt_agent",
+      "list_agents",
+      "wait_agent",
+    ]) {
+      expect(
+        exposure.tools.some((tool) => tool.name === name),
+        name,
+      ).toBe(true);
       expect(exposure.context.catalog.find((tool) => tool.name === name)?.deferred).toBe(false);
     }
   });

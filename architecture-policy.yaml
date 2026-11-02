@@ -16,9 +16,10 @@ modules:
     roots:
       - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools
       - apps/zcode-cli/packages/core/src/tool/handlers/task-output-projection.ts
+      - apps/zcode-cli/packages/bootstrap/src/builtin-workflow-command.ts
       - apps/zcode-cli/packages/core/test/fork-codex-collaboration-tools
     managed: true
-    requires: [zcode-cli, codex-collaboration-tools-contract, codex-collaboration-controller]
+    requires: [zcode-cli, shared, codex-collaboration-tools-contract, codex-collaboration-controller]
     publicEntrypoints:
       - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/contract.ts
       - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/module.ts

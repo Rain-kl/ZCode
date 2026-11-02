@@ -6,11 +6,16 @@
 export function createEnterPlanModeProviderDescription(
   options: {
     embeddedSearchEnabled?: boolean;
+    spawnAgentAvailable?: boolean;
   } = {},
 ): string {
   const explorationTools = options.embeddedSearchEnabled
     ? "`find`/Glob, `grep`/Grep, and Read"
     : "Glob, Grep, and Read";
+  // FORK(codex-collaboration): 注册与权限可能关闭 spawn，提示词不能推荐不存在的能力。
+  const researchGuidance = options.spawnAgentAvailable
+    ? "use the spawn_agent tool instead"
+    : `explore directly using ${explorationTools}`;
 
   return `Use this tool proactively when you're about to start a non-trivial implementation task. Getting user sign-off on your approach before writing code prevents wasted effort and ensures alignment. This tool transitions you into plan mode where you can explore the codebase and design an implementation approach for user approval.
 
@@ -52,7 +57,7 @@ Only skip EnterPlanMode for simple tasks:
 - Single-line or few-line fixes (typos, obvious bugs, small tweaks)
 - Adding a single function with clear requirements
 - Tasks where the user has given very specific, detailed instructions
-- Pure research/exploration tasks (use the spawn_agent tool instead)
+- Pure research/exploration tasks (${researchGuidance})
 
 ## What Happens in Plan Mode
 
