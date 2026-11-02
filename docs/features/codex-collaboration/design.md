@@ -268,3 +268,8 @@ deliver 必须确认消息所有权转移后才出箱；旧 runner 终态清理�
 明确要求：先呈现设计并获得用户批准，才能修改实现。用户已明确要求按计划执行，
 除必要决策外不再打扰。进入 writing-plans 和测试先行实施，按模型重试、协作控制器、
 工具/提示词、客户端适配分别提交并执行对应检查与回归；不再追加流程性确认。
+
+## Task 2 控制器端口细化
+
+根所属的独立 app 控制器合同与 admission/ACK/持久化顺序见 [controller-contract.md](controller-contract.md)。
+运行 adapter 将 prepare/admit 与实际模型 run 分开；这是保证 accepted 后父取消不能撤销子任务、持久化失败前不能泄漏模型副作用的必要边界。

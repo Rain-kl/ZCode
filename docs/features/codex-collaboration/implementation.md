@@ -247,3 +247,27 @@ off-peak 的既有冷却断言同步锁定30秒实际等待上限。
   该启动故障未修改；诊断只改 ignored E2E cache，没有对被测产品绕过 ARMS 或伪造成功。
   SN/GR 等新版桌面场景保持待复验，不能将协议/Core 通过冒充桌面或手机 GUI 验收。
 - 未执行 CLI 全量测试、手机 GUI、Windows/Linux 或完整六工具/mailbox 迁移验收。
+
+## Task 2：独立协作控制器（2026-11-02）
+
+新增 managed 模块 `codex-collaboration-controller`，公共入口为
+`core/src/fork/codex-collaboration/{contract,module}.ts`（CLI packages 下）。
+`contracts/` 定义身份、消息、版本化图、结构化错误及有限 driver；`app/controller.ts` 是唯一状态所有者；
+`app/activity-waiters.ts` 仅维护临时订阅；`app/snapshot.ts` 校验 schema、同树引用与规范路径。
+设计和时序见 [controller-contract.md](controller-contract.md)。
+
+完成：根保留名额的运行容量、独立驻留上限与idle卸载、规范身份树、调用方局部 call-ID 幂等接受、
+FIFO durable ACK 邮箱、queue-only send、原会话 followup、单目标interrupt、独立取消与run generation、
+冷恢复、subscribe投影，以及先订阅后检查的wait。持久运行缺少session-entry端口明确失败。
+接受前错误分别清理 admission/runtime/临时身份；清理错误保留原 cause 并聚合，不吞异常。
+
+先写合同和有限端口设计，再写fake driver回归：第一轮19/19因控制器尚未实现而失败，随后19/19通过。
+继续测试捕获冷恢复临时占位、terminal保存失败重试、严格schema、观察者异常、interrupt通知及
+调用方局部call-ID等缺口；最终两个文件36/36通过。core typecheck通过；模块架构检查0违规。
+core lint的失败仅为未改动的 `tool/executor/background-tasks.ts` 与 `runtime/methods/session-fork.ts`
+既有max-lines；未将CLI全量lint记为通过。根最终typecheck/lint和完整CLI检查由后续整合阶段统一执行。
+
+Task 2 不修改旧registry或真实runtime接线，不宣称六工具、实际会话存储和Desktop/Web生命周期已经验证。
+Task 3 必须为prepared prompt补齐“先admit持久任务，接受后run”的真实执行器接口；旧admitPrompt会立即
+驱动CommandInbox，不能直接冒充该边界。真实deliver要按messageId持久去重并在安全边界转换消息来源。
+CLI默认Vitest glob不含src测试，本轮以专用include配置运行，不能把默认测试成功冒充本模块覆盖。
