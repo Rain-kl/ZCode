@@ -1,7 +1,7 @@
 ---
 name: dynamic-workflows
 description: "Use when writing, debugging, or resubmitting a dynamic-workflow script for the CreateWorkflow tool: choosing subagent topology, typing subagent results, fanning out over files or git, gating loops on world.run commands, testing pieces with EvalWorkflowSnippet, planner-reviewer loops, confirming findings before reporting them, report() salvage, the report shape a run returns, publishing artifacts the user opens, leaving typed holes to fill mid-run, and handling a backgrounded run."
-when_to_use: "Only for CreateWorkflow scripts. A single delegation or a few independent lookups belong to the Agent tool instead."
+when_to_use: "Only for CreateWorkflow scripts. A single delegation or a few independent lookups use spawn_agent instead."
 ---
 
 # Writing dynamic workflows
@@ -37,19 +37,19 @@ claim costs little or a command has already decided it.
 
 | The request | The tool |
 | --- | --- |
-| One thing delegated to one agent | `Agent` |
-| A few independent lookups, nobody reading anybody's answer | `Agent`, in parallel |
-| Anything else the user did not name a workflow for, however many steps it needs | `Agent`, or do it yourself |
-| The user said "use a workflow" / "使用 workflow" / "用工作流" — any phrasing naming workflow as the means | `CreateWorkflow`, mandatory, even if `Agent` would have done or one reply could answer |
+| One thing delegated to one agent | `spawn_agent` |
+| A few independent lookups, nobody reading anybody's answer | `spawn_agent`, in parallel within available slots |
+| Anything else the user did not name a workflow for, however many steps it needs | `spawn_agent`, or do it yourself |
+| The user said "use a workflow" / "使用 workflow" / "用工作流" — any phrasing naming workflow as the means | `CreateWorkflow`, mandatory, even if `spawn_agent` would have done or one reply could answer |
 
 **Only an explicit request starts a workflow.** A workflow begins with `/workflow` or with
 the user naming workflow/工作流 as the means, never with your own judgement that a task
 looks orchestration-shaped. Results feeding later steps, a bounded loop, a branch on a typed
 result — those are shapes the script is good at once one has been requested, not reasons
-there should be one. Delegate with `Agent` or do the work yourself.
+there should be one. Delegate with `spawn_agent` or do the work yourself.
 
 **An explicit request is binding.** Once the user names workflow/工作流 as the means, the
-routing question is closed — not `Agent`, not inline, not "too small for a workflow"; what
+routing question is closed — not `spawn_agent`, not inline, not "too small for a workflow"; what
 remains is only how big the script should be, and the smallest task gets a small workflow.
 
 An explicit workflow request is a request for depth, and the bar above is the measure.

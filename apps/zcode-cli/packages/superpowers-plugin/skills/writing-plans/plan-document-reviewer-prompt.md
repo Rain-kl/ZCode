@@ -7,9 +7,10 @@ Use this template when dispatching a plan document reviewer subagent.
 **Dispatch after:** The complete plan is written.
 
 ```
-Task tool (general-purpose):
-  description: "Review plan document"
-  prompt: |
+spawn_agent:
+  task_name: "plan_review"
+  fork_turns: "none"
+  message: |
     You are a plan document reviewer. Verify this plan is complete and ready for implementation.
 
     **Plan to review:** [PLAN_FILE_PATH]
