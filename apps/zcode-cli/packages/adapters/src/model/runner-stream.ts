@@ -62,6 +62,7 @@ import { detectProviderBusinessFinishError } from "./provider-finish-business-er
 import { createRequestVerificationEmptyStreamError } from "./request-security-edition/recovery.js";
 import {
   calculateRetryDelay,
+  classifyAttemptAdmissionFailure,
   logRetryDelayDecision,
   sleep,
   TerminalStreamChunkError,
@@ -298,7 +299,7 @@ export async function* runStreamText(input: {
       });
     } catch (admitError) {
       attemptAbortController.cleanup();
-      const admitFailure = classifyModelFailure(admitError, input.request.abortSignal);
+      const admitFailure = classifyAttemptAdmissionFailure(admitError, input.request.abortSignal);
       await publishModelStatus(
         {
           ...statusContext,

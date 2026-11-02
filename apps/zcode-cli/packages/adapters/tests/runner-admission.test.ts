@@ -9,6 +9,7 @@ import {
   type ModelStreamEvent,
 } from "@zcode/contracts";
 import type { AiSdkModelRuntime } from "../src/model/runner-runtime.js";
+import { inspectWorkflowModelFailure } from "../src/model/workflow-model-failure-policy.js";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 
 /** 旧 adapter 直接返回 AsyncIterableIterator；夹具返回 AsyncIterable，这里取它的迭代器以逐步驱动。 */
@@ -75,6 +76,14 @@ function fakeAdmission(options: { blockForever?: boolean } = {}): FakeAdmission 
   return admission;
 }
 
+function rejectedAdmission(error: Error): ModelRequestAdmission {
+  return {
+    acquire() {
+      return Promise.reject(error);
+    },
+  };
+}
+
 function registry(): TestProviderConfigFixture {
   return new TestProviderConfigFixture({
     providers: {
@@ -128,6 +137,39 @@ const okChunks = () => [
 ];
 
 describe("runner request admission (generate)", () => {
+  it("marks a local admission failure as a terminal prepare failure before any SDK request", async () => {
+    let requests = 0;
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        requests += 1;
+        throw new Error("must not run");
+      },
+      streamText() {
+        throw new Error("not used");
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      runtime,
+    });
+    const error = await executeAdapterGenerateText(adapter, {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRequestAdmission: rejectedAdmission(new Error("admission storage unavailable")),
+    }).catch((cause: unknown) => cause);
+
+    expect(requests).toBe(0);
+    expect(error).toMatchObject({
+      context: { localControl: "prepare_failed", retryable: false },
+    });
+    expect(inspectWorkflowModelFailure(error)?.policy).toEqual({
+      decision: "stop",
+      kind: "other",
+    });
+  });
+
   it("acquires once per attempt, forwards exactly that attempt's events, releases before the backoff sleep", async () => {
     const admission = fakeAdmission();
     const events: ModelNetworkStatusEvent[] = [];
@@ -317,6 +359,40 @@ describe("runner request admission (generate)", () => {
 });
 
 describe("runner request admission (stream)", () => {
+  it("marks a local admission failure as a terminal prepare failure before any SDK request", async () => {
+    let requests = 0;
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        throw new Error("not used");
+      },
+      streamText() {
+        requests += 1;
+        throw new Error("must not run");
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      runtime,
+    });
+    const iterator = iterateAdapterStream(adapter, {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRequestAdmission: rejectedAdmission(new Error("admission storage unavailable")),
+    });
+    const error = await iterator.next().catch((cause: unknown) => cause);
+
+    expect(requests).toBe(0);
+    expect(error).toMatchObject({
+      context: { localControl: "prepare_failed", retryable: false },
+    });
+    expect(inspectWorkflowModelFailure(error)?.policy).toEqual({
+      decision: "stop",
+      kind: "other",
+    });
+  });
+
   it("acquires once per attempt, forwards that attempt's events, releases before the backoff sleep", async () => {
     const admission = fakeAdmission();
     let attempts = 0;

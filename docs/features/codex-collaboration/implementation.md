@@ -155,10 +155,25 @@ native true→false终态1例）；额外 provider payload 正向回归捕获过
 GREEN：5个相关文件391/391通过，含整个 compact63例与 Adapter/native/业务码/分类回归。
 该轮 fresh CLI typecheck、架构与 lint 结果在任务报告记录；未重跑6872例大范围套件。
 
+## Task 1 质量复核修正轮 2
+
+独立质量复核补充确认3个入口缺口：重试包装器同时携带 `cause` 与 `lastError` 时，Core 只沿
+单一路径扫描会漏掉 `localControl`；model admission 在 SDK 前拒绝时虽然状态事件写成不可重试，
+最终 adapter error 仍保留通用 `retryable=true`；workflow governor 直接使用 provider 原始
+`Retry-After`，使 adapter 已按30秒退避醒来后仍被准入冷却阻塞。
+
+修正后 compact 对已知包装字段做有界、循环安全的图遍历；generate/stream 共用 admission
+失败分类入口，非取消错误固定为 `prepare_failed` 且不领取物理请求预算；governor 仅将
+`min(Retry-After, 30000ms)` 交给并发控制器，状态事件仍保留原始值用于诊断。
+
+RED：3个文件共4例按预期失败，分别观察到 compact 错误转为HTTP fallback、两种 runner 均暴露
+`retryable=true` 且0次SDK请求、300秒提示产生300秒冷却。GREEN：同3个文件115/115通过，
+off-peak 的既有冷却断言同步锁定30秒实际等待上限。
+
 ## 后续交接与边界
 
 - Task 2/3 必须让 permission/message 明确等待与 scheduler 状态停止盲目 watchdog；不得新增另一套模型重试 owner。
 - 预算是 runtime-only 引用，不序列化进 provider JSON、会话存储或客户端协议。
 - 本轮未做桌面/手机 UI 或 CLI process 全量端到端验收；真实 HTTP SDK -> Adapter -> Core 与独立
   rejection 子进程验证不能冒充所有客户端生命周期均已覆盖。
-- 不推送远端、不创建版本标签。
+- 版本标签仍不在本轮 Task 1 代码修正范围；分支推送与 canary 出包按用户后续指令执行。

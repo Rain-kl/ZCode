@@ -368,6 +368,24 @@ describe("workflow concurrency governor — ticket 上的事件映射（决策 2
     expect(governor.snapshot(KEY_A)).toMatchObject({ cap: 6, inFlight: 0 });
   });
 
+  it("保留原始 Retry-After 诊断，但 workflow 准入冷却最多等待 30 秒", () => {
+    const { governor, admitNow, clock } = makeGovernor();
+    const ticket = admitNow();
+    const retryAfterMs = 300_000;
+    const event = statusEvent({
+      type: "model_retry_scheduled",
+      reason: "rate_limited",
+      delayMs: 30_000,
+      nextAttempt: 2,
+      retryAfterMs,
+    } as never);
+
+    void ticket.publish(event);
+
+    expect(event.retryAfterMs).toBe(retryAfterMs);
+    expect(governor.snapshot(KEY_A)?.cooldownUntil).toBe(clock.now() + 30_000);
+  });
+
   it("retryable:false 的 rate_limited failed（主对话 / 工具侧撞 3008）→ 一次 throttled（apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md）", () => {
     const { governor, admitNow, clock } = makeGovernor();
     const ticket = admitNow();
@@ -446,10 +464,10 @@ describe("workflow concurrency governor — ticket 上的事件映射（决策 2
     });
   });
 
-  it("offpeak_queued 归 throttled：减 cap 并按 Retry-After 冷却", () => {
+  it("offpeak_queued 归 throttled：减 cap，原始 Retry-After 也受 30 秒实际冷却上限约束", () => {
     const { governor, admitNow, clock } = makeGovernor();
     outcome.retryScheduled(admitNow(), "offpeak_queued", { retryAfterMs: 60_000, delayMs: 60_000 });
-    expect(governor.snapshot(KEY_A)).toMatchObject({ cap: 6, cooldownUntil: clock.now() + 60_000 });
+    expect(governor.snapshot(KEY_A)).toMatchObject({ cap: 6, cooldownUntil: clock.now() + 30_000 });
   });
 
   it("timeout / 5xx 的 retry_scheduled 只清 streak，不减 cap（决策 6）", () => {

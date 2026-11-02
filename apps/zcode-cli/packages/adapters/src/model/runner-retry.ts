@@ -1,7 +1,14 @@
-import { ModelErrorCode, ModelFailureReason, type Logger } from "@zcode/contracts";
+// FORK(codex-collaboration): adapter 退避与共享恢复合同使用同一个等待硬上限。
+import {
+  MODEL_RECOVERY_MAX_DELAY_MS,
+  ModelErrorCode,
+  ModelFailureReason,
+  type Logger,
+} from "@zcode/contracts";
 import { isProviderBusinessError } from "./model-execution.js";
 // FORK(codex-collaboration): 本地控制拒绝通过统一错误归一化传播到 driver。
 import {
+  classifyModelFailure,
   findProviderBusinessError,
   isLocalModelRequestFailure,
   type ClassifiedModelFailure,
@@ -17,8 +24,6 @@ import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 import { modelStatusContextToLogContext, type ModelStatusContext } from "./runner-status.js";
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
-// FORK(codex-collaboration): Retry-After 与本地退避共享用户硬上限。
-const MAX_REASONABLE_RETRY_AFTER_MS = 30_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
   // FORK(codex-collaboration): 重包装不能抹去本地禁止请求的控制事实。
   "localControl",
@@ -43,6 +48,19 @@ export class TerminalStreamChunkError extends Error {
   }
 }
 
+// FORK(codex-collaboration): admission 在 SDK 请求之前失败，不能被通用 unknown 分类重新解释为 API 重试。
+export function classifyAttemptAdmissionFailure(
+  error: unknown,
+  abortSignal?: AbortSignal,
+): ClassifiedModelFailure {
+  const failure = classifyModelFailure(error, abortSignal);
+  failure.retryable = false;
+  if (failure.reason !== ModelFailureReason.Cancelled) {
+    failure.localControl ??= "prepare_failed";
+  }
+  return failure;
+}
+
 export function calculateRetryDelay(
   retry: ResolvedAiSdkModelRetryOptions,
   attempt: number,
@@ -50,11 +68,11 @@ export function calculateRetryDelay(
 ): number {
   const uncapped = retry.baseDelayMs * retry.backoffFactor ** Math.max(0, attempt - 1);
   // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
-  const capped = Math.min(uncapped, retry.maxDelayMs, MAX_REASONABLE_RETRY_AFTER_MS);
+  const capped = Math.min(uncapped, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
   // FORK(codex-collaboration): 合法 provider hint 优先，但实际等待仍受用户 30 秒硬上限。
   if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
     // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
-    return Math.min(retryAfterMs, retry.maxDelayMs, MAX_REASONABLE_RETRY_AFTER_MS);
+    return Math.min(retryAfterMs, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
   }
 
   if (!retry.jitter || capped === 0) {

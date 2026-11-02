@@ -353,10 +353,13 @@ function invocationContext(request: CompactSummaryModelRequest) {
 
 // FORK-BEGIN(codex-collaboration)
 function hasCompactSummaryLocalControlFailure(error: unknown): boolean {
-  let record = asRecord(error);
+  const pending: unknown[] = [error];
   const seen = new Set<object>();
-  // 各层包装只增加诊断；必须保留内层禁止请求的事实，同时防止循环 cause 卡住清理。
-  while (record && !seen.has(record)) {
+  // RetryError/transport/adapter 可能并列保存 cause、lastError 与 error。必须遍历完整包装图，
+  // 不能因先看到 EPIPE 的 cause 就跳过另一条分支上的本地禁止请求事实。
+  while (pending.length > 0) {
+    const record = asRecord(pending.pop());
+    if (!record || seen.has(record)) continue;
     seen.add(record);
     const context = asRecord(record.context);
     if (
@@ -365,7 +368,15 @@ function hasCompactSummaryLocalControlFailure(error: unknown): boolean {
       )
     )
       return true;
-    record = asRecord(record.cause ?? record.lastError ?? record.error);
+    pending.push(
+      record.cause,
+      record.lastError,
+      record.error,
+      record.adapterError,
+      context?.cause,
+      context?.lastError,
+      context?.error,
+    );
   }
   return false;
 }

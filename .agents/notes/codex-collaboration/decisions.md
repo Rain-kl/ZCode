@@ -82,3 +82,13 @@ compact SSE→HTTP fallback 也是恢复入口，必须在 response_body/commit 
 ProviderBusinessError 并抹去 cause/localControl。修复点只提前处理实际 Error 的类型化
 本地控制；普通 provider JSON payload 继续业务映射。正向测试锁定后者仍 SSE1+HTTP1，
 同预算attempts2。12例先红，补充providerpayload正向用例也先红；最终5文件391通过。
+
+## 2026-11-02：Task 1 质量复核修正轮 2
+
+本地控制事实可能位于重试包装器的并列分支，不能用 `cause ?? lastError ?? error` 选择一条；
+compact 采用有界循环安全遍历并保留最外层原错误。model admission 发生在物理请求计数之前，
+其存储/治理端口错误统一标记 `prepare_failed`，generate 与 stream 共用分类入口，调用方取消除外。
+
+provider 原始 Retry-After 属于诊断事实，实际等待属于执行政策。Adapter 和 workflow governor
+都执行30秒硬上限，状态事件不篡改原始值。4例先红：compact EPIPE/EPERM包装、generate/stream
+admission零请求、300秒冷却；修复后相关3文件115例全部通过。

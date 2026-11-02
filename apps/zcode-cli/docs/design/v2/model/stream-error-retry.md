@@ -225,8 +225,11 @@ core recovery 的可观测性要求：
   规则增加额外重试。
 - 重试后的第二次 stream 成功时，最终只向 core 产出成功事件。
 - `model_retry_scheduled` 事件应保留 `reason=rate_limited`、`statusCode=429`、`nextAttempt` 和 `delayMs`，供 ZCode app-server 转换为 `_meta.zcode.apiRetry`。
+- provider 的原始 `Retry-After` 应保留在状态事件用于诊断；workflow admission governor 只能使用钳制到 30 秒的值，不能在 adapter 已结束退避后继续冻结请求槽位。
+- generate/stream 在 model admission 获取票据前发生的本地错误必须标记为 `localControl=prepare_failed`、零次 SDK 请求，并由 workflow 停止外层重驱；调用方取消仍保持 cancelled 语义。
 - 普通 adapter retry 的 `model_request_started attempt>1` 不应清空 `apiRetry`；下一次模型进展或成功完成才清空，避免重试状态闪烁。
 - provider SSE `event: error` 中携带非零业务 code 时，应归一为 `ProviderBusinessError`，最终用户看到 provider message，而不是空输出或 `finishReason: other`。
+- compact fallback 检查必须遍历并列的 `cause`、`lastError`、`error` 和 adapter wrapper 分支；外层 `EPIPE` 不得遮住另一分支上的 `permission_denied` 并触发第二个 transport 请求。
 - provider business error 可映射为 `HTTP 5xx` 或明确表示 provider 网络失败时，在首个已提交输出前应走统一 retry budget；达到上限后再发布最终失败。
 - iterator 在仅收到 `reasoning_delta` 后发生 `ECONNRESET` 或 idle timeout 时，adapter 应保留实时可见 reasoning 并把失败上抛；core 必须丢弃该 attempt 的未完成 reasoning tail，从前一个 provider-safe anchor 发起新 SSE 请求。恢复请求不得携带失败 reasoning，也不得把新输出追加到旧 assistant message id。
 - 没有任何 provider event，或只有尚未释放的 retry-safe prelude 时发生可重试失败，仍由 adapter 重试，每次物理请求都消耗同一共享恢复预算。

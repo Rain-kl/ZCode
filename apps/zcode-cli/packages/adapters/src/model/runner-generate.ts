@@ -44,6 +44,7 @@ import { sanitizeModelNetworkHeaders } from "./runner-network-headers.js";
 import { canRetryEmptyCompletion, scheduleEmptyCompletionRetry } from "./empty-completion-retry.js";
 import {
   calculateRetryDelay,
+  classifyAttemptAdmissionFailure,
   logRetryDelayDecision,
   sleep,
   toAdapterError,
@@ -178,7 +179,7 @@ export async function runGenerateText(input: {
         ...admissionWaitPublishers(statusContext, attempt, statusPublishOptions(input)),
       });
     } catch (admitError) {
-      const admitFailure = classifyModelFailure(admitError, input.request.abortSignal);
+      const admitFailure = classifyAttemptAdmissionFailure(admitError, input.request.abortSignal);
       await publishModelStatus(
         {
           ...statusContext,

@@ -1053,6 +1053,30 @@ it.each(["EACCES", "EPERM", "FORK_UPSTREAM_REQUEST_BLOCKED"] as const)(
   },
 );
 
+it("does not issue compact HTTP when a retry wrapper exposes EPIPE before its local-control failure", async () => {
+  const permissionError = Object.assign(new Error("local permission denied"), { code: "EPERM" });
+  const adapterError = Object.assign(new Error("adapter rejected compact request"), {
+    name: "AiSdkModelAdapterError",
+    code: "model_request_failed",
+    cause: permissionError,
+    context: {
+      localControl: "permission_denied",
+      reason: "unknown",
+      retryable: false,
+      streamFailurePhase: "response_body",
+    },
+  });
+  const streamError = Object.assign(new Error("stale compact stream", { cause: permissionError }), {
+    code: "EPIPE",
+    lastError: adapterError,
+  });
+  const { modelExecutor, generateText } = createScriptedModelExecutor({ streamError });
+  const { request } = createRequest({ preserveProviderStreamBoundaries: true });
+
+  await expect(runCompactSummaryModelRequest({ modelExecutor, request })).rejects.toBe(streamError);
+  expect(generateText).not.toHaveBeenCalled();
+});
+
 it("keeps ordinary provider error-chunk fallback within the same physical budget", async () => {
   const { TestAiSdkModelAdapter, TestProviderConfigFixture } =
     await import("../../adapters/tests/test-provider-config.js");

@@ -1,3 +1,6 @@
+// FORK(codex-collaboration): adapter 配置复用共享恢复合同的请求数与等待硬上限。
+import { MODEL_RECOVERY_MAX_ATTEMPTS, MODEL_RECOVERY_MAX_DELAY_MS } from "@zcode/contracts";
+
 export interface AiSdkModelRetryOptions {
   maxAttempts?: number;
   baseDelayMs?: number;
@@ -11,11 +14,11 @@ export type ResolvedAiSdkModelRetryOptions = Required<AiSdkModelRetryOptions>;
 type EnvRecord = Record<string, string | undefined>;
 
 // FORK(codex-collaboration): 用户恢复上限必须约束配置与 provider hints，见 FEATURES.md。
-const DEFAULT_MAX_RETRIES = 20;
+const DEFAULT_MAX_RETRIES = MODEL_RECOVERY_MAX_ATTEMPTS - 1;
 const DEFAULT_RETRY_BASE_DELAY_MS = 2_000;
 const DEFAULT_RETRY_BACKOFF_FACTOR = 2;
 // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
-const DEFAULT_RETRY_MAX_DELAY_MS = 30_000;
+const DEFAULT_RETRY_MAX_DELAY_MS = MODEL_RECOVERY_MAX_DELAY_MS;
 
 const ENV_MODEL_RETRY_MAX_RETRIES = "ZCODE_MODEL_RETRY_MAX_RETRIES";
 const ENV_MODEL_RETRY_BASE_DELAY_MS = "ZCODE_MODEL_RETRY_BASE_DELAY_MS";
@@ -48,7 +51,7 @@ export function resolveAiSdkModelRetryOptions(
     jitter: options?.jitter ?? DEFAULT_RETRY_OPTIONS.jitter,
     // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
     maxAttempts: Math.min(
-      21,
+      MODEL_RECOVERY_MAX_ATTEMPTS,
       normalizePositiveInteger(
         options?.maxAttempts,
         normalizePositiveInteger(envOptions.maxAttempts, DEFAULT_RETRY_OPTIONS.maxAttempts),
@@ -56,7 +59,7 @@ export function resolveAiSdkModelRetryOptions(
       ),
     ),
     maxDelayMs: Math.min(
-      30_000,
+      MODEL_RECOVERY_MAX_DELAY_MS,
       normalizeNonNegativeInteger(
         options?.maxDelayMs,
         normalizeNonNegativeInteger(envOptions.maxDelayMs, DEFAULT_RETRY_OPTIONS.maxDelayMs),
