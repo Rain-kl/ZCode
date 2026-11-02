@@ -53,3 +53,8 @@ replayable recovery or the new child runtime adapter's behavior.
 ./test/e2e/conversation-session/conversation-session-running-send-now.test.ts`.
   Desktop was rebuilt; the unchanged steer Agent bundle was reused. This run
   does not validate the subsequent collaboration runtime integration.
+- Default replay, without explicit fixture paths: **5/5 passed**; artifact
+  `packages/desktop/.e2e-artifacts/desktop-e2e-20261102-113619-467`.
+  `e2e:fixture:check`, `typecheck:e2e` and root `typecheck` passed. Root `lint`
+  passed with 102 existing warnings and no errors. Fixture validation retains
+  its existing warning that the goal-continuation matcher has no E2E marker.
