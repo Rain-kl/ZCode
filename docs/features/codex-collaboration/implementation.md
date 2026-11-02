@@ -5,7 +5,9 @@
 2026-11-01：Task 1（有界模型 API 恢复）已实施，最终验证已完成，等待独立 spec/quality review。
 调度器、六工具迁移、角色提示词和 mailbox 生命周期属于后续任务，不代表本功能已全部交付。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
-Codex 参考固定为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
+Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
+2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；
+相关回归通过，桌面 GUI 回放仍有独立启动阻塞，详细结果见本文末节。
 
 ## Task 1：单一物理请求预算
 
@@ -177,3 +179,71 @@ off-peak 的既有冷却断言同步锁定30秒实际等待上限。
 - 本轮未做桌面/手机 UI 或 CLI process 全量端到端验收；真实 HTTP SDK -> Adapter -> Core 与独立
   rejection 子进程验证不能冒充所有客户端生命周期均已覆盖。
 - 版本标签仍不在本轮 Task 1 代码修正范围；分支推送与 canary 出包按用户后续指令执行。
+
+## 2026-11-02：steer 安全边界修复
+
+用户更正了产品语义：steer 等当前 provider request 完整返回后插入，不能取消流来抢先响应。
+现场 `zcode-2026-11-02.jsonl:2412–2424` 记录了同一轮 5 个 child 和父轮都因
+`v4 sendQueuedNow preempts active turn` 取消；这条链由旧 sendQueuedNow 的 stop barrier 触发。
+
+本轮以本地 `codex/` 的 `3026a8e54e0f48c4d8074cd700f35b0697abc329` 为行为参考：
+`session/turn_input.rs::steer_input` 接纳 pending input；`session/turn.rs` 在 sampling 与工具结束后
+检查 pending input 并继续请求。未复制 Rust 源码或提示词，也未将此修复标为六工具迁移完成。
+
+### 实现边界
+
+- `bootstrap/.../commands/handlers/session-flow.ts`：删除 startNow 的 stop/lease/wait 编排，
+  使用现有 prompt admission 的 guide 车道；Highspeed 在 busy 时仍用独立队列并保留 requestedDelivery。
+- `bootstrap/.../commands/handlers/queue.ts`：手动普通文本项在原 reservation 下调用 guideQueueItem；
+  不停止当前流，不移除尚未消费的输入。不能 inline 时只允许 idle-only lease 独立提升。
+- `core/src/runtime/methods/steering.ts::guidePendingInputById`：唯一 queue owner 原地转换原 ID，
+  保留 sourceCommandId/client/selection/admission 顺序；复用同 ID queued 事件、durable ledger 和现有 drain。
+  事件持久化期间若原轮已结束，发明确的 queue fallback，不向过期 activeTurn 插入。
+- Core public/internal runtime 方法声明、原型装配、Bootstrap input facade/types 与 prompt-turn 参数只做接线。
+  未新增 accepted queue、超时补偿、进程或远程状态所有者。
+- 原地修改必须留在现有 runtime queue owner：另建 fork 状态模块会复制 queue 真相或深导入 runtime 内部状态。
+  接线和连续行为块均标 `FORK(codex-collaboration)`；不修改既有子代理取消控制器来掩盖父流被取消。
+- UI 只清理两处旧的 stop 注释；桌面 continuous 与手机 replayable 的路由、owner/lease 与事件序列不变。
+- `product-projection.ts`：同 ID 显式重新获准 guide 时清除旧 fallback；正文编辑事件仍保留既有投递事实。
+
+### 回归与验收
+
+先更新 turn-steering / 权威队列 spec，再写失败回归：旧 startNow 确实取消父 controller，
+旧 sendQueuedNow 没有调用 guide 原地转换。新测试覆盖：
+
+1. 受控流先输出 prefix，接纳 steer 后保持原 signal 与 turn；suffix 正常返回后，下一请求才包含引导。
+2. V4 command → 真实 input facade → Core → 受控模型流，两种入口都只产生一个 turn 和一次原 ID drain。
+3. 相同事件经 live / hydration replay 后只有一条对应 userInput，且 queue 同步清空。
+4. 父线程等待前台 child 时接纳 guide，child 正常完成，父下一请求同时包含结果与 steer。
+5. 重复转换、跨 reservation 竞争、持久化与轮次收口竞争，以及附件/typed goal/compact/Highspeed 不抢占。
+6. 更新正式 running-send-now E2E 和 case-local fixture：迟到尾部必须出现在 steer 后续 provider 请求；
+   busy typed goal 保留原项，不提前设置目标，自然空闲后再按原意图执行。
+
+### 验证记录
+
+- CLI 定向回归 9 个文件、385/385 通过：native commands / queue、prompt admission、queue auto-drain、
+  guide model refresh、前台 child 边界、queue fidelity，以及 product projection / cold hydration。
+  追加的 live/replay 降级状态清理用例先观察到 `fellBack` 而失败，再修正为 `steering` 后通过。
+- 补查7个调用方文件为266通过、3失败；6个文件全部通过，失败仅在未修改的 `session-persistence.test.ts`：
+  oversized tool artifact、多轮工具持久化、headless checkpoint 恢复。由 `git archive HEAD` 导出的独立
+  CLI 源码快照复跑这3例，得到相同失败位置与结果；依赖目录与 compiled 包复用当前 workspace，属于
+  源码部分隔离的基线证据，不宣称完整独立构建。未修改这3个无 steer 场景的既有测试。
+- 根 `pnpm typecheck`、`pnpm lint` 均通过；lint 为0错误、102项既有 warning。
+- `pnpm --dir apps/zcode-cli typecheck` 使用根 workspace 的 Turbo bin（PATH）执行，32/32 成功；
+  projection 最终小修后另跑 `@zcode/bootstrap typecheck` 通过。
+- CLI lint 原入口将本机 native pnpm 当 JS 执行而报语法错误；使用临时 Node shim 委托同一个 pnpm 后
+  完整执行，结果2错误、71 warnings、9项原样上游行数诊断。两个行数错误为既有的
+  `adapters/src/fs/index.ts` 与 `bootstrap/.../product-projection.ts`；本轮后者有最小投影修正，仍超限，
+  不将 CLI lint 写成通过，也不夹带整文件拆分。
+- `pnpm architecture:check --changed` 0违规；`pnpm fork:check-removals` 4项不变量通过；
+  `pnpm audit:conversation-session-coverage` 通过，6份生成文档无过期项；`git diff --check` 通过。
+- 桌面 `typecheck:e2e` 与 case-local fixture check 通过。正式隔离 replay 首次在构建时缺已声明的
+  `@fontsource/noto-sans-sc`，按 frozen lockfile 补齐依赖后 Desktop、插件和 Agent 构建成功。
+  后续 replay 在测试执行前因 Electron Main 启动 `unhandledRejection`、无窗口而 WebDriver session
+  超时，未到达任何场景断言。对应 artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20261102-101521-740`。
+  在隔离 cache 的 Main 入口临时添加诊断监听后取到原始堆栈：`Config not initialized`，
+  `@arms/rum-core` ConfigManager → `@arms/rum-electron` setConfig → Main 的
+  `armsUserIdentitySync.refresh()`/`setUser`；源码接线为 `main/index.ts:910` 与启动处 `:2449`。
+  该启动故障未修改；诊断只改 ignored E2E cache，没有对被测产品绕过 ARMS 或伪造成功。
+  SN/GR 等新版桌面场景保持待复验，不能将协议/Core 通过冒充桌面或手机 GUI 验收。
+- 未执行 CLI 全量测试、手机 GUI、Windows/Linux 或完整六工具/mailbox 迁移验收。

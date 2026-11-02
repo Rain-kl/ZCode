@@ -92,3 +92,29 @@ compact 采用有界循环安全遍历并保留最外层原错误。model admiss
 provider 原始 Retry-After 属于诊断事实，实际等待属于执行政策。Adapter 和 workflow governor
 都执行30秒硬上限，状态事件不篡改原始值。4例先红：compact EPIPE/EPERM包装、generate/stream
 admission零请求、300秒冷却；修复后相关3文件115例全部通过。
+
+## 2026-11-02：steer 不能抢占 provider 流
+
+用户纠正：steer 在当前请求完整返回后的安全边界插入，不能 stop-then-start。
+本地 Codex 参考改为 `codex/` checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`。
+旧 startNow/sendQueuedNow 的 hard stop 会先取消父工具，再经前台 child signal 取消全部子代理；
+模型 API 重试不能修复显式取消，解绑 child signal 也不能解决父流被截断。
+
+沿用 Core guide、pending-input reservation 和 drain，是本次修复的唯一写入路径。
+新增 guidePendingInputById 只转换原项；同 ID queued 事件更新 ledger 与投影，不复制输入。
+持久化完成时复查同一个 activeTurn 和 reservation；过期轮次发明确 queue fallback。
+不能 inline 的输入保留 queue，手动提升 busy 时拒绝，不能恢复旧 stop barrier。
+既有 Stop/edit/retry 的显式取消语义保留；本轮不代表六工具、mailbox、续跑调度器已迁移。
+
+先更新 spec、补红测试，再实现。回归包含真实受控流、V4/facade/Core 链、live/replay、
+父等待 child、重复/竞争边界。新增桌面断言要求迟到的响应尾部保留在下一请求；
+旧 active-goal/verifier 抢占验收不可再作为新版通过证据，矩阵明确标待复验。
+
+最终9文件385回归通过；同ID重入还需区分正文编辑和重新获准 guide：后者必须清除旧 fallback，
+live/replay两例先红后绿，避免 owner 已接受但界面仍展示降级。根类型、lint、架构和目录审计通过，
+CLI类型32/32；CLIlint两个既有行数错误单列。桌面依赖补齐后构建成功，但 Main 启动异常导致
+WebDriver 尚未建连，未把这次执行写成桌面通过；新版矩阵继续保留待复验边界。
+隔离 cache 诊断定位为 ARMS ConfigManager `Config not initialized`，来自 Main 身份同步的
+setUser/setConfig；没有通过替换 SDK 或跳过启动步骤给 E2E 制造通过结果。
+补查调用方7文件266通过、3个session-persistence失败；HEAD独立源码快照复现同3例。
+快照共享当前依赖与compiled包，按部分隔离报告，未把未验证的完整CLI套件写成全绿。

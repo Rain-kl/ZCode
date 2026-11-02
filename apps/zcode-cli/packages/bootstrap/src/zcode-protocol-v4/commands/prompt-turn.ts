@@ -16,6 +16,8 @@ export interface StartPromptTurnParamsBase {
   /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
   inputId: string;
   inputPresentation?: SendInputOptions["inputPresentation"];
+  // FORK(codex-collaboration): 运行中 startNow 必须复用 Core guide，不能在协议层抢占流。
+  queueDelivery?: SendInputOptions["queueDelivery"];
   /** 附件命令面：AttachmentRef 已在 handler 层映射为 core TurnAttachment。 */
   attachments?: TurnAttachment[];
   browserAmbientContext?: SendInputOptions["browserAmbientContext"];
@@ -203,7 +205,8 @@ async function startPromptTurnAfterPreflight(
         // Bootstrap controller 曾经被当成 Core busy 真相，并由 projection watchdog
         // 清理它；现在 Core admission 自己持有 reservation，Stop 也直接调用 Core execution。
         delivery: "start_turn",
-        ...(params.intent?.requestedDelivery === "guide"
+        // FORK(codex-collaboration): 由 Core 在原子 admission 时判断 busy/idle，避免外层状态竞态。
+        ...(params.queueDelivery === "guide" || params.intent?.requestedDelivery === "guide"
           ? { queueDelivery: "guide" as const }
           : {}),
         ...(params.browserAmbientContext

@@ -72,7 +72,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       await prepareIncomingMessageCapability(mcs, "queue");
       const runId = Date.now();
       await startSlowRunningTurn(`E2E_RUNNING_SEND_NOW_HEAD_BASE_${runId}`);
-      // 必须等当前轮产生 text-only assistant；更早轮次的文字不能作为这次抢占的锚点。
+      // FORK(codex-collaboration): 先确认当前流已开始；后续请求必须保留该流的完整尾部。
       await waitForV4AssistantMessageContaining("send-now-head-partial");
 
       const queuedMarker = `E2E_RUNNING_SEND_NOW_HEAD_${runId}`;
@@ -110,6 +110,10 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       });
       expect(wire.messages[wire.index - 1]?.role).toBe("assistant");
       expect(wireText(wire.messages[wire.index - 1]?.content)).toContain("send-now-head-partial");
+      // FORK(codex-collaboration): 尾部在延迟的最后一批 chunk 才出现；抢占旧流时此断言必红。
+      expect(wireText(wire.messages[wire.index - 1]?.content)).toContain(
+        "E2E_STEER_STREAM_COMPLETE",
+      );
       const userRows = (await getV4Messages("user")).filter((message) =>
         message.text.includes(queuedMarker),
       );
@@ -135,17 +139,12 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       [firstMarker, secondMarker],
       "running send-now 非队首点击前没有按 FIFO 呈现两条 text",
     );
-    expect(queuedBeforeSendNow.map((item) => item.kind)).toEqual([
-      "text",
-      "text",
-    ]);
+    expect(queuedBeforeSendNow.map((item) => item.kind)).toEqual(["text", "text"]);
     const remainingQueueItem = queuedBeforeSendNow[0]!;
     const selectedQueueItem = queuedBeforeSendNow[1]!;
 
-    const firstRequestsBefore =
-      await countUpstreamRequestsContaining(firstMarker);
-    const secondRequestsBefore =
-      await countUpstreamRequestsContaining(secondMarker);
+    const firstRequestsBefore = await countUpstreamRequestsContaining(firstMarker);
+    const secondRequestsBefore = await countUpstreamRequestsContaining(secondMarker);
     const sentNowItem = await clickQueueSendNow(selectedQueueItem.id);
     expect(sentNowItem.id).toBe(selectedQueueItem.id);
     expect(sentNowItem.content).toContain(secondMarker);
@@ -172,15 +171,13 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     // V4 timeline message id 与 runtime command queue id 属于不同身份域；
     // 被点项是否保留以唯一 marker、用户行与剩余 queue item 共同证明。
     await expectNoUpstreamRequestForTextWithin(firstMarker, 900);
-    expect(await countUpstreamRequestsContaining(firstMarker)).toBe(
-      firstRequestsBefore,
-    );
+    expect(await countUpstreamRequestsContaining(firstMarker)).toBe(firstRequestsBefore);
     expect(await countUpstreamRequestsContaining(secondMarker)).toBeGreaterThan(
       secondRequestsBefore,
     );
   });
 
-  it("running 中点击 queued /goal 立即引导，应按 goal 语义消费并更新目标", async function () {
+  it("running 中点击 queued /goal 不截断当前流，自然空闲后按 goal 语义消费", async function () {
     this.timeout(RUNNING_SEND_NOW_TIMEOUT_MS);
 
     const runId = Date.now();
@@ -198,6 +195,12 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     const sentNowItem = await clickFirstQueueSendNow();
     expect(sentNowItem.kind).toBe("goal");
     expect(sentNowItem.content).toContain(goalMarker);
+    // FORK-BEGIN(codex-collaboration)
+    // typed goal 不可 inline；busy 点击不能暂停/抢占原轮，也不能提前设置目标。
+    await expectNoUpstreamRequestForTextWithin(goalMarker, 900);
+    expect((await getQueueItems())[0]?.id).toBe(queue[0]?.id);
+    expect((await getV4GoalProjection())?.objective?.includes(goalMarker)).not.toBe(true);
+    // FORK-END(codex-collaboration)
 
     await browser.waitUntil(
       async () => {
@@ -212,7 +215,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
         );
       },
       {
-        timeout: 45000,
+        timeout: 90000,
         timeoutMsg: "running send-now goal 没有按 goal intent 消费并设置目标",
       },
     );
@@ -235,10 +238,8 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     );
     const remainingQueueItem = queuedBeforeSendNow[0]!;
     const selectedQueueItem = queuedBeforeSendNow[1]!;
-    const firstRequestsBefore =
-      await countUpstreamRequestsContaining(firstMarker);
-    const secondRequestsBefore =
-      await countUpstreamRequestsContaining(secondMarker);
+    const firstRequestsBefore = await countUpstreamRequestsContaining(firstMarker);
+    const secondRequestsBefore = await countUpstreamRequestsContaining(secondMarker);
 
     await doubleClickQueueSendNow(selectedQueueItem.id);
     await waitForUpstreamRequestContaining(secondMarker, 60000);
@@ -250,7 +251,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     );
 
     // 修复原因：连续 click 会生成两个 commandId，但 CLI 对 queue item 的 reservation 是
-    // 执行权边界；第二条命令必须被拒绝，不能重复 stop/drain 或顺带消费未点项。
+    // 执行权边界；第二条命令必须被拒绝，不能重复 guide/drain 或顺带消费未点项。
     await expectNoUpstreamRequestForTextWithin(firstMarker, 900);
     const queuedAfterDoubleClick = await waitForQueueCount(
       1,
@@ -259,9 +260,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     expect(queuedAfterDoubleClick[0]?.id).toBe(remainingQueueItem.id);
     expect(queuedAfterDoubleClick[0]?.content).toContain(firstMarker);
     expect(await countUpstreamRequestsContaining(firstMarker)).toBe(firstRequestsBefore);
-    expect(await countUpstreamRequestsContaining(secondMarker)).toBe(
-      secondRequestsBefore + 1,
-    );
+    expect(await countUpstreamRequestsContaining(secondMarker)).toBe(secondRequestsBefore + 1);
     const selectedUserMessages = (await getV4Messages("user")).filter((message) =>
       message.text.includes(secondMarker),
     );
@@ -297,15 +296,9 @@ async function startSlowRunningTurn(marker: string) {
   );
 }
 
-async function enqueueTextPrompt(
-  marker: string,
-  options: { slow?: boolean } = {},
-) {
+async function enqueueTextPrompt(marker: string, options: { slow?: boolean } = {}) {
   await sendV4Prompt(buildQueuedPrompt(marker, options));
-  await waitForV4ComposerText(
-    "",
-    `running send-now queued text 没有清空: ${marker}`,
-  );
+  await waitForV4ComposerText("", `running send-now queued text 没有清空: ${marker}`);
 }
 
 async function doubleClickQueueSendNow(promptId: string) {
@@ -313,24 +306,19 @@ async function doubleClickQueueSendNow(promptId: string) {
     (buttonTestIds) => {
       const button = buttonTestIds
         .map((buttonTestId) =>
-          document.querySelector<HTMLButtonElement>(
-            `[data-testid="${buttonTestId}"]`,
-          ),
+          document.querySelector<HTMLButtonElement>(`[data-testid="${buttonTestId}"]`),
         )
         .find((candidate) => candidate !== null);
       if (!button || button.disabled) {
         return false;
       }
       // 复现原因：该 case 要覆盖用户连续快速点两次“立即”，两个 click 必须在同一轮
-      // React 状态刷新前发出，才能覆盖重复 stop/drain 的幂等边界。
+      // React 状态刷新前发出，才能覆盖重复 guide/drain 的幂等边界。
       button.click();
       button.click();
       return true;
     },
-    [
-      `${TID_V4_QUEUE_ITEM_SEND_NOW}-${promptId}`,
-      `${TID_CHAT_QUEUE_SEND_NOW_BUTTON}-${promptId}`,
-    ],
+    [`${TID_V4_QUEUE_ITEM_SEND_NOW}-${promptId}`, `${TID_CHAT_QUEUE_SEND_NOW_BUTTON}-${promptId}`],
   );
   expect(clicked).toBe(true);
 }

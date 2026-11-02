@@ -5,6 +5,13 @@ import { SessionEventType, type SessionEvent } from "@zcode/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { CommandEnvelope } from "@zcode/shared/zcode-protocol-v4";
 import { createInputFacade } from "../src/app/input-facade.js";
+// FORK-BEGIN(codex-collaboration)
+import { createSessionId, createRootTraceContext } from "@zcode/contracts";
+import { createTestAgentRuntime } from "../../core/tests/test-agent-runtime.js";
+import { createTestModelFactory } from "../../core/tests/test-runtime-model.js";
+import { createTestSessionEventStore } from "../../core/tests/test-event-store.js";
+import { ProductProjection } from "../src/zcode-protocol-v4/index.js";
+// FORK-END(codex-collaboration)
 import type { SendInputOptions } from "../src/app/types.js";
 import { V4CommandExecutor } from "../src/zcode-protocol-v4/commands/executor.js";
 import { V4PromptRejectedError } from "../src/zcode-protocol-v4/commands/prompt-turn.js";
@@ -550,70 +557,75 @@ describe("v4 原生 sendText", () => {
     );
   });
 
-  it("Highspeed 运行中输入在 guide 模式下仍进入 queue", async () => {
-    const app = makeApp({
-      runtime: { getActiveTurnInfo: vi.fn().mockReturnValue({ steerable: true }) },
-    });
-    const record = makeRecord({ app, activeAbortController: new AbortController() });
-    const retainQueuedTurnExecution = vi.fn();
-    const host = makeHost(record, {
-      getInputRoutingMode: () => "guide",
-      hasQueuedDelivery: () => false,
-      retainQueuedTurnExecution,
-    });
+  // FORK(codex-collaboration): 即使显式 startNow，也不能为单轮加速材料打断当前流。
+  it.each(["guide", "startNow"] as const)(
+    "Highspeed 运行中输入 %s 仍进入 queue",
+    async (requestedDelivery) => {
+      const app = makeApp({
+        runtime: { getActiveTurnInfo: vi.fn().mockReturnValue({ steerable: true }) },
+      });
+      const record = makeRecord({ app, activeAbortController: new AbortController() });
+      const retainQueuedTurnExecution = vi.fn();
+      const host = makeHost(record, {
+        getInputRoutingMode: () => "guide",
+        hasQueuedDelivery: () => false,
+        retainQueuedTurnExecution,
+      });
 
-    await new V4CommandExecutor(host).execute(
-      envelope("sendText", {
-        text: "加速输入不应内联当前轮",
-        highspeedMeta: {
-          schemaVersion: 1,
-          cardId: "card-guide",
-          taskId: "s1",
-          provider: "bigmodel",
-          model: "GLM-5.3",
-          issuedAt: 1,
-          expiresAt: Date.now() + 60_000,
-        },
+      await new V4CommandExecutor(host).execute(
+        envelope("sendText", {
+          text: "加速输入不应内联当前轮",
+          requestedDelivery,
+          highspeedMeta: {
+            schemaVersion: 1,
+            cardId: "card-guide",
+            taskId: "s1",
+            provider: "bigmodel",
+            model: "GLM-5.3",
+            issuedAt: 1,
+            expiresAt: Date.now() + 60_000,
+          },
+          modelSelection: {
+            providerId: "account:bigmodel-highspeed-card",
+            modelId: "GLM-5.3",
+          },
+          modelExecution: {
+            selectionScope: "execution",
+            requestAuth: { apiKey: "card-jwt", headers: { "X-Highspeed-Card-ID": "card-guide" } },
+            selectionFallback: {
+              providerId: "account:bigmodel-highspeed-card",
+              target: ORDINARY_MODEL_SELECTION,
+              rules: [
+                { reason: "highspeed_card_expired", providerErrorCode: "3402" },
+                { reason: "highspeed_request_failed" },
+              ],
+            },
+          },
+        }),
+      );
+
+      expect(app.sendInput).toHaveBeenCalledWith(
+        { text: "加速输入不应内联当前轮" },
+        expect.objectContaining({
+          requireQueue: true,
+          intent: expect.objectContaining({
+            requestedDelivery,
+            admittedDelivery: "queue",
+            fallbackReasonCode: "highspeed.requiresQueue",
+            highspeed: expect.objectContaining({ cardId: "card-guide" }),
+            modelSelection: ORDINARY_MODEL_SELECTION,
+          }),
+        }),
+      );
+      expect(retainQueuedTurnExecution).toHaveBeenCalledWith("s1", "cmd-1", {
         modelSelection: {
           providerId: "account:bigmodel-highspeed-card",
           modelId: "GLM-5.3",
         },
-        modelExecution: {
-          selectionScope: "execution",
-          requestAuth: { apiKey: "card-jwt", headers: { "X-Highspeed-Card-ID": "card-guide" } },
-          selectionFallback: {
-            providerId: "account:bigmodel-highspeed-card",
-            target: ORDINARY_MODEL_SELECTION,
-            rules: [
-              { reason: "highspeed_card_expired", providerErrorCode: "3402" },
-              { reason: "highspeed_request_failed" },
-            ],
-          },
-        },
-      }),
-    );
-
-    expect(app.sendInput).toHaveBeenCalledWith(
-      { text: "加速输入不应内联当前轮" },
-      expect.objectContaining({
-        requireQueue: true,
-        intent: expect.objectContaining({
-          requestedDelivery: "guide",
-          admittedDelivery: "queue",
-          fallbackReasonCode: "highspeed.requiresQueue",
-          highspeed: expect.objectContaining({ cardId: "card-guide" }),
-          modelSelection: ORDINARY_MODEL_SELECTION,
-        }),
-      }),
-    );
-    expect(retainQueuedTurnExecution).toHaveBeenCalledWith("s1", "cmd-1", {
-      modelSelection: {
-        providerId: "account:bigmodel-highspeed-card",
-        modelId: "GLM-5.3",
-      },
-      modelExecution: expect.objectContaining({ selectionScope: "execution" }),
-    });
-  });
+        modelExecution: expect.objectContaining({ selectionScope: "execution" }),
+      });
+    },
+  );
 
   it("Core active turn 已存在但 controller 与投影尚未同步时，Highspeed 输入仍进入 queue", async () => {
     const app = makeApp({
@@ -1087,31 +1099,12 @@ describe("v4 原生 sendText", () => {
     expect(app.steerTurn).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { stopKind: "stopped", attachmentMime: undefined, expected: "user_steer" },
-    { stopKind: "idle", attachmentMime: undefined, expected: undefined },
-    { stopKind: "stopped", attachmentMime: "text/plain", expected: undefined },
-    { stopKind: "stopped", attachmentMime: "image/png", expected: undefined },
-  ])(
-    "startNow human 提示：$stopKind / $attachmentMime",
-    async ({ stopKind, attachmentMime, expected }) => {
-      const app = makeApp({
-        runtime: {
-          acquireForegroundPromotionLease: vi.fn().mockReturnValue({ kind: "acquired" }),
-          getActiveForegroundExecutionId: vi.fn().mockReturnValue(undefined),
-          releaseForegroundPromotionLease: vi.fn().mockReturnValue(true),
-          stopActiveForegroundExecution: vi
-            .fn()
-            .mockReturnValue(
-              stopKind === "stopped"
-                ? { kind: "stopped", foregroundExecutionId: "foreground-1" }
-                : { kind: "idle" },
-            ),
-        },
-      });
-      // UI 即使仍显示 busy，Core 的 idle 回执也不能被猜成一次抢占。
-      const host = makeHost(makeRecord({ app }), { getInputRoutingMode: () => "enqueue" });
-      await new V4CommandExecutor(host).execute(
+  // FORK-BEGIN(codex-collaboration)
+  it.each([undefined, "text/plain", "image/png"])(
+    "startNow 的 human 来源由 Core admission 决定，附件 %s 不伪造 steer",
+    async (attachmentMime) => {
+      const app = makeApp();
+      await new V4CommandExecutor(makeHost(makeRecord({ app }))).execute(
         envelope("sendText", {
           text: "先处理这个短任务",
           requestedDelivery: "startNow",
@@ -1125,28 +1118,25 @@ describe("v4 原生 sendText", () => {
         }),
       );
       expect(app.sendInput).toHaveBeenCalledTimes(1);
-      const [input, options] = app.sendInput.mock.calls[0]!;
-      expect(input.text).toBe("先处理这个短任务");
-      expect(options.inputPresentation).toBe(expected);
+      const [, options] = app.sendInput.mock.calls[0]!;
+      expect(options.inputPresentation).toBeUndefined();
+      expect(options.requireIdle).toBeUndefined();
       expect(options).toMatchObject({
         inputId: "cmd-1",
-        requireIdle: true,
+        queueDelivery: "guide",
         intent: { requestedDelivery: "startNow" },
       });
     },
   );
 
-  it("startNow 的 human 标记经真实 input facade 进入新轮 Core admission", async () => {
+  it("startNow 经真实 facade 把安全边界决策交给 Core", async () => {
     const runtime = {
-      acquireForegroundPromotionLease: vi.fn().mockReturnValue({ kind: "acquired" }),
-      getActiveForegroundExecutionId: vi.fn().mockReturnValue(undefined),
-      releaseForegroundPromotionLease: vi.fn().mockReturnValue(true),
-      stopActiveForegroundExecution: vi
-        .fn()
-        .mockReturnValue({ kind: "stopped", foregroundExecutionId: "foreground-1" }),
-      admitPrompt: vi
-        .fn()
-        .mockResolvedValue({ kind: "started", turnId: "turn-2", completion: Promise.resolve({}) }),
+      admitPrompt: vi.fn().mockResolvedValue({
+        kind: "queued",
+        pendingInputId: "guide",
+        queueLength: 1,
+        turnId: "current",
+      }),
     };
     const facade = createInputFacade({
       logger: { warn: vi.fn() } as never,
@@ -1162,55 +1152,13 @@ describe("v4 原生 sendText", () => {
     expect(runtime.admitPrompt).toHaveBeenCalledWith(
       "短任务",
       undefined,
-      expect.objectContaining({
-        inputPresentation: "user_steer",
-        inputId: "cmd-1",
-        requireIdle: true,
-        delivery: "start_turn",
-      }),
+      expect.objectContaining({ inputId: "cmd-1", queueDelivery: "guide", delivery: "start_turn" }),
     );
+    const options = runtime.admitPrompt.mock.calls[0]?.[2];
+    expect(options.requireIdle).toBeUndefined();
+    expect(options.inputPresentation).toBeUndefined();
   });
-
-  it("运行中 startNow：原子抢占后直接启动新 turn，不创建 queue item", async () => {
-    const controller = new AbortController();
-    const acquireForegroundPromotionLease = vi.fn().mockReturnValue({ kind: "acquired" });
-    const releaseForegroundPromotionLease = vi.fn().mockReturnValue(true);
-    const app = makeApp({
-      runtime: {
-        acquireForegroundPromotionLease,
-        getActiveForegroundExecutionId: vi.fn().mockReturnValue(undefined),
-        releaseForegroundPromotionLease,
-        stopActiveForegroundExecution: vi.fn().mockReturnValue({ kind: "idle" }),
-      },
-    });
-    const record = makeRecord({ app, activeAbortController: controller });
-    controller.signal.addEventListener("abort", () => {
-      record.activeAbortController = undefined;
-    });
-
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendText", { text: "现在执行", requestedDelivery: "startNow" }),
-    );
-
-    expect(acquireForegroundPromotionLease).toHaveBeenCalledWith({
-      leaseId: "send-now:cmd-1",
-      mode: "after-current",
-      promotedInputId: "cmd-1",
-    });
-    expect(app.sendInput).toHaveBeenCalledWith(
-      { text: "现在执行" },
-      expect.objectContaining({
-        requireIdle: true,
-        intent: expect.objectContaining({
-          admittedDelivery: "startNow",
-          requestedDelivery: "startNow",
-          sourceCommandId: "cmd-1",
-        }),
-      }),
-    );
-    expect(app.steerTurn).not.toHaveBeenCalled();
-    expect(releaseForegroundPromotionLease).toHaveBeenCalledWith("send-now:cmd-1");
-  });
+  // FORK-END(codex-collaboration)
 
   it("automation 运行中会话：Core queue 保留完整 automation denylist", async () => {
     const app = makeApp({
@@ -1948,6 +1896,168 @@ describe("v4 原生 sendText：held choice 裁决（catalog B06/B07）", () => {
     expect(app.clearQueueItems).not.toHaveBeenCalled();
   });
 });
+
+// FORK-BEGIN(codex-collaboration)
+describe("steer 安全请求边界", () => {
+  it.each(["sendText", "sendQueuedNow"] as const)(
+    "真实 V4 → facade → Core → provider 流：%s 不截断流且只消费一次",
+    async (command) => {
+      const streamStarted = Promise.withResolvers<void>();
+      const responseGate = Promise.withResolvers<void>();
+      const requests: string[] = [];
+      let signal: AbortSignal | undefined;
+      const runtime = createTestAgentRuntime(
+        createSessionId("s1"),
+        {
+          mode: "build",
+          modelStreaming: "on",
+          compact: { enabled: false },
+          titleGeneration: { enabled: false },
+        },
+        {
+          eventStore: createTestSessionEventStore(),
+          modelFactory: createTestModelFactory({
+            async *streamText(request) {
+              requests.push(JSON.stringify(request.messages));
+              const first = requests.length === 1;
+              if (first) signal = request.abortSignal;
+              yield { type: "text_start", id: "text" };
+              yield { type: "text_delta", id: "text", text: first ? "STREAM_BEGIN" : "STEER_DONE" };
+              if (first) {
+                streamStarted.resolve();
+                await responseGate.promise;
+                yield { type: "text_delta", id: "text", text: "_END" };
+              }
+              yield { type: "text_end", id: "text" };
+              yield { type: "finish", finishReason: "stop", usage: {} };
+            },
+          }),
+        },
+      );
+      const traceContext = createRootTraceContext();
+      const facade = createInputFacade({
+        logger: { warn: vi.fn() } as never,
+        prepareUserExecutionBoundary: async () => {},
+        runtime,
+        sessionId: runtime.getSessionId(),
+        traceContext,
+      });
+      const app = makeApp({ ...facade, runtime });
+      const record = makeRecord({ app, traceContext });
+      const host = makeHost(record, {
+        getInputRoutingMode: () => "enqueue",
+        getQueueItem: () => ({
+          queueItemId: "queue_cmd-1",
+          sourceCommandId: "cmd-1",
+          clientId: "client-test",
+          kind: "sendText",
+          text: "V4_STEER_MARKER",
+          attachments: [],
+          modelSelection: { providerId: "account:bigmodel-start-plan", modelId: "glm-5" },
+          delivery: { requested: "queue", admitted: "queue" },
+          order: { admissionSeq: 0, queuePosition: 0 },
+          admittedAt: 1,
+          steer: { state: "notRequested" },
+          dispatch: { state: "queued" },
+        }),
+      });
+      const executor = new V4CommandExecutor(host);
+      const completion = runtime.executeTurn("V4_ORIGINAL_TASK");
+      void completion.catch(() => undefined);
+      try {
+        await Promise.race([streamStarted.promise, completion]);
+        const turnId = runtime.getActiveTurnInfo()?.turnId;
+        if (command === "sendQueuedNow") {
+          await executor.execute(
+            envelope("sendText", { text: "V4_STEER_MARKER", requestedDelivery: "queue" }),
+          );
+          await executor.execute({
+            ...envelope(command, { queueItemId: "queue_cmd-1" }),
+            commandId: "promote",
+          });
+        } else {
+          await executor.execute(
+            envelope(command, { text: "V4_STEER_MARKER", requestedDelivery: "startNow" }),
+          );
+        }
+        expect(signal).toBeDefined();
+        expect(signal?.aborted).toBe(false);
+        expect(requests).toHaveLength(1);
+        expect(runtime.getActiveTurnInfo()?.turnId).toBe(turnId);
+        responseGate.resolve();
+        await completion;
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toContain("STREAM_BEGIN_END");
+        expect(requests[1]).toContain("V4_STEER_MARKER");
+        const events = await runtime.getSessionEventStore().getEvents(runtime.getSessionId());
+        expect(events.filter((event) => event.type === SessionEventType.TurnStarted)).toHaveLength(
+          1,
+        );
+        const drains = events.filter((event) => event.type === SessionEventType.TurnSteerDrained);
+        expect(drains).toHaveLength(1);
+        expect(drains[0]?.payload).toMatchObject({ pendingInputIds: ["queue_cmd-1"] });
+        expect((await runtime.rebuildProjection()).pendingSteerInputs).toHaveLength(0);
+        const live = new ProductProjection("s1", "epoch");
+        const replayed = new ProductProjection("s1", "epoch");
+        replayed.beginHydrationReplay();
+        for (const event of events) {
+          live.applyEvent(event);
+          replayed.applyHydrationEvent(event);
+        }
+        replayed.completeHydrationReplay();
+        expect(replayed.getSnapshot().queue).toEqual(live.getSnapshot().queue);
+        for (const projection of [live, replayed]) {
+          const snapshot = projection.getSnapshot();
+          expect(snapshot.queue.items).toHaveLength(0);
+          expect(
+            snapshot.rows.window.filter(
+              (row) => row.kind === "userInput" && row.sourceCommandId === "cmd-1",
+            ),
+          ).toHaveLength(1);
+        }
+      } finally {
+        responseGate.resolve();
+        await completion.catch(() => undefined);
+        runtime.beginShutdown();
+      }
+    },
+  );
+
+  it("startNow 只交给 Core guide admission，不中断当前轮次", async () => {
+    const controller = new AbortController();
+    const stopActiveForegroundExecution = vi.fn().mockReturnValue({ kind: "idle" });
+    const acquireForegroundPromotionLease = vi.fn().mockReturnValue({ kind: "acquired" });
+    const app = makeApp({
+      sendInput: vi.fn().mockResolvedValue({
+        kind: "queued",
+        pendingInputId: "guide",
+        queueLength: 1,
+        turnId: "current",
+      }),
+      runtime: {
+        acquireForegroundPromotionLease,
+        releaseForegroundPromotionLease: vi.fn(),
+        stopActiveForegroundExecution,
+      },
+    });
+    const record = makeRecord({ app, activeAbortController: controller });
+    controller.signal.addEventListener("abort", () => {
+      record.activeAbortController = undefined;
+    });
+    await new V4CommandExecutor(makeHost(record)).execute(
+      envelope("sendText", { text: "STEER_MARKER", requestedDelivery: "startNow" }),
+    );
+    expect(controller.signal.aborted).toBe(false);
+    expect(stopActiveForegroundExecution).not.toHaveBeenCalled();
+    expect(acquireForegroundPromotionLease).not.toHaveBeenCalled();
+    expect(app.sendInput).toHaveBeenCalledWith(
+      { text: "STEER_MARKER" },
+      expect.objectContaining({ queueDelivery: "guide", inputId: "cmd-1" }),
+    );
+    expect(app.sendInput.mock.calls[0]?.[1].requireIdle).toBeUndefined();
+  });
+});
+// FORK-END(codex-collaboration)
 
 describe("v4 原生 stop", () => {
   it("active turn + active goal：先 pause goal 再 abort（barrier 顺序）", async () => {

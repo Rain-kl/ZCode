@@ -8,6 +8,45 @@ import { setup, initial, done, spawn, send, assertProfile } from "./subagent-pro
 const next = () => ({ ...initial(), systemPrompt: "PROFILE_CHANGED", tools: ["Grep"] });
 
 describe("subagent definitions at execution boundaries", () => {
+  // FORK-BEGIN(codex-collaboration)
+  it("父轮等待前台子代理时接纳 steer，子代理完成后才把引导放入下一请求", async () => {
+    const started = Promise.withResolvers<void>();
+    const childGate = Promise.withResolvers<void>();
+    const scenario = setup(async () => {
+      started.resolve();
+      await childGate.promise;
+      return { ...done(), text: "CHILD_FINISHED_WITHOUT_CANCELLATION" };
+    });
+    const completion = scenario.turn([spawn("FOREGROUND_STEER_CHILD")]);
+    void completion.catch(() => undefined);
+    try {
+      await Promise.race([started.promise, completion]);
+      const turnId = scenario.runtime.getActiveTurnInfo()?.turnId;
+      const parentRequests = scenario.parents.length;
+      const admission = await scenario.runtime.admitPrompt("PARENT_STEER_MARKER", undefined, {
+        delivery: "start_turn",
+        queueDelivery: "guide",
+        inputId: "parent-steer",
+      });
+      expect(admission.kind).toBe("queued");
+      expect(scenario.parents).toHaveLength(parentRequests);
+      expect(scenario.runtime.getActiveTurnInfo()?.turnId).toBe(turnId);
+      childGate.resolve();
+      await completion;
+      const [child] = await scenario.spawned();
+      expect(child).toBeDefined();
+      await scenario.waitCompleted(child.agentId, 1);
+      const followup = JSON.stringify(scenario.parents.at(-1)?.messages);
+      expect(followup).toContain("CHILD_FINISHED_WITHOUT_CANCELLATION");
+      expect(followup).toContain("PARENT_STEER_MARKER");
+    } finally {
+      childGate.resolve();
+      await completion.catch(() => undefined);
+      scenario.runtime.beginShutdown();
+    }
+  });
+  // FORK-END(codex-collaboration)
+
   it("fails the parent before model requests while preserving listing and the running child", async () => {
     const blocked = Promise.withResolvers<void>(),
       started = Promise.withResolvers<void>();

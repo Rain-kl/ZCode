@@ -324,7 +324,7 @@ canonical 载荷、工具输入/输出、权限审批与主子 Agent 身份不�
 为完整前缀和整批正文添加一次 `<system-reminder>`。Agent/Bash/Workflow 原始结果、通知批处理、
 主子工具权限、持久化与 UI 可见性不变；BG25/BG36 在 MCS 与非 MCS 请求中验证 user 包装。
 
-运行中立即发送：纯文本 human 输入实际抢占 Core 前台执行后，复用 `user_steer` 的 provider 投影；工具取消、结果配对、审批、队列提升与执行轮边界不变。MCS 合法位置及 user 包装继续由共享投影裁决，不因新 turn 强行插入 system。具体边界见 [turn steering](../loop/turn-steering.md#运行中立即发送的-human-提示2026-09-12)。
+Fork 更正（2026-11-02，codex-collaboration）：运行中立即发送不再抢占 Core 前台执行；纯文本 human 输入在当前响应和工具结果完整结算后，以同一 turn 的 guide 复用 `user_steer` provider 投影。审批、工具结果配对与 MCS 合法位置仍由既有所有者裁决，不取消流、不强行插入 system。具体边界见 [turn steering](../loop/turn-steering.md)。
 
 ### 动态工作流子代理的 Browser Use
 

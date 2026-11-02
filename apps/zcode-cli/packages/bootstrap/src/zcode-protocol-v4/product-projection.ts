@@ -3684,8 +3684,10 @@ export class ProductProjection {
               : "queue"));
     const requestedDelivery =
       payload.intent?.requestedDelivery ?? existing?.delivery.requested ?? admittedDelivery;
+    // FORK(codex-collaboration): 原项重新获准 guide 后旧降级事实失效；纯正文编辑仍保留旧投递事实。
     const fallbackReasonCode =
-      payload.intent?.fallbackReasonCode ?? existing?.delivery.fallbackReasonCode;
+      payload.intent?.fallbackReasonCode ??
+      (payload.delivery === "guide" ? undefined : existing?.delivery.fallbackReasonCode);
     // Bug 根因：队列投影曾漏掉 intent.highspeed，自动和手动提升都因此把有效卡误判为不存在。
     const highspeed = payload.intent?.highspeed ?? existing?.highspeed;
     const nextItem: QueueItem = {

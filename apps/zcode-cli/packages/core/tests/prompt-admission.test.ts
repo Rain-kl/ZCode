@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createSessionId } from "@zcode/contracts";
+// FORK(codex-collaboration): 锁定真实流和同一队列项的安全 steer 合同。
+import {
+  createSessionId,
+  createTraceId,
+  SessionEventType,
+  type ModelRequest,
+} from "@zcode/contracts";
 import { AgentRuntime } from "../src/runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
@@ -275,3 +281,126 @@ it("renders a human guide through real admission and keeps the ongoing turn", as
       "<system-reminder>\nThe user sent a new message while you were working:\nshort B\n\nThis is how ZCode surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.\n</system-reminder>",
   });
 });
+
+// FORK-BEGIN(codex-collaboration)
+describe("steer preserves the current model stream", () => {
+  it.each([false, true])(
+    "waits for response completion before injecting (promote=%s)",
+    async (promote) => {
+      const started = Promise.withResolvers<void>();
+      const responseGate = Promise.withResolvers<void>();
+      const requests: ModelRequest[] = [];
+      const events = createTestSessionEventStore();
+      let currentSignal: AbortSignal | undefined;
+      const runtime = new AgentRuntime(
+        createSessionId(`safe-steer-${promote}`),
+        {
+          mode: "build",
+          modelStreaming: "on",
+          compact: { enabled: false },
+          titleGeneration: { enabled: false },
+          modelSelection: { providerId: "fixture", modelId: "safe-steer" },
+        },
+        {
+          eventStore: events,
+          modelFactory: createTestModelFactory({
+            async *streamText(request) {
+              requests.push(request);
+              const first = requests.length === 1;
+              if (first) currentSignal = request.abortSignal;
+              yield { type: "text_start", id: "text" };
+              yield {
+                type: "text_delta",
+                id: "text",
+                text: first ? "RESPONSE_PREFIX" : "FOLLOWUP_DONE",
+              };
+              if (first) {
+                started.resolve();
+                await responseGate.promise;
+                yield { type: "text_delta", id: "text", text: "_SUFFIX" };
+              }
+              yield { type: "text_end", id: "text" };
+              yield { type: "finish", finishReason: "stop", usage: {} };
+            },
+          }),
+        },
+      );
+      const completion = runtime.executeTurn("ORIGINAL_TASK");
+      void completion.catch(() => undefined);
+      try {
+        await Promise.race([
+          started.promise,
+          completion.then(() => {
+            throw new Error("turn ended before the first stream");
+          }),
+        ]);
+        const turnId = runtime.getActiveTurnInfo()?.turnId;
+        const intent = {
+          sourceCommandId: "steer-source",
+          queueItemId: "steer-item",
+          clientId: "mobile",
+          kind: "sendText" as const,
+          text: "STEER_MARKER",
+          requestedDelivery: "queue" as const,
+          admissionSeq: 2,
+          admittedAt: 1,
+        };
+        const receipt = await runtime.admitPrompt("STEER_MARKER", undefined, {
+          delivery: "start_turn",
+          queueDelivery: promote ? "queue" : "guide",
+          inputId: "steer-source",
+          intent,
+        });
+        expect(receipt.kind).toBe("queued");
+        if (promote) {
+          expect(
+            await runtime.reservePendingInputById({
+              pendingInputId: "steer-item",
+              reservationId: "promotion",
+              traceContext: { traceId: createTraceId() },
+            }),
+          ).toBe(true);
+          expect(
+            await runtime.guidePendingInputById({
+              pendingInputId: "steer-item",
+              reservationId: "promotion",
+              traceContext: { traceId: createTraceId() },
+            }),
+          ).toBe(true);
+          await runtime.releasePendingInputReservation({
+            pendingInputId: "steer-item",
+            reservationId: "promotion",
+            traceContext: { traceId: createTraceId() },
+          });
+        }
+        expect(currentSignal).toBeDefined();
+        expect(currentSignal?.aborted).toBe(false);
+        expect(requests).toHaveLength(1);
+        expect(runtime.getActiveTurnInfo()?.turnId).toBe(turnId);
+        responseGate.resolve();
+        await completion;
+        expect(requests).toHaveLength(2);
+        const messages = requests[1]?.messages ?? [];
+        const serialized = JSON.stringify(messages);
+        expect(serialized).toContain("RESPONSE_PREFIX_SUFFIX");
+        expect(serialized).toContain("STEER_MARKER");
+        expect(serialized.indexOf("RESPONSE_PREFIX_SUFFIX")).toBeLessThan(
+          serialized.indexOf("STEER_MARKER"),
+        );
+        const stored = await events.getEvents(runtime.getSessionId());
+        expect(stored.filter((event) => event.type === SessionEventType.TurnStarted)).toHaveLength(
+          1,
+        );
+        expect(stored.filter((event) => event.type === SessionEventType.TurnError)).toHaveLength(0);
+        expect(
+          stored.filter((event) => event.type === SessionEventType.TurnSteerDrained),
+        ).toHaveLength(1);
+      } finally {
+        responseGate.resolve();
+        await completion.catch(() => undefined);
+        runtime.beginShutdown();
+      }
+    },
+  );
+});
+// FORK-END(codex-collaboration)

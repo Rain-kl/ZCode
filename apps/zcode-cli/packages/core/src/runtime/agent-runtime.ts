@@ -512,6 +512,12 @@ export interface AgentRuntime {
     reservationId: string;
     traceContext?: TraceContext;
   }): Promise<boolean>;
+  // FORK(codex-collaboration): 原队列项的所有权留在 Core，协议层不能取消流或复制输入。
+  guidePendingInputById(options: {
+    pendingInputId: string;
+    reservationId: string;
+    traceContext?: TraceContext;
+  }): Promise<boolean>;
   releasePendingInputReservation(options: {
     pendingInputId: string;
     reservationId: string;

@@ -202,6 +202,12 @@ export interface AgentRuntimeCoreMethods {
     reservationId: string;
     traceContext: TraceContext;
   }): Promise<boolean>;
+  // FORK(codex-collaboration): 同一 reservation 保护原地转 guide，不另建 accepted queue。
+  guidePendingInputById(options: {
+    pendingInputId: string;
+    reservationId: string;
+    traceContext?: TraceContext;
+  }): Promise<boolean>;
   releasePendingInputReservation(options: {
     pendingInputId: string;
     reservationId: string;

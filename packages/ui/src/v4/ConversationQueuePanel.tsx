@@ -40,7 +40,7 @@ export interface ConversationQueuePanelProps {
   onEditItem?: (queueItemId: string) => Promise<void> | void;
   /** 正在等待 delete ACK / composer restore 的目标项；仅锁该 row。 */
   pendingEditQueueItemId?: string | null;
-  /** 立即发送队列项（sendQueuedNow command，stop 当前 + 消费该项）。 */
+  /** FORK(codex-collaboration): sendQueuedNow 在安全请求边界引导当前轮，空闲时独立提升。 */
   onSendNow?: (queueItemId: string) => void;
   /** 拖拽排序项（reorderQueueItem，移动到锚点前；null=队尾）。 */
   onMoveItem?: (queueItemId: string, beforeQueueItemId: string | null) => void;

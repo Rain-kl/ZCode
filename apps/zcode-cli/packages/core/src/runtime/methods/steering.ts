@@ -677,6 +677,121 @@ export async function markPendingInputPromoting(
   return true;
 }
 
+// FORK-BEGIN(codex-collaboration)
+/** 原队列项转 guide；reservation 阻止同一输入在持久化交接期间被重复消费。 */
+export async function guidePendingInputById(
+  this: AgentRuntimeInternal,
+  options: { pendingInputId: string; reservationId: string; traceContext?: TraceContext },
+): Promise<boolean> {
+  const activeTurn = this.activeTurn;
+  const ownsReservation = () =>
+    this.pendingInputReservations.get(options.pendingInputId) === options.reservationId;
+  const canGuide = () =>
+    activeTurn !== undefined &&
+    this.activeTurn === activeTurn &&
+    activeTurn.steerable &&
+    !this.permissionFullAccessPending &&
+    !this.queueExternalDrainActive &&
+    ownsReservation();
+  if (!canGuide() || !activeTurn) return false;
+  const projection = await this.rebuildProjection();
+  const held = projection.pendingSteerInputs.find(
+    (item) => item.pendingInputId === options.pendingInputId,
+  );
+  if (!held || !canGuide()) return false;
+  const original = activeTurn.pendingInputs.find((item) => item.id === options.pendingInputId);
+  const commandKind = original?.commandKind ?? held.commandKind;
+  const intent = original?.intent ?? held.intent;
+  // 维护命令与单轮执行材料不能改写当前轮；附件也沿用现有独立排队合同。
+  if (
+    commandKind === "compact" ||
+    commandKind === "reload" ||
+    commandKind === "sendGoalCommand" ||
+    intent?.kind === "compact" ||
+    intent?.kind === "sendGoalCommand" ||
+    original?.attachments?.length ||
+    intent?.attachmentRefs?.length ||
+    intent?.highspeed
+  )
+    return false;
+  const traceContext = options.traceContext ?? activeTurn.traceContext;
+  const guideIntent = intent
+    ? {
+        ...intent,
+        requestedDelivery: "guide" as const,
+        admittedDelivery: "guide" as const,
+        fallbackReasonCode: undefined,
+      }
+    : undefined;
+  const pending: PendingTurnInput = {
+    id: options.pendingInputId,
+    input: original?.input ?? held.input,
+    queuedAt: original?.queuedAt ?? held.queuedAt,
+    traceId: original?.traceId ?? held.traceId,
+    queryId: original?.queryId ?? (intent?.sourceCommandId as QueryId | undefined),
+    commandKind,
+    source: original?.source ?? held.source,
+    inputPresentation: original?.source || held.source ? held.inputPresentation : "user_steer",
+    delivery: "guide",
+    intent: guideIntent,
+    toolDisallowlist: original?.toolDisallowlist ?? held.toolDisallowlist,
+    turnId: activeTurn.turnId,
+  };
+  // 同 ID queued 事件原地更新 durable ledger 和两端投影，不能删原项再创建替身。
+  await this.appendEvent(
+    createSessionEvent(
+      SessionEventType.TurnSteerQueued,
+      this.sessionId,
+      {
+        pendingInputId: pending.id,
+        inputId: pending.queryId,
+        queryId: pending.queryId,
+        input: pending.input,
+        inputPreview: previewInput(pending.input),
+        inputSize: measureUtf8Bytes(pending.input),
+        commandKind,
+        source: pending.source,
+        inputPresentation: pending.inputPresentation,
+        delivery: "guide",
+        intent: guideIntent,
+        toolDisallowlist: pending.toolDisallowlist,
+        targetTurnId: activeTurn.turnId,
+        queueLength: projection.pendingSteerInputs.length,
+      },
+      { traceId: traceContext.traceId, turnId: activeTurn.turnId },
+    ),
+    traceContext,
+  );
+  if (!canGuide()) {
+    // 持久化期间响应可能已经收口；不能把新输入交给已结束的 activeTurn，保留原 ID 排队。
+    const fallbackReasonCode = "guide.noToolBoundary";
+    await this.appendEvent(
+      createSessionEvent(
+        SessionEventType.TurnSteerDeliveryChanged,
+        this.sessionId,
+        {
+          pendingInputId: pending.id,
+          targetTurnId: activeTurn.turnId,
+          requestedDelivery: "guide",
+          admittedDelivery: "queue",
+          fallbackReasonCode,
+          ...(guideIntent
+            ? { intent: { ...guideIntent, admittedDelivery: "queue", fallbackReasonCode } }
+            : {}),
+        },
+        { traceId: traceContext.traceId, turnId: activeTurn.turnId },
+      ),
+      traceContext,
+    );
+    return true;
+  }
+  const index = activeTurn.pendingInputs.findIndex((item) => item.id === pending.id);
+  if (index < 0) activeTurn.pendingInputs.push(pending);
+  else activeTurn.pendingInputs[index] = pending;
+  return true;
+}
+// FORK-END(codex-collaboration)
+
 export async function releasePendingInputReservation(
   this: AgentRuntimeInternal,
   options: {

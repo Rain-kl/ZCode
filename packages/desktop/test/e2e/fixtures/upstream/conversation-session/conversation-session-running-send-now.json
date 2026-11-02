@@ -10,7 +10,7 @@
         "kind": "main",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "固定当前轮的 text-only assistant 输出并保持运行，验证抢占后 human reminder 的 MCS 位置降级。"
+        "syntheticReason": "固定当前流的开头和延迟尾部，验证 steer 不截断流，完整响应保留在下一请求，并校验 human reminder 的 MCS 位置降级。"
       },
       "maxMatches": 2,
       "match": {
@@ -52,15 +52,20 @@
           {
             "sequence": 3,
             "offsetMs": 60000,
-            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_STEER_STREAM_COMPLETE\"}}\n\n"
           },
           {
             "sequence": 4,
             "offsetMs": 60000,
-            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
             "sequence": 5,
+            "offsetMs": 60000,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
+          },
+          {
+            "sequence": 6,
             "offsetMs": 60000,
             "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
@@ -84,7 +89,8 @@
           "E2E_RUNNING_SEND_NOW_HEAD",
           "The user sent a new message while you were working:",
           "<system-reminder>",
-          "Address the message above as you continue this turn."
+          "Address the message above as you continue this turn.",
+          "E2E_STEER_STREAM_COMPLETE"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -121,9 +127,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_BASE"]
+        "bodyIncludes": [
+          "E2E_HOLD_STREAM",
+          "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -149,8 +163,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_FIRST"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyIncludes": [
+          "E2E_RUNNING_SEND_NOW_PROMOTE_FIRST"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -175,9 +194,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"]
+        "bodyIncludes": [
+          "E2E_SLOW_STREAM",
+          "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -203,9 +230,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_GOAL_BASE"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_GOAL_BASE"]
+        "bodyIncludes": [
+          "E2E_HOLD_STREAM",
+          "E2E_RUNNING_SEND_NOW_GOAL_BASE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_RUNNING_SEND_NOW_GOAL_BASE"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -231,8 +266,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["Continue working toward the active session goal"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY", "Verify whether the active session goal"]
+        "bodyIncludes": [
+          "Continue working toward the active session goal"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -258,9 +299,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_BASE"]
+        "bodyIncludes": [
+          "E2E_HOLD_STREAM",
+          "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -286,8 +335,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_FIRST"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyIncludes": [
+          "E2E_RUNNING_SEND_NOW_DOUBLE_FIRST"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -312,9 +366,17 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
-        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"]
+        "bodyIncludes": [
+          "E2E_SLOW_STREAM",
+          "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"
+        ]
       },
       "response": {
         "statusCode": 200,

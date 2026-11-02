@@ -16,7 +16,7 @@
 
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
-- **状态**：2026-10-30 已实施 Task 1（模型恢复）；调度器、六工具、角色提示词与 mailbox 生命周期待后续任务。
+- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界；调度器、六工具、角色提示词与 mailbox 生命周期仍待后续任务。
 - **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
   用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
 - **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
@@ -30,6 +30,13 @@
 - **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
 - **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
+
+### steer 安全边界更正（2026-11-02）
+
+- **现场与规则**：实测手动提升队列项触发父轮取消，并连带停止全部 5 个子代理。steer 应在当前请求和工具结果完整返回后的安全边界插入，禁止 stop-then-start。
+- **方案**：复用 Core guide admission 与原队列项 reservation，统一“立即发送”与队列 steer 入口；保留原输入身份，不能 inline 的项继续排队或明确拒绝提升。
+- **修改文件**：Core `runtime/{agent-runtime,internal-methods,methods/{index,steering}}.ts`；Bootstrap `app/{types,input-facade}.ts`、V4 `commands/{prompt-turn,handlers/{session-flow,queue}}.ts` 与 `product-projection.ts`；就近 CLI 测试、正式 running-send-now E2E/fixture、验收目录与矩阵；UI 两处旧协议注释。
+- **影响标记**：`FORK(codex-collaboration)`；设计与验证见本功能 [design](docs/features/codex-collaboration/design.md)、[implementation](docs/features/codex-collaboration/implementation.md) 和 CLI `turn-steering.md`。本项不代表剩余协作迁移已经完成。
 
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 

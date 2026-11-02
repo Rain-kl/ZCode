@@ -52,6 +52,78 @@ function spyOnSubagentMaterialization(projection: ProductProjection) {
 }
 
 describe("ProductProjection cold hydration subagent materialization", () => {
+  // FORK-BEGIN(codex-collaboration)
+  for (const replay of [false, true]) {
+    it(`${replay ? "replay" : "live"} 原队列项转 guide 清除旧降级原因，正文编辑保留原事实`, () => {
+      const projection = new ProductProjection("cold-hydration-session", "epoch-steer");
+      if (replay) projection.beginHydrationReplay();
+      const apply = (event: SessionEvent) =>
+        replay ? projection.applyHydrationEvent(event) : projection.applyEvent(event);
+      const queued = {
+        pendingInputId: "queue-steer",
+        input: "STEER_INPUT",
+        inputPreview: "STEER_INPUT",
+        inputSize: 11,
+        queueLength: 1,
+        targetTurnId: "turn-steer",
+      };
+      const intent = {
+        queueItemId: "queue-steer",
+        sourceCommandId: "command-steer",
+        clientId: "mobile-steer",
+        kind: "sendText",
+        requestedDelivery: "guide",
+        admissionSeq: 1,
+        admittedAt: 10,
+      };
+      apply(
+        sessionEvent(
+          1,
+          SessionEventType.TurnSteerQueued,
+          {
+            ...queued,
+            delivery: "queue",
+            intent: {
+              ...intent,
+              admittedDelivery: "queue",
+              fallbackReasonCode: "guide.noToolBoundary",
+            },
+          },
+          "turn-steer",
+        ),
+      );
+      apply(sessionEvent(2, SessionEventType.TurnSteerQueued, queued, "turn-steer"));
+      expect(projection.getSnapshot().queue.items[0]?.steer).toEqual({
+        state: "fellBack",
+        reasonCode: "guide.noToolBoundary",
+      });
+      apply(
+        sessionEvent(
+          3,
+          SessionEventType.TurnSteerQueued,
+          {
+            ...queued,
+            delivery: "guide",
+            intent: { ...intent, admittedDelivery: "guide" },
+          },
+          "turn-steer",
+        ),
+      );
+      if (replay) projection.completeHydrationReplay();
+      const items = projection.getSnapshot().queue.items;
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        queueItemId: "queue-steer",
+        sourceCommandId: "command-steer",
+        clientId: "mobile-steer",
+        delivery: { requested: "guide", admitted: "guide" },
+        steer: { state: "steering" },
+      });
+      expect(items[0]?.delivery.fallbackReasonCode).toBeUndefined();
+    });
+  }
+  // FORK-END(codex-collaboration)
+
   it("cold batch 对 checkpoint 只推进 seq，live 路径仍保持原有 materialization", () => {
     const checkpoint = sessionEvent(1, SessionEventType.CheckpointCreated, {
       checkpointId: "checkpoint-1",

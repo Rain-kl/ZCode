@@ -67,6 +67,8 @@ import {
   emitModeChanged,
   emitModelSelected,
   markPendingInputPromoting,
+  // FORK(codex-collaboration): Core 队列所有者负责转 guide，避免 Bootstrap 抢占父轮。
+  guidePendingInputById,
   releasePendingInputReservation,
   removePendingInputById,
   reorderPendingInput,
@@ -267,6 +269,8 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.removePendingInputById = removePendingInputById;
   proto.reservePendingInputById = reservePendingInputById;
   proto.markPendingInputPromoting = markPendingInputPromoting;
+  // FORK(codex-collaboration): 原子提升继续走 runtime 的唯一队列。
+  proto.guidePendingInputById = guidePendingInputById;
   proto.releasePendingInputReservation = releasePendingInputReservation;
   proto.editPendingInputById = editPendingInputById;
   proto.reorderPendingInput = reorderPendingInput;
