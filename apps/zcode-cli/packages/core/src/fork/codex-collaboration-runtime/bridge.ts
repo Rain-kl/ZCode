@@ -10,6 +10,7 @@ import {
   type CollaborationToolPort,
   type CollaborationAgentStatus,
   type CollaborationToolCallContext,
+  type BrowserControlPort,
 } from "@zcode/contracts";
 import type { AgentRuntimeInternal } from "../../runtime/internal.js";
 import type { AgentRuntimeDeps } from "../../runtime/types.js";
@@ -67,6 +68,7 @@ export function createRuntimeCollaborationBinding(
   let projectionError: unknown;
   const pendingProjections: CollaborationSnapshot[] = [];
   const handles = new Map<string, AgentRuntimeInternal>();
+  const preparingBrowsers = new Map<string, BrowserControlPort>();
   const bindings = new Map<string, RuntimeCollaborationBinding>();
   const mailboxes = new Map<string, ReturnType<typeof createRuntimeMailbox>>();
   const runningCommands = new Map<string, Promise<RunResult>>();
@@ -267,6 +269,7 @@ export function createRuntimeCollaborationBinding(
             (runtime) => linked(runtime, identity),
             () => relationFromSnapshot(snapshot, identity.agentId),
             preparationContexts.get(identity.path),
+            (browser) => preparingBrowsers.set(identity.agentId, browser),
           );
           return adapter(child as unknown as AgentRuntimeInternal, identity);
         },
@@ -277,10 +280,22 @@ export function createRuntimeCollaborationBinding(
               handle as unknown as import("../../runtime/agent-runtime.js").AgentRuntime;
             child.beginShutdown();
             await drainCommand(identity.agentId);
-            await child.closeBrowserSession();
+            await child.closeBrowserSession({ propagateErrors: true });
             handles.delete(identity.agentId);
             bindings.delete(identity.agentId);
             mailboxes.delete(identity.agentId);
+          } else {
+            const browser = preparingBrowsers.get(identity.agentId);
+            if (browser) {
+              await browser.closeSession?.({
+                sessionId: identity.childSessionId as SessionId,
+                traceContext: {
+                  ...rootRuntime.rootTraceContext,
+                  sessionId: identity.childSessionId as SessionId,
+                },
+              });
+              preparingBrowsers.delete(identity.agentId);
+            }
           }
           if (options.discard && rootRuntime.sessionStore) {
             const childSessionId = identity.childSessionId as SessionId;
@@ -403,6 +418,9 @@ export function createRuntimeCollaborationBinding(
     runtime: AgentRuntimeInternal,
     identity: AgentIdentity,
   ): RuntimeCollaborationBinding {
+    // constructor 调用 binding 时就交接资源归属，不能等 hydrate/settings 全部成功后才登记。
+    handles.set(identity.agentId, runtime);
+    preparingBrowsers.delete(identity.agentId);
     const port: CollaborationToolPort = {
       async spawn(input, call) {
         const tree = await ready();

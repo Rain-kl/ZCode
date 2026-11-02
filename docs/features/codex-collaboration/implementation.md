@@ -427,3 +427,13 @@ MCP/server selectors展开成具体名称，不能把广泛selector带到child�
 interrupted但provider未结算仍阻止回收，root派生事件待写同样阻止回收。background/residency共用该查询，
 没有第二状态owner或计时器。扩展nested卸载回归，先RED false→true；确认parent卸载后仍驻留，interrupt
 后模型gate未放仍驻留，最后IO/事件全部结算才解除。实际runtime/residency/background6文件96/96 GREEN。
+
+### Task3b spec 修正：prepare 返回前的资源归属
+
+构造child之后保存settings或cold hydration失败时，原先driver尚未登记handle，释放找不到浏览器等资源。
+现在浏览器借用先登记临时资源句柄，constructor的binding入口立即移交到既有runtime handle；controller
+在prepare未返回端口时仍用统一release(undefined)清理，cleanupPending继续唯一管理失败重试。
+协作child释放显式要求浏览器错误透传，成功后才移除handle；普通宿主默认宽容清理保持原策略。
+真实三项先RED后GREEN：首次settings失败零模型IO且关闭一次；cold hydrate失败关闭新handle但保留全部
+accepted history；prepare与cleanup双失败保留两原cause，shutdown重试同资源。adapter5文件38/38、
+controller3文件54/54通过；模式边界同时按既有profile策略澄清，没有扩大plan/yolo权限合同。

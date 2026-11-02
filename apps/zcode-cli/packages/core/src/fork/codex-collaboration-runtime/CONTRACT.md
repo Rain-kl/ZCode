@@ -12,6 +12,10 @@ and cleanup errors keep their causes. No independent timeout or accepted owner e
 The root liveness query reads the whole canonical tree plus unsettled original command
 handles and pending derived event writes. Child bindings read their subtree. Interrupted
 status is not evidence that IO has drained, so automatic residency eviction remains blocked.
+Preparation registers borrowed browser resources before construction and transfers them
+to the runtime handle during constructor binding. A prepare rejection still goes through
+the controller's release(undefined) and cleanup retry path. Successful release removes
+the handle; failed release preserves it and the original preparation/cleanup causes.
 
 The root session entry restores identity and normalized limits before controller
 creation. Child model-selection entries restore actual resolved selections. Only

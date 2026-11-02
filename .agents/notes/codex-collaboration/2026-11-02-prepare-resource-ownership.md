@@ -1,0 +1,21 @@
+# Task3b review P2：prepare失败也必须可释放已构造资源
+
+独立实际runtime证明child settings保存失败时，forChildSession已创建资源，但driver尚未收到prepare返回，
+handles没有登记，closeSession从未发生。相同空洞也覆盖已接受cold child的hydration失败。
+
+先补runtime-integration资源归属合同，再写三项实际RED。现在浏览器借用时先登记临时资源句柄，
+constructor调用binding时立即把资源归属移交到既有runtime handles。controller在prepare未返回端口时
+也登记cleanupPending并调用release(undefined)，driver从资源表找到真正handle。只有成功释放才删除，
+accepted cold history不discard。prepare与cleanup同时失败用现有CollaborationError/AggregateError
+保留两原始cause，controller既有cleanupPending负责重试；driver不维护第二cleanup状态owner。
+
+closeBrowserSession新增有限propagateErrors选项，仅协作release使用严格模式，让失败租约保留重试。
+其余宿主调用默认维持原浏览器清理宽容策略。临时资源表只持有浏览器/runtime句柄，无身份或accepted真相。
+
+实际GREEN：adapter5文件38/38，controller专用include3文件54/54。首项保证失败零模型IO、资源只关闭一次；
+第二项保证cold失败后accepted transcript完全保留；第三项直接检查有限port原始错误链含两个原Error，
+并验证shutdown重试同一个closeChild。模型executor公开错误是序列化展示，不用它代替原cause契约证明。
+core类型/lint/架构与格式检查随提交。
+
+runtime-integration同时写准默认effectiveplan、显式profile.permissionMode沿既有策略，静态工具/deny与
+网络才是此交集修复的硬上界；根单独持有design.md澄清，不纳入本提交。

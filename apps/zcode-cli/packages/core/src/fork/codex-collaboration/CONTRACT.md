@@ -21,7 +21,8 @@ is injected through finite ports; no provider, filesystem or registry dependency
   Ordinary idle send only queues. Running send uses this same sink. Root and idle
   mailboxes are drained explicitly by the runtime at its safe consumption boundary.
 - Runtime prepare resumes the exact childSessionId or fails with its cause. It
-  must clean partial resources if prepare rejects before returning a handle.
+  must register partial resources immediately so release with an undefined port
+  can clean them if prepare rejects before returning a handle.
   Release is idempotent, may receive no loaded handle after a crash, and discards
   persisted history only for a child that was never accepted.
 - Storage read returns undefined for an absent entry; all other values undergo

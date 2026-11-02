@@ -243,7 +243,8 @@ class Controller implements CollaborationController {
       runtime = await this.options.runtime.prepare(identity(agent), { resume });
       await runtime.installMailbox();
     } catch (cause) {
-      if (runtime) {
+      // prepare 可能已登记资源、尚未返回端口；undefined 句柄也必须走同一可重试释放通道。
+      {
         this.cleanupPending.set(agent.agentId, {
           identity: identity(agent),
           runtime,
@@ -259,7 +260,7 @@ class Controller implements CollaborationController {
             {
               cause: new AggregateError(
                 [cause, cleanupError],
-                "Mailbox installation and runtime release failed",
+                "Runtime preparation and resource release failed",
               ),
             },
           );

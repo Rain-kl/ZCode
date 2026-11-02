@@ -7,6 +7,7 @@ import {
   type CollaborationConfig,
   type CollaborationIdentityMetadata,
   type CollaborationToolCallContext,
+  type BrowserControlPort,
 } from "@zcode/contracts";
 import type { AgentProfile } from "../../subagent/profile.js";
 import { AgentRuntime } from "../../runtime/agent-runtime.js";
@@ -47,6 +48,7 @@ export async function prepareChild(
   binding: (runtime: AgentRuntimeInternal) => RuntimeCollaborationBinding,
   relation: () => CollaborationIdentityMetadata | undefined,
   execution?: CollaborationToolCallContext,
+  registerPreparingBrowser?: (browser: BrowserControlPort) => void,
 ) {
   const profiles = parent.getAgentDefinitions().activeAgents;
   const agentType = identity.settings.agentType ?? "general-purpose";
@@ -182,6 +184,7 @@ export async function prepareChild(
       parentSessionId: parent.sessionId,
       tabOwner: "parent",
     }) ?? parent.browserControlPort;
+  if (browser) registerPreparingBrowser?.(browser);
   const userInstructions = resume
     ? savedSettings?.userInstructions
     : profile.injectAgentsMd !== false

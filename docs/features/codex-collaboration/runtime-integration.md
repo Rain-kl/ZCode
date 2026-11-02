@@ -49,6 +49,13 @@ all 继承 spawn 时的父选择；none 可用实际目录解析覆盖。agent_t
 child 的工具只能取父当前实际可用工具与 profile 请求工具的交集，再应用父/profile deny。
 fork none/all 均不能借显式 profile 恢复父已排除的 Write 等工具。MCP 的 mcp/server selector 只可
 展开为父启动快照中实际获准的具体工具名，不能带宽泛 selector 到 child 重新扩大权限；deny 优先。
+这里的父边界指可用工具、静态deny与网络等硬限制。默认继承父effective plan；显式profile.permissionMode
+继续沿既有模式策略（含guarded对子yolo约束），不能把plan误称为不可覆盖的capability。
+
+prepare 构造 child 后立即将临时资源句柄交给同一 driver；返回端口之前的持久化或冷 hydration 失败也由
+controller 的统一 release 清理。prepare 失败的 release 可携带 undefined 端口，driver从已登记资源句柄
+找到实际 runtime；成功只关一次，失败保留句柄与controller cleanup记录供重试。原prepare错误与cleanup
+错误同时保留，accepted cold history不得discard；constructor登记之前失败则由factory释放已借用浏览器。
 
 六工具创建的执行均为异步。Host 的 `ChildModelExecutionOverride.background: deny` 明确拒绝 spawn
 以及会启动 idle/terminal child 的 followup；对 running child 的 followup 只交付消息，不受此拒绝影响。

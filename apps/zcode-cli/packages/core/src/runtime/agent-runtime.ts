@@ -383,7 +383,7 @@ export class AgentRuntime {
     runtime.startMcpStartup(this.rootTraceContext);
   }
 
-  async closeBrowserSession(): Promise<void> {
+  async closeBrowserSession(options: { propagateErrors?: boolean } = {}): Promise<void> {
     this.beginShutdown();
     // FORK(codex-collaboration): 等待 child 停止持久化后才关闭共享资源。
     await this.shutdownCollaboration();
@@ -394,6 +394,8 @@ export class AgentRuntime {
         traceContext: this.rootTraceContext,
       });
     } catch (error) {
+      // FORK(codex-collaboration): child driver 需要失败重试句柄，不能把租约释放失败误判为已清理。
+      if (options.propagateErrors) throw error;
       // browser backend 清理失败不能阻断 execution/MCP/session store 的主关闭链路。
       this.logger?.warn("Browser session cleanup failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -422,7 +424,7 @@ export interface AgentRuntime {
   shutdownCollaboration(): Promise<void>;
   lastPermissionGrantId?: string;
   beginShutdown(): void;
-  closeBrowserSession(): Promise<void>;
+  closeBrowserSession(options?: { propagateErrors?: boolean }): Promise<void>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
   ): void;
