@@ -22,9 +22,7 @@ export function previewInput(value: string): string {
   return `${normalized.slice(0, TURN_STEER_INPUT_PREVIEW_CHARS)}...`;
 }
 
-export function findLatestUserMessageFromEnd(
-  messages: ModelInputMessage[],
-): number | undefined {
+export function findLatestUserMessageFromEnd(messages: ModelInputMessage[]): number | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     if (messages[index]?.role === "user") {
       return messages.length - 1 - index;
@@ -52,16 +50,21 @@ export function cloneMessageForFork(
     sessionId: String(message.sessionID),
     messageId: String(message.id),
   };
-  const anchor = message.anchor
-    ? cloneMessageAnchorForFork(message.anchor, options)
-    : undefined;
+  const anchor = message.anchor ? cloneMessageAnchorForFork(message.anchor, options) : undefined;
   if (message.role === "user") {
     return {
       ...message,
       id: options.nextMessageId,
       sessionID: options.forkedSessionId,
       ...(anchor ? { anchor } : {}),
-      metadata: { ...message.metadata, forkOrigin },
+      // FORK(codex-collaboration): fork 中的来源是历史证据，不是新树的邮箱 receipt，不能按旧接收者去重。
+      metadata: {
+        ...message.metadata,
+        forkOrigin,
+        ...(message.metadata && "collaboration" in message.metadata
+          ? { collaborationInherited: true }
+          : {}),
+      },
     };
   }
 
@@ -90,11 +93,7 @@ function cloneMessageAnchorForFork(
     }
     return mapped ?? id;
   };
-  const mapIdentity = (
-    id: string,
-    map: Map<string, string> | undefined,
-    field: string,
-  ): string => {
+  const mapIdentity = (id: string, map: Map<string, string> | undefined, field: string): string => {
     const mapped = map?.get(id);
     if (!mapped && options.strictLocalReferences) {
       throw new Error(`Fork ${field} has no child-local identity: ${id}`);
@@ -126,11 +125,7 @@ function cloneMessageAnchorForFork(
     ...anchor,
     ...(anchor.turnId
       ? {
-          turnId: mapIdentity(
-            String(anchor.turnId),
-            options.turnIdMap,
-            "anchor turn",
-          ) as TurnId,
+          turnId: mapIdentity(String(anchor.turnId), options.turnIdMap, "anchor turn") as TurnId,
         }
       : {}),
     ...(anchor.productTurnId
@@ -151,10 +146,7 @@ function cloneMessageAnchorForFork(
       : {}),
     ...(anchor.boundaryMessageId
       ? {
-          boundaryMessageId: mapMessage(
-            anchor.boundaryMessageId,
-            "anchor boundaryMessageId",
-          ),
+          boundaryMessageId: mapMessage(anchor.boundaryMessageId, "anchor boundaryMessageId"),
         }
       : {}),
     ...(goalBoundary ? { goalBoundary } : {}),
@@ -230,10 +222,7 @@ export function clonePartForFork(
       }
     }
     if (cloned.timelineType === "context_compaction" && cloned.summaryMessageId) {
-      cloned.summaryMessageId = mapMessage(
-        cloned.summaryMessageId,
-        "timeline summaryMessageId",
-      );
+      cloned.summaryMessageId = mapMessage(cloned.summaryMessageId, "timeline summaryMessageId");
     }
     if (cloned.timelineType === "goal_verification") {
       const targetId = options.targetIdMap?.get(cloned.targetId);
@@ -301,9 +290,7 @@ export function clonePartForFork(
               },
             }
           : {}),
-        ...(boundary.turnId
-          ? { turnId: mapTurn(boundary.turnId, "compact boundary turnId") }
-          : {}),
+        ...(boundary.turnId ? { turnId: mapTurn(boundary.turnId, "compact boundary turnId") } : {}),
       };
     }
   }

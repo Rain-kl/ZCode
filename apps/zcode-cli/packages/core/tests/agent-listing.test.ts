@@ -17,7 +17,7 @@ const profile = (name: string, description = `Description ${name}`): AgentProfil
 const collect = (
   names: string[],
   history: readonly RuntimeMessageEntry[] = [],
-  tools = [{ name: "Agent" }],
+  tools = [{ name: "spawn_agent" }],
 ) =>
   collectAgentListingAttachment({
     definitions: { activeAgents: names.map((name) => profile(name)) },
@@ -45,7 +45,7 @@ describe("agent listing attachments", () => {
       isInitial: true,
       showConcurrencyNote: true,
     });
-    expect(entry.content).toContain("Available agent types for the Agent tool:");
+    expect(entry.content).toContain("Available agent types for the spawn_agent tool:");
     expect(entry.content).not.toContain("private instructions");
     expect(collect(["A", "B"], [entry])).toBeUndefined();
     expect(collect([])).toBeUndefined();
@@ -60,7 +60,7 @@ describe("agent listing attachments", () => {
       isInitial: false,
     });
     expect(delta.content).toContain("The following agent types are no longer available:");
-    expect(delta.content).toContain("New agent types are now available for the Agent tool:");
+    expect(delta.content).toContain("New agent types are now available for the spawn_agent tool:");
     expect(delta.content).toContain("This is ambient context");
     expect(delta.content).not.toContain("When you launch multiple agents");
     const renamed = collect(["a", "B"], [initial])!;
@@ -95,7 +95,7 @@ describe("agent listing attachments", () => {
           ],
         },
         entries: [initial],
-        tools: [{ name: "Agent" }],
+        tools: [{ name: "spawn_agent" }],
       }),
     ).toBeUndefined();
     expect(initial.content).toContain("Description A");

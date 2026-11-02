@@ -26,9 +26,10 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
   }
 
   registerBuiltInTools(runtime.registry, {
+    // FORK(codex-collaboration): 分支刷新保持同一协作能力和计划提示。
+    includeCollaboration: runtime.collaboration !== undefined,
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
-    includeAgent: Boolean(runtime.subagentPort),
     embeddedSearchEnabled,
     // 本函数是**第二个**
     // 注册入口，且刻意只传一个精简选项集。对「只有 true 才注册」的门（OffPeak / Cron / Workflow…）

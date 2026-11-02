@@ -53,12 +53,12 @@ describe("TaskOutput tool", () => {
         sideEffectScope: "none",
       }),
     ]);
-    for (const alias of ["AgentOutputTool", "BashOutputTool", "AgentOutput", "BashOutput"]) {
+    for (const alias of ["BashOutputTool", "BashOutput"]) {
       expect(registry.get(alias)?.handler).toBe(taskOutputToolEntry.handler);
     }
   });
 
-  it("returns not_ready for a running Agent even when its output file is absent", async () => {
+  it("returns not_ready for a running workflow even when its output file is absent", async () => {
     const registry = registryWithTask(runtimeTask());
 
     const output = await taskOutputToolEntry.handler(
@@ -70,7 +70,7 @@ describe("TaskOutput tool", () => {
       retrieval_status: "not_ready",
       task: {
         task_id: "agent_1",
-        task_type: "local_agent",
+        task_type: "local_dynamic_workflow",
         status: "running",
         output: "",
       },
@@ -95,7 +95,7 @@ describe("TaskOutput tool", () => {
       [
         "<retrieval_status>success</retrieval_status>",
         "<task_id>agent_1</task_id>",
-        "<task_type>local_agent</task_type>",
+        "<task_type>local_dynamic_workflow</task_type>",
         "<status>completed</status>",
         "<output>\nanswer <raw>&\n</output>",
       ].join("\n\n"),
@@ -185,7 +185,7 @@ describe("TaskOutput tool", () => {
         retrieval_status: "not_ready",
         task: {
           task_id: "agent_1",
-          task_type: "local_agent",
+          task_type: "local_dynamic_workflow",
           status: "running",
           description: "Research task",
           output: " \n\t",
@@ -196,7 +196,7 @@ describe("TaskOutput tool", () => {
       [
         "<retrieval_status>not_ready</retrieval_status>",
         "<task_id>agent_1</task_id>",
-        "<task_type>local_agent</task_type>",
+        "<task_type>local_dynamic_workflow</task_type>",
         "<status>running</status>",
       ].join("\n\n"),
     );
@@ -205,7 +205,7 @@ describe("TaskOutput tool", () => {
     );
   });
 
-  it("prefers the completed Agent result over disk output and joins blocks with one newline", async () => {
+  it("prefers the completed workflow result over disk output and joins blocks with one newline", async () => {
     const outputRoot = await mkdtemp(join(tmpdir(), "zcode-task-output-agent-"));
     const outputFile = join(outputRoot, "task.output");
     await writeFile(outputFile, "raw transcript", "utf8");
@@ -762,7 +762,7 @@ describe("TaskOutput tool", () => {
     }
   });
 
-  it("uses the Agent output file and error when no completed result is available", async () => {
+  it("uses the workflow output file and error when no completed result is available", async () => {
     const outputRoot = await mkdtemp(join(tmpdir(), "zcode-task-output-agent-failed-"));
     const outputFile = join(outputRoot, "agent.output");
     await writeFile(outputFile, "partial agent output", "utf8");
@@ -811,7 +811,7 @@ describe("TaskOutput tool", () => {
     registry.update("agent_1", (task) => ({
       ...task,
       status: "completed",
-      output: completedAgentOutput("finished"),
+      resultText: "finished",
     }));
     await vi.advanceTimersByTimeAsync(100);
 
@@ -1290,6 +1290,10 @@ describe("TaskOutput tool", () => {
 });
 
 function runtimeTask(overrides: Partial<RuntimeTaskSnapshot> = {}): RuntimeTaskSnapshot {
+  const resultText =
+    overrides.output?.status === "completed"
+      ? overrides.output.content.map((block) => block.text).join("\n")
+      : undefined;
   return {
     taskId: "agent_1",
     agentId: "agent_1",
@@ -1297,10 +1301,11 @@ function runtimeTask(overrides: Partial<RuntimeTaskSnapshot> = {}): RuntimeTaskS
     description: "Research task",
     status: "running",
     startedAt: new Date("2026-07-25T00:00:00.000Z"),
-    type: "local_agent",
-    taskType: "local_agent",
+    type: "local_dynamic_workflow",
+    taskType: "local_dynamic_workflow",
     isBackgrounded: true,
     ...overrides,
+    ...(resultText === undefined ? {} : { resultText }),
   };
 }
 

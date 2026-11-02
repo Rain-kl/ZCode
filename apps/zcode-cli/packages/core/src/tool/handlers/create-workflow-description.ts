@@ -1,3 +1,4 @@
+// FORK(codex-collaboration): 用户要求新六工具替换，当前指导不得指向旧入口。
 // CreateWorkflow 的常驻描述（docs/dynamic-workflow/authoring.md「The authoring surface」）。
 //
 // 2026-09-21 起刻意收短：facade 声明、写作规则、阶段与命名规则、字段的完整语义都搬进了
@@ -18,8 +19,8 @@ const INTRO =
  */
 const WHEN_TO_USE = [
   "When to use:",
-  '- The user explicitly asks for a workflow — "use a workflow", "with a workflow", "使用 workflow", "用工作流", or any phrasing that names workflow/工作流 as the means: this tool is mandatory. Do not substitute the Agent/Task subagent tools, do not do the work inline yourself, and do not judge the task too small for a workflow — the user chose the tool, and that choice is theirs. Size only decides how many subagents the script gets, never whether it is written.',
-  "- Without such an explicit request, do not start a workflow: delegate with the Agent tool or do the work yourself, even for multi-step or multi-subagent tasks.",
+  '- The user explicitly asks for a workflow — "use a workflow", "with a workflow", "使用 workflow", "用工作流", or any phrasing that names workflow/工作流 as the means: this tool is mandatory. Do not substitute the spawn_agent tool, do not do the work inline yourself, and do not judge the task too small for a workflow — the user chose the tool, and that choice is theirs. Size only decides how many subagents the script gets, never whether it is written.',
+  "- Without such an explicit request, do not start a workflow: delegate with the spawn_agent tool or do the work yourself, even for multi-step or multi-subagent tasks.",
 ].join("\n");
 
 const SKILL_GATE = `Before writing or revising a script, load the \`${DYNAMIC_WORKFLOW_SKILL_NAME}\` skill with the Skill tool: it carries the facade declarations the script is checked against, the authoring rules, and this tool's full contract. A call that submits a script is refused until that skill has been loaded in this session; running a saved workflow by name is exempt.`;

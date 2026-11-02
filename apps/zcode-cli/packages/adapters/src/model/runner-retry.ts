@@ -1,6 +1,18 @@
-import { ModelErrorCode, ModelFailureReason, type Logger } from "@zcode/contracts";
+// FORK(codex-collaboration): adapter 退避与共享恢复合同使用同一个等待硬上限。
+import {
+  MODEL_RECOVERY_MAX_DELAY_MS,
+  ModelErrorCode,
+  ModelFailureReason,
+  type Logger,
+} from "@zcode/contracts";
 import { isProviderBusinessError } from "./model-execution.js";
-import { findProviderBusinessError, type ClassifiedModelFailure } from "./failure-classifier.js";
+// FORK(codex-collaboration): 本地控制拒绝通过统一错误归一化传播到 driver。
+import {
+  classifyModelFailure,
+  findProviderBusinessError,
+  isLocalModelRequestFailure,
+  type ClassifiedModelFailure,
+} from "./failure-classifier.js";
 import { readMappedAiSdkProviderBusinessError } from "./failure-ai-sdk-provider-error.js";
 import { unwrapRetryError } from "./failure-inspection.js";
 import {
@@ -12,8 +24,9 @@ import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 import { modelStatusContextToLogContext, type ModelStatusContext } from "./runner-status.js";
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
-const MAX_REASONABLE_RETRY_AFTER_MS = 5 * 60_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
+  // FORK(codex-collaboration): 重包装不能抹去本地禁止请求的控制事实。
+  "localControl",
   "errorPhase",
   "exceptionKind",
   "providerCode",
@@ -35,17 +48,31 @@ export class TerminalStreamChunkError extends Error {
   }
 }
 
+// FORK(codex-collaboration): admission 在 SDK 请求之前失败，不能被通用 unknown 分类重新解释为 API 重试。
+export function classifyAttemptAdmissionFailure(
+  error: unknown,
+  abortSignal?: AbortSignal,
+): ClassifiedModelFailure {
+  const failure = classifyModelFailure(error, abortSignal);
+  failure.retryable = false;
+  if (failure.reason !== ModelFailureReason.Cancelled) {
+    failure.localControl ??= "prepare_failed";
+  }
+  return failure;
+}
+
 export function calculateRetryDelay(
   retry: ResolvedAiSdkModelRetryOptions,
   attempt: number,
   retryAfterMs?: number,
 ): number {
   const uncapped = retry.baseDelayMs * retry.backoffFactor ** Math.max(0, attempt - 1);
-  const capped = Math.min(uncapped, retry.maxDelayMs);
-  // provider 会返回几十秒到数分钟的 retry-after；
-  // 旧 60s 上限会把合法限流等待退化为本地短退避。
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  const capped = Math.min(uncapped, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
+  // FORK(codex-collaboration): 合法 provider hint 优先，但实际等待仍受用户 30 秒硬上限。
   if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
-    return retryAfterMs;
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    return Math.min(retryAfterMs, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
   }
 
   if (!retry.jitter || capped === 0) {
@@ -69,9 +96,15 @@ export async function sleep(delayMs: number, abortSignal?: AbortSignal): Promise
       return;
     }
 
-    const timeout = setTimeout(resolve, delayMs);
+    // FORK(codex-collaboration): 正常等待结束也移除监听器，避免长重试链泄漏。
+    const timeout = setTimeout(() => {
+      abortSignal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
     const onAbort = () => {
       clearTimeout(timeout);
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      abortSignal?.removeEventListener("abort", onAbort);
       reject(createAbortError(abortSignal));
     };
     abortSignal?.addEventListener("abort", onAbort, { once: true });
@@ -118,6 +151,8 @@ export function toAdapterError(
   const providerBusinessError =
     findProviderBusinessError(unwrapped) ?? readMappedAiSdkProviderBusinessError(unwrapped);
   const normalizedContext = {
+    // FORK(codex-collaboration): driver 必须知道本地拒绝，避免新建无限请求链。
+    ...(failure.localControl === undefined ? {} : { localControl: failure.localControl }),
     attempt,
     maxAttempts: statusContext.maxAttempts,
     modelId: statusContext.modelId,
@@ -175,6 +210,9 @@ function modelFailureSource(
   failure: ClassifiedModelFailure,
   additionalContext?: Record<string, unknown>,
 ): ModelErrorSourceType {
+  // FORK(codex-collaboration): SDK 本地校验可能从异步 stream 抛出，阶段位置不能伪造 provider 归因。
+  if (failure.localControl !== undefined || isLocalModelRequestFailure(error))
+    return ModelErrorSource.Runtime;
   const reason = failure.reason;
   if (reason === ModelFailureReason.Cancelled) return ModelErrorSource.Runtime;
   if (
@@ -228,7 +266,8 @@ function isReasonableRetryAfterMs(
     value !== undefined &&
     Number.isFinite(value) &&
     value >= 0 &&
-    (value <= MAX_REASONABLE_RETRY_AFTER_MS || value < exponentialDelayMs)
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    (value <= 5 * 60_000 || value < exponentialDelayMs)
   );
 }
 

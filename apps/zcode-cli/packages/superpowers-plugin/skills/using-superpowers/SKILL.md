@@ -37,7 +37,14 @@ If CLAUDE.md, GEMINI.md, or AGENTS.md says "don't use TDD" and a skill says "alw
 
 ## Platform Adaptation
 
-Skills use Claude Code tool names. Non-CC platforms: see `references/copilot-tools.md` (Copilot CLI), `references/codex-tools.md` (Codex) for tool equivalents. Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.
+**In ZCode:** Use the six collaboration tools in `references/zcode-tools.md`.
+All bundled dispatch templates use this mapping; removed tool names have no
+compatibility entry. Use `Skill` to load skills.
+
+ZCode's dispatch templates use its native collaboration names. Other platform
+references describe their own tool surfaces: `references/copilot-tools.md`
+(Copilot CLI) and `references/codex-tools.md` (Codex). Gemini CLI users get their
+mapping through GEMINI.md; do not use those mappings as ZCode fallbacks.
 
 # Using Skills
 

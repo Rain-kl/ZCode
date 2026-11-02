@@ -58,13 +58,11 @@ function registerRuntimeBuiltInTools(
   const nodeReplEnabled = runtime.config.runtimeFeatures?.nodeRepl === true;
   const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   registerBuiltInTools(runtime.registry, {
+    // FORK(codex-collaboration): 实际绑定在场才注册六工具。
+    includeCollaboration: runtime.collaboration !== undefined,
     ...(options.silentDuplicateWarnings ? { silentDuplicateWarnings: true } : {}),
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
-    includeAgent: Boolean(runtime.subagentPort),
-    includeSendMessage: runtime.subagentPort?.sendMessage !== undefined,
-    includeRespondToCoordinator:
-      runtime.config.taskType === "subagent_child" && Boolean(deps.coordinatorResponsePort),
     // submit_result 只在注入了 workflowSubmitPort 的 workflow actor 会话注册。以端口存在为门，
     // 与 taskType 无关：workflow actor 是 workflow_child，其 runtimeScope 目前是 "main"。
     includeSubmitResult: Boolean(deps.workflowSubmitPort),
@@ -192,8 +190,8 @@ function createRuntimeToolExecutor(
     embeddedSearchBackend: runtime.config.embeddedSearchBackend,
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
-    subagentPort: runtime.subagentPort,
-    coordinatorResponsePort: deps.coordinatorResponsePort,
+    // FORK(codex-collaboration): 使用当前 caller 绑定的同一根树端口。
+    collaborationPort: runtime.collaboration?.port,
     workflowSubmitPort: deps.workflowSubmitPort,
     workflowEscalatePort: deps.workflowEscalatePort,
     artifactStore: deps.artifactStore,

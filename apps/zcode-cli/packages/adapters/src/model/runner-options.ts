@@ -155,6 +155,8 @@ export function createStreamTextOptions(input: {
     // printing its generic system-message warning to process stderr.
     allowSystemInMessages: true,
     maxRetries: 0,
+    // FORK(codex-collaboration): 错误由 fullStream 统一恢复并发布 UI 状态；SDK 默认 hook 会重复输出原始请求到 stderr。
+    onError: () => {},
     // AI SDK 会吞掉 Anthropic message_start 等 metadata 事件；compact 需要
     // 在 adapter 内观察 raw event 才能精确结束 SSE retry，raw chunk 不会上送 Core/UI。
     includeRawChunks: input.request.preserveProviderStreamBoundaries ? true : undefined,

@@ -7,13 +7,11 @@ import {
   type ExecutionPort,
   type SessionEvent,
   type DynamicWorkflowRunSnapshot,
-  type SubagentTaskSnapshot,
   type TraceContext,
   type TurnId,
   type WorkflowNotificationMeta,
   type WorkflowTaskSnapshot,
 } from "@zcode/contracts";
-import { isSubagentDispatchToolName } from "../compat.js";
 import type { ExecutableToolCall } from "../types.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { isRecord } from "./utils.js";
@@ -45,7 +43,6 @@ import {
 
 type BackgroundTaskSnapshot =
   | NonNullable<Awaited<ReturnType<NonNullable<ExecutionPort["getBackgroundTask"]>>>>
-  | SubagentTaskSnapshot
   | WorkflowTaskSnapshot
   // workflow run 的快照沿用 WorkflowTaskSnapshot 的形状但把 output 放宽成 unknown（产物由脚本
   // 的顶层返回值决定），所以它不是 WorkflowTaskSnapshot 的子类型，必须单列一支。
@@ -188,18 +185,18 @@ export class BackgroundTaskTracker {
           taskId,
           toolName: toolCall.name,
         });
-        void Promise.resolve(
-          this.deps.executionPort?.cancelBackgroundTask?.(taskId),
-        ).catch((error) => {
-          this.deps.logger?.warn("Subagent background Bash cancellation failed", {
-            ...traceContextToLogContext(traceContext),
-            errorMessage: error instanceof Error ? error.message : String(error),
-            event: "background_task.subagent_bash.cancel_failed",
-            module: "core.tool.executor",
-            taskId,
-            toolName: toolCall.name,
-          });
-        });
+        void Promise.resolve(this.deps.executionPort?.cancelBackgroundTask?.(taskId)).catch(
+          (error) => {
+            this.deps.logger?.warn("Subagent background Bash cancellation failed", {
+              ...traceContextToLogContext(traceContext),
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "background_task.subagent_bash.cancel_failed",
+              module: "core.tool.executor",
+              taskId,
+              toolName: toolCall.name,
+            });
+          },
+        );
       }, this.deps.subagentBackgroundBashMaxMs);
     }
 
@@ -258,19 +255,6 @@ export class BackgroundTaskTracker {
             stopped = true;
             stopTracking();
           }
-          return;
-        }
-
-        if (this.isNotifiedLocalAgentSnapshot(toolCall, snapshot)) {
-          this.deps.logger?.debug?.("Background task terminal notification already handled by subagent", {
-            ...traceContextToLogContext(traceContext),
-            event: "background_task.tracking.notification_already_handled",
-            module: "core.tool.executor",
-            taskId,
-            toolName: toolCall.name,
-          });
-          stopped = true;
-          stopTracking();
           return;
         }
 
@@ -448,18 +432,6 @@ export class BackgroundTaskTracker {
     return this.lifecycleProvider(toolCall).cancellable === true;
   }
 
-  private isNotifiedLocalAgentSnapshot(
-    toolCall: ExecutableToolCall,
-    snapshot: BackgroundTaskSnapshot,
-  ): boolean {
-    const record = snapshot as unknown as Record<string, unknown>;
-    return (
-      isSubagentDispatchToolName(toolCall.name) &&
-      record.type === "local_agent" &&
-      record.notified === true
-    );
-  }
-
   private maybeEnqueueBackgroundTaskNotification(
     toolCall: ExecutableToolCall,
     taskId: string,
@@ -561,7 +533,13 @@ export class BackgroundTaskTracker {
         // （workflowNotification）在此处发射侧铸造：GUI 渲染的唯一数据源，随 originMeta 走全管线。
         ...(isDynamicWorkflowRunDispatchToolName(toolCall.name)
           ? {
-              originMeta: buildWorkflowNotificationOriginMeta(toolCall, taskId, status, snapshot, output),
+              originMeta: buildWorkflowNotificationOriginMeta(
+                toolCall,
+                taskId,
+                status,
+                snapshot,
+                output,
+              ),
             }
           : {}),
         taskId,
@@ -742,15 +720,7 @@ export class BackgroundTaskTracker {
   private lifecycleProvider(toolCall: ExecutableToolCall): BackgroundTaskLifecycleProvider {
     const deps = this.deps;
 
-    if (isSubagentDispatchToolName(toolCall.name)) {
-      const getTask = deps.subagentPort?.getTask;
-      return {
-        ...(getTask ? { getSnapshot: (taskId: string) => getTask.call(deps.subagentPort, taskId) } : {}),
-        // 修复原因：background Agent 的停止入口在 subagentPort.stopTask；
-        // started payload 不能沿用 Bash 的 executionPort 能力判断。
-        cancellable: Boolean(deps.subagentPort?.stopTask),
-      };
-    }
+    // FORK(codex-collaboration): 子代理生命周期完全由根控制器派生，不由旧后台 tracker 再拥有。
 
     if (isDynamicWorkflowRunDispatchToolName(toolCall.name)) {
       // workflow run：快照/等待/取消全部来自窄端口 DynamicWorkflowRunPort（runId ≡ taskId ≡ workId）。
@@ -774,7 +744,9 @@ export class BackgroundTaskTracker {
       const getTask = deps.workflowPort?.getTask;
       const waiter = getWorkflowTaskWaiter(deps.workflowPort);
       return {
-        ...(getTask ? { getSnapshot: (taskId: string) => getTask.call(deps.workflowPort, taskId) } : {}),
+        ...(getTask
+          ? { getSnapshot: (taskId: string) => getTask.call(deps.workflowPort, taskId) }
+          : {}),
         ...(waiter ? { waitForTerminal: (taskId: string) => waiter.waitForTask(taskId) } : {}),
         cancellable: false,
       };
@@ -806,11 +778,10 @@ export class BackgroundTaskTracker {
 }
 
 function isBackgroundTaskLaunch(
-  toolCall: ExecutableToolCall,
+  _toolCall: ExecutableToolCall,
   output: Record<string, unknown>,
 ): boolean {
-  if (output.status === "backgrounded") return true;
-  return isSubagentDispatchToolName(toolCall.name) && output.status === "async_launched";
+  return output.status === "backgrounded";
 }
 
 type BashTaskNotificationStatus = "completed" | "failed" | "killed";
@@ -833,10 +804,7 @@ function normalizeBackgroundTaskNotificationStatus(status: string): BashTaskNoti
   }
 }
 
-function resolveBashBackgroundResultTitle(
-  toolCall: ExecutableToolCall,
-  taskId: string,
-): string {
+function resolveBashBackgroundResultTitle(toolCall: ExecutableToolCall, taskId: string): string {
   const input = isRecord(toolCall.input) ? toolCall.input : {};
   const description = stringField(input, "description")?.trim();
   const command = stringField(input, "command")?.trim();
@@ -1048,7 +1016,9 @@ function buildWorkflowTerminalNotification(
   // 用户面产物的 chips 载荷。这是通知行 chips 的
   // **唯一**数据源：hydration 冷恢复把它按 shared 的 zod 原样读回，缺一个键就等于 chips 永久
   // 消失。三个终态一律携带，理由同 reports。
-  const artifactsSection = buildWorkflowArtifactsManifestSection(workflowSnapshotArtifacts(snapshot));
+  const artifactsSection = buildWorkflowArtifactsManifestSection(
+    workflowSnapshotArtifacts(snapshot),
+  );
   if (artifactsSection !== undefined) {
     meta.artifacts = artifactsSection.artifacts;
     if (artifactsSection.artifactsTruncated) meta.artifactsTruncated = true;
@@ -1194,7 +1164,6 @@ function getWorkflowTaskWaiter(workflowPort: unknown): WorkflowTaskWaiter | unde
  * 与 workflow run 是两种不同的东西，共用一个类别会让面板把两者混在一起。
  */
 function backgroundTaskKind(toolName: string): "bash" | "subagent" | "workflow" {
-  if (isSubagentDispatchToolName(toolName)) return "subagent";
   // dwf 的两个入口（CreateWorkflow / ResumeWorkflowRun）同归 "workflow"：同一个 run 的
   // 生命周期延续，面板分组与图标不该因入口不同而换类。
   return isDynamicWorkflowRunDispatchToolName(toolName) ? "workflow" : "bash";

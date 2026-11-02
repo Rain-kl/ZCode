@@ -13,7 +13,7 @@
       "kind": "main",
       "timingPolicy": "controlled-stream",
       "source": "synthetic",
-      "syntheticReason": "固定当前轮的 text-only assistant 输出并保持运行，验证抢占后 human reminder 的 MCS 位置降级。"
+      "syntheticReason": "固定当前流的开头和延迟尾部，验证 steer 不截断流，完整响应保留在下一请求，并校验 human reminder 的 MCS 位置降级。"
     },
     {
       "id": "upstream-running-send-now-head-selected",

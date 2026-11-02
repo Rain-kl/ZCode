@@ -168,11 +168,7 @@ export class OffPeakRuntimeExecution {
         return {
           mainRunning: runtime.hasActiveOrQueuedTurnWork(),
           backgroundRunning: tasks.some((task) => !isTerminalRuntimeTask(task)),
-          pendingNotifications: tasks.some(
-            (task) =>
-              (task.isBackgrounded && task.notified !== true) ||
-              (task.pendingMessages?.length ?? 0) > 0,
-          ),
+          pendingNotifications: tasks.some((task) => task.isBackgrounded && task.notified !== true),
           pendingInputs:
             this.pendingInputs || this.reading || runtime.pendingInputReservations.size > 0,
         };
@@ -228,7 +224,8 @@ export class OffPeakRuntimeExecution {
     for (const command of this.runtime.runtimeCommandQueue.snapshot()) {
       if (
         command.offPeakExecutionId === this.executionId &&
-        (command.mode === "task-notification" || command.mode === "subagent-message")
+        // FORK(codex-collaboration): 已移除旧消息 command，闲时取消仅清理自身通知。
+        command.mode === "task-notification"
       )
         this.runtime.runtimeCommandQueue.removeById(command.id);
     }

@@ -14,7 +14,54 @@
 
 标记自查：`rg -n "FORK\(|FORK-BEGIN\(" --glob '!AGENTS.md' --glob '!FEATURES.md'`
 
+## Codex 协作迁移与有界模型恢复 (codex-collaboration)
+
+- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界并通过桌面5/5回放；Task 2 独立协作控制器已通过规格/质量双审及53项测试。六工具、角色与真实 runtime/mailbox 接线正在 Task 3 实施，尚未宣称整体交付。
+- **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
+  用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
+- **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
+  未知 API/4xx/5xx/内部 AbortError 自动恢复，明确超窗交给共享预算下的 compact；显式取消、本地配置/权限/网络门禁不重试。
+  partial/EOF 从安全工具锚点恢复，保留已完成副作用；独立/反应式 compact 的 transport fallback 也共用预算。
+  修复迟到 SDK rejection、abort listener 与合法 backoff watchdog；恢复继续投影既有 UI 状态事件。
+- **修改文件**：CLI `contracts/src/fork/codex-collaboration/model-recovery/**`、`adapters/src/fork/codex-collaboration/model-failure-policy/**`；
+  contracts invocation、adapter model runner/retry/failure、core runtime model/loop/compact/recovery/subagent 接线与就近测试；
+  `packages/shared/src/fork/upstream-network/contract.ts`、`architecture-policy.yaml`。逐文件列表与验证见实现文档。
+- **上游改动标记**：`FORK(codex-collaboration)`；新模块均登记 managed/public entrypoints。
+- **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
+- **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
+- **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
+- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
+- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。默认 runtime driver 仍待 Task3b，不代表迁移完成；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
+- **Task3b（2026-11-02，待独立审查）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。实际相关388项、controller53项、Bash/fork2项通过；CLI lint与独立旧产品断言的失败边界如实记录，客户端整体交付仍待Task4。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
+
+### 持久协作控制器（2026-11-02）
+
+- **背景与修改**：旧子任务的取消与父轮耦合，失败后缺少稳定身份和原会话续跑边界。新增根所有的身份树、调用去重、durable ACK 邮箱、独立 signal/generation、容量与驻留控制，以及原会话恢复的有限 driver 合同。
+- **修改文件**：CLI `core/src/fork/codex-collaboration/**`、测试 driver 与 `architecture-policy.yaml`；新增模块不修改上游产品代码，无逐行标记。
+- **错误与生命周期**：拒绝会破坏已接受历史的损坏快照；失败清理保留原因，重试与 admission 串行；关闭先取消全部 child，保存失败仍尝试释放全部资源。
+- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；53测试与独立竞态探针通过，spec/quality 均批准。真实 driver 和客户端投影仍须后续接线验证。
+
+### steer 安全边界更正（2026-11-02）
+
+- **现场与规则**：实测手动提升队列项触发父轮取消，并连带停止全部 5 个子代理。steer 应在当前请求和工具结果完整返回后的安全边界插入，禁止 stop-then-start。
+- **方案**：复用 Core guide admission 与原队列项 reservation，统一“立即发送”与队列 steer 入口；保留原输入身份，不能 inline 的项继续排队或明确拒绝提升。
+- **修改文件**：Core `runtime/{agent-runtime,internal-methods,methods/{index,steering}}.ts`；Bootstrap `app/{types,input-facade}.ts`、V4 `commands/{prompt-turn,handlers/{session-flow,queue}}.ts` 与 `product-projection.ts`；就近 CLI 测试、正式 running-send-now E2E/fixture、验收目录与矩阵；UI 两处旧协议注释。
+- **影响标记**：`FORK(codex-collaboration)`；设计与验证见本功能 [design](docs/features/codex-collaboration/design.md)、[implementation](docs/features/codex-collaboration/implementation.md) 和 CLI `turn-steering.md`。本项不代表剩余协作迁移已经完成。
+
+### 协议关闭期间保护共享依赖（2026-11-02）
+
+- **背景与修改**：关闭等待超时不代表子会话已停止写入。app 资源 owner 纳入已接受但尚未返回的创建，等待 late app 清理后才确认排空；失败或超时时不提前关闭共享数据库、MCP、browser broker 和模型 registry，独立投影与诊断继续清理。
+- **修改文件与标记**：CLI `bootstrap/src/fork/codex-collaboration-shutdown/**`（managed）；`zcode-protocol/{runtime-cleanup,runtime-resources}.ts` 仅保留 `FORK(codex-collaboration)` 单向导出；就近 `protocol-runtime-shutdown.test.ts` 与架构登记。
+- **设计与证据**：[client-acceptance](docs/features/codex-collaboration/client-acceptance.md#production-shutdown-dependency-order)、[shutdown-implementation](docs/features/codex-collaboration/shutdown-implementation.md)。失败清理保留逐级原因；本项不宣称六工具或生产启动包装器端到端验收完成。
+
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
+
+### 禁用 ARMS 时保持启动可用（2026-11-02）
+
+- **背景与修改**：local-mode 不初始化 ARMS，但 Main 身份同步仍调用未初始化 SDK，导致首窗创建前抛出 `Config not initialized`。身份同步现在使用同一个 fork 开关，禁用时不写 SDK，且只在成功写入后记录去重状态。
+- **修改文件与标记**：`packages/desktop/src/main/{index,armsUserIdentity}.ts`、就近单测；`FORK(local-mode)`。
+- **文档与验证**：[design](docs/features/local-mode/design.md)、[implementation](docs/features/local-mode/implementation.md)；两例先红后绿，相关3文件36测试通过。
+- **后续启动链核对**：稳定性、资源、网络的启动配置同样跳过禁用 SDK 的 properties 写入并保留本地诊断。对应3组启用/禁用合同补齐后，相关6文件106测试通过；文件为 `desktop{Stability,Resource,Network}Telemetry.ts` 及就近测试，标记同为 `local-mode`。
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。
 
@@ -153,6 +200,17 @@
 
 ## GitHub 更新通道 (github-update)
 
+### 远程 Server 从 GitHub 配套发布（2026-11-02）
+
+- **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
+  远程资源默认改为本仓库 `server-v<完整版本>` GitHub Release，复用原 descriptor、缓存、大小和 SHA-256 校验；
+  不跟随可变的 canary-build 指针，后续 canary 不破坏旧客户端安装。显式源覆盖和开发本地产物策略保留。
+- **修改文件与标记**：`packages/desktop/src/main/{remoteCdn.ts,fork/github-update/feed.ts}`、
+  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`；
+  上游接线使用 `FORK(github-update)`，下载失败携带 URL 与具体错误。
+- **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
+  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 
 - **状态**：已实现（2026-09-28），未打包验收（见实现文档 §4）
@@ -203,6 +261,12 @@
 - **实现文档**：`docs/features/nonstream-via-stream/implementation.md`
 - **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/core/src/runtime/methods/runtime-model.ts`。将 fork 的 stream→non-stream 适配器包在上游 invocation layer 外侧，保留上游 session type 与 retry budget 绑定，并用已拆出的 `factoryInput` 调用 model factory。
+
+### 模型能力声明透传（2026-11-02）
+
+- **触发与修复**：包装层手列 `Model` 字段时漏掉 `requestCapabilities`，导致支持 ToolSearch 的模型在 runtime 中被判为不支持。现直接透传该声明，`bind()` 后读取绑定模型的声明。
+- **修改文件**：`apps/zcode-cli/packages/core/src/fork/nonstream-via-stream/model.ts`、`apps/zcode-cli/packages/core/test/forkNonstreamViaStream.test.ts`；沿用本节设计和实现文档，无新增上游接线标记。
+- **验收**：契约测试先红后绿，检查原模型能力、绑定后变化及缺省能力；断言能力被包装层丢弃或沿用旧绑定时会失败。
 
 ## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 

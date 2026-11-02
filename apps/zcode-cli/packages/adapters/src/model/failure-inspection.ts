@@ -152,14 +152,8 @@ function getErrorCodeFromError(error: unknown, seen: WeakSet<object>): string | 
 }
 
 export function isAbortFailure(error: unknown, abortSignal?: AbortSignal): boolean {
-  if (abortSignal?.aborted) {
-    return true;
-  }
-  const record = asRecord(error);
-  return (
-    stringProperty(record, "name") === "AbortError" ||
-    stringProperty(record, "code") === "ABORT_ERR"
-  );
+  // FORK(codex-collaboration): SDK 内部 AbortError 不代表用户 Stop；只有调用方 signal 是取消事实。
+  return abortSignal?.aborted === true;
 }
 
 export function isTimeoutFailure(error: unknown, code?: string, statusCode?: number): boolean {

@@ -94,6 +94,11 @@ export class PermissionService {
 
   constructor(private config: PermissionConfig = defaultPermissionConfig) {}
 
+  // FORK(codex-collaboration): 子会话继承静态策略但不能复制父会话的活动 allow grants。
+  forkForChild(): PermissionService {
+    return new PermissionService(structuredClone(this.config));
+  }
+
   grantSessionPermission(updates: PermissionUpdate[]): void {
     this.sessionRules = applyPermissionUpdates(this.sessionRules, updates);
   }
@@ -609,8 +614,9 @@ export class PermissionService {
       "TodoRead",
       "TodoWrite",
       "AskUserQuestion",
-      "Agent",
-      "Task",
+      // FORK(codex-collaboration): 协作只读默认仅覆盖查询与等待；变更操作使用条目自身权限声明。
+      "list_agents",
+      "wait_agent",
       "Skill",
     ]).has(name);
   }

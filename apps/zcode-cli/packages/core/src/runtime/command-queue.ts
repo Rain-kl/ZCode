@@ -13,7 +13,6 @@ export type RuntimeCommandMode =
   | "target-continuation"
   | "target-continuation-loop"
   | "task-notification"
-  | "subagent-message"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
   readonly __runtimeCommandId: unique symbol;
@@ -73,21 +72,6 @@ export interface TaskNotificationRuntimeCommand extends RuntimeCommandBase {
   readonly toolName?: string;
 }
 
-export interface SubagentMessageRuntimeCommand extends RuntimeCommandBase {
-  readonly branchGeneration: number;
-  readonly mode: "subagent-message";
-  readonly source: "subagent_message";
-  readonly responseId: string;
-  readonly agentId: string;
-  readonly agentType: string;
-  readonly childSessionId: string;
-  readonly childToolCallId: string;
-  readonly parentToolCallId?: string;
-  readonly summary: string;
-  readonly messageLength: number;
-  readonly text: string;
-}
-
 /**
  * 一条排队的 controlOnly 用户轮：GUI「配置」
  * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
@@ -112,7 +96,6 @@ export type RuntimeCommand =
   | TargetContinuationRuntimeCommand
   | TargetContinuationLoopRuntimeCommand
   | TaskNotificationRuntimeCommand
-  | SubagentMessageRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
 export interface RuntimeCommandQueue {

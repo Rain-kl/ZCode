@@ -1,5 +1,12 @@
 # Subagent 配置按父上下文刷新
 
+## 二开替换说明：codex-collaboration
+
+2026-11-02 起，本页的 Host 文件发现、缓存和 workspace 隔离边界继续适用；旧工具调用与
+“terminal resume 用父轮定义重新选模型”的说明废弃。六工具仅在首次创建时解析实际 profile/模型，
+已有子会话后续任务及冷恢复使用其持久化选择；当前合同见
+[运行链](features/codex-collaboration/runtime-integration.md)。下方旧日期验收只证明当时实现。
+
 ## 合同与唯一数据源
 
 Local Host 的 subagents service 持有文件解析缓存及各 workspace 的内存 snapshot。
@@ -7,9 +14,9 @@ Local Host 的 subagents service 持有文件解析缓存及各 workspace 的内
 本地来源以 Host/Settings 为准；其他 storage.dir 用途、独立 CLI/远程 workspace 来源不变。
 
 session 初始化和每个普通父 turn 开始时分别通过 `subagents/readRuntimeConfig` 读取一次。
-该轮 listing、Agent、SendMessage、plugin-reference 共用固定 definitions；后续模型请求、
-重试、compact、Guide 和 running child 不刷新。terminal resume 保留身份历史，查本轮原
-agentType；缺 profile/历史明确失败，不新建空 session、不替代默认 profile。
+该轮 listing、`spawn_agent` 与 plugin-reference 共用固定 definitions；后续模型请求、
+重试、compact、Guide 和 running child 不刷新。已有子智能体后续任务保留身份、历史和保存的
+模型选择；缺 profile/历史明确失败，不新建空 session、不替代默认 profile。
 
 IDE 内存编辑不触发更新；Settings、自动保存、外部写盘经同一原生 watcher 更新。
 “发布”仅表示替换内存 snapshot：后台读取期间继续返回旧完整 snapshot；完成后新父轮

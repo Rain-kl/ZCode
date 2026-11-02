@@ -94,8 +94,8 @@ async function sendText(
   const highspeedActiveTurn = highspeedExecution
     ? record.app.runtime?.getActiveTurnInfo?.()
     : undefined;
+  // FORK(codex-collaboration): steer 不能为安装单次加速材料而取消当前轮次。
   const highspeedRequiresQueue =
-    !forceStartNow &&
     highspeedExecution !== undefined &&
     (record.activeAbortController !== undefined ||
       highspeedActiveTurn !== undefined ||
@@ -125,12 +125,17 @@ async function sendText(
       });
     }
     try {
-      const requestedDelivery = routingMode === "guide" ? "guide" : "queue";
+      // FORK(codex-collaboration): 非 inline 降级仍须保留用户原来的 steer/startNow 意图。
+      const requestedDelivery =
+        payload.requestedDelivery ?? (routingMode === "guide" ? "guide" : "queue");
       const intent = submissionIntent({
         text: payload.text,
         requestedDelivery,
         admittedDelivery: "queue",
-        ...(routingMode === "guide" ? { fallbackReasonCode: HIGHSPEED_QUEUE_FALLBACK_REASON } : {}),
+        // FORK(codex-collaboration): startNow 也只能排队安装单轮材料，原因必须明确投影。
+        ...(requestedDelivery === "guide" || requestedDelivery === "startNow"
+          ? { fallbackReasonCode: HIGHSPEED_QUEUE_FALLBACK_REASON }
+          : {}),
         attachmentRefs: payload.attachments,
       });
       intent.modelSelection = ordinarySelection;
@@ -172,55 +177,16 @@ async function sendText(
     // 原子准入，避免跨层 busy 快照在 await 期间失效后用普通模型直接启动。
     return await queueHighspeedTurn();
   }
-  const foregroundPromotionLeaseId = forceStartNow ? `send-now:${envelope.commandId}` : undefined;
-  let foregroundPromotionLeaseAcquired = false;
-  let preempted = false;
-  const releaseForegroundPromotionLease = () => {
-    if (!foregroundPromotionLeaseAcquired || !foregroundPromotionLeaseId) return;
-    record.app.runtime.releaseForegroundPromotionLease(foregroundPromotionLeaseId);
-    foregroundPromotionLeaseAcquired = false;
-  };
-  if (forceStartNow) {
-    // Bug 根因：Highspeed prepare 让“立即发送”更容易落入 Core busy admission；先持有
-    // 前台租约并抢占当前轮，才能保证 requestedDelivery=startNow 不被静默改成 queue。
-    const leaseResult = record.app.runtime.acquireForegroundPromotionLease({
-      leaseId: foregroundPromotionLeaseId!,
-      mode: "after-current",
-      promotedInputId: envelope.commandId,
-    });
-    if (leaseResult.kind !== "acquired") {
-      throw new V4InputAdmissionRejectedError(
-        "fault.command.inputRejected",
-        "send now foreground promotion is busy",
-      );
-    }
-    foregroundPromotionLeaseAcquired = true;
-    try {
-      // 单条消息的 delivery 只决定新输入何时消费，不能绕过已有队列的用户裁决。
-      await applyHeldQueueDisposition(
-        host,
-        record,
-        payload.heldQueueDisposition,
-        payload.expectedHeldQueueItemIds,
-      );
-      preempted = await preemptActiveTurnAndWait(host, record, {
-        abortMessage: "v4 sendText startNow preempts active turn",
-        goalPausedMutationReason: "send_now_goal_paused",
-        preserveQueueAutoDrainOnCancel: true,
-      });
-    } catch (error) {
-      releaseForegroundPromotionLease();
-      throw error;
-    }
-  }
-  if (!forceStartNow) {
-    await applyHeldQueueDisposition(
-      host,
-      record,
-      payload.heldQueueDisposition,
-      payload.expectedHeldQueueItemIds,
-    );
-  }
+  // FORK-BEGIN(codex-collaboration)
+  // 原因：旧 startNow 先 stop 再 start，截断 provider 流并把取消传播给前台子代理。
+  // Core guide 已有合法的 response/tool-result 边界；此处不持有前台租约或取消执行。
+  await applyHeldQueueDisposition(
+    host,
+    record,
+    payload.heldQueueDisposition,
+    payload.expectedHeldQueueItemIds,
+  );
+  // FORK-END(codex-collaboration)
   let started;
   // 附件命令面：AttachmentRef → TurnAttachment 在闸门后映射（active turn 已排除）。
   try {
@@ -245,9 +211,8 @@ async function sendText(
         ? { browserAmbientContext: payload.browserAmbientContext }
         : {}),
       inputId: envelope.commandId,
-      // 立即发送切换了 runtime turn，导致运行中用户输入遗漏 human 提示。
-      // 只按 Core 的实际抢占回执标记纯文本；空闲及附件输入保留原路径。
-      ...(preempted && !attachments?.length ? { inputPresentation: "user_steer" as const } : {}),
+      // FORK(codex-collaboration): human 标记由 Core 的实际 busy admission 设置，空闲输入仍是新轮。
+      ...(forceStartNow ? { queueDelivery: "guide" as const } : {}),
       intent,
       ...(payload.context_refs ? { sharedContextRefs: payload.context_refs } : {}),
       ...turnBackgroundAttributionOf(payload),
@@ -257,9 +222,6 @@ async function sendText(
         ? { modelExecution: createModelExecutionContext(payload.modelExecution) }
         : {}),
       ...(attachments ? { attachments } : {}),
-      // promotion lease 本身属于 Core busy authority；若不声明 requireIdle，
-      // 抢占完成后的 startNow 会先落 deferred queue，待 lease 释放后再被自动 drain。
-      ...(forceStartNow ? { requireIdle: true } : {}),
     });
   } catch (error) {
     if (
@@ -272,8 +234,6 @@ async function sendText(
       return await queueHighspeedTurn();
     }
     throw error;
-  } finally {
-    releaseForegroundPromotionLease();
   }
   if (started.admission.kind === "queued") {
     return {
@@ -358,7 +318,7 @@ async function stop(
   return undefined;
 }
 
-/** goal-pause barrier 共用件：stop 与 sendQueuedNow（抢占重发）复用，不复制。 */
+/** FORK(codex-collaboration): goal-pause 仅供显式停止/历史编辑；steer 不暂停目标或取消执行。 */
 export async function pauseActiveGoal(
   host: V4CommandCoreHost,
   record: V4SessionRecordView,

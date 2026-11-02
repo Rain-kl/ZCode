@@ -84,6 +84,8 @@ createRuntimeModel
 3. `error` 事件抛出时 provider 业务码不丢。
 4. `streamText` 行为不变；`bind()` 之后仍走适配。
 5. 请求对象原样转发给底层 `streamText`，不丢字段。
+6. `Model.requestCapabilities` 原样透传，包括 ToolSearch 的协议支持与默认启用值；
+   `bind()` 后使用绑定模型的能力声明，缺省时保持缺省。转换请求方式不能关闭模型能力。
 
 ## 已知边界
 

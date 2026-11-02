@@ -51,7 +51,6 @@ import type {
   McpPort,
   DynamicWorkflowRunPort,
   ModelCatalogPort,
-  SubagentPort,
   ToolArtifactStorePort,
   ToolCallId,
   TraceContext,
@@ -146,6 +145,8 @@ import { cloneModelSelection } from "./model-selection.js";
 // FORK(identity-preset): 自定义身份段端口；与 contextSourcePort 同款私有字段
 import type { IdentityPresetPort } from "../fork/identity-preset/file-port.js";
 import type { ForkToolModePort } from "../fork/tool-modes/file-port.js";
+// FORK(codex-collaboration): 宿主仅接线独立协作模块，不继续创建旧 runner。
+import { createRuntimeCollaborationBinding } from "../fork/codex-collaboration-runtime/module.js";
 
 // oxlint-disable typescript-eslint/no-unsafe-declaration-merging
 export class AgentRuntime {
@@ -213,7 +214,8 @@ export class AgentRuntime {
   private registeredMcpToolNames?: string[];
   private mcpToolsSignature?: string;
   private mcpToolListRevision?: number;
-  private subagentPort?: SubagentPort;
+  // FORK(codex-collaboration): 所有 child 共享根绑定，普通 turn 完成不释放。
+  private collaboration?: import("../fork/codex-collaboration-runtime/contract.js").RuntimeCollaborationBinding;
   private readonly getAgentDefinitions: GetAgentDefinitions;
   private readonly prepareAgentDefinitions: ReturnType<
     typeof createTurnAgentDefinitions
@@ -357,7 +359,10 @@ export class AgentRuntime {
     this.fileSystemPort = deps.fileSystemPort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
-    this.subagentPort = deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
+    // FORK(codex-collaboration): 旧端口不恢复旧模型工具；默认唯一新控制器。
+    this.collaboration = deps.createCollaborationBinding
+      ? deps.createCollaborationBinding(runtime)
+      : createRuntimeCollaborationBinding(runtime, deps);
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
     this.modelCatalogPort = deps.modelCatalogPort;
@@ -378,8 +383,10 @@ export class AgentRuntime {
     runtime.startMcpStartup(this.rootTraceContext);
   }
 
-  async closeBrowserSession(): Promise<void> {
+  async closeBrowserSession(options: { propagateErrors?: boolean } = {}): Promise<void> {
     this.beginShutdown();
+    // FORK(codex-collaboration): 等待 child 停止持久化后才关闭共享资源。
+    await this.shutdownCollaboration();
     disposeNodeReplSession(this.sessionId);
     try {
       await this.browserControlPort?.closeSession?.({
@@ -387,6 +394,8 @@ export class AgentRuntime {
         traceContext: this.rootTraceContext,
       });
     } catch (error) {
+      // FORK(codex-collaboration): child driver 需要失败重试句柄，不能把租约释放失败误判为已清理。
+      if (options.propagateErrors) throw error;
       // browser backend 清理失败不能阻断 execution/MCP/session store 的主关闭链路。
       this.logger?.warn("Browser session cleanup failed", {
         error: error instanceof Error ? error.message : String(error),
@@ -405,12 +414,17 @@ export class AgentRuntime {
     // 因此必须先终止该 runtime 的 Extraction，不能只在超时后放弃等待。
     this.memoryExtractionScheduler?.shutdown();
   }
+  // FORK(codex-collaboration): bootstrap 必须在 execution/session store 关闭之前 await。
+  async shutdownCollaboration(): Promise<void> {
+    await this.collaboration?.shutdown();
+  }
 }
 
 export interface AgentRuntime {
+  shutdownCollaboration(): Promise<void>;
   lastPermissionGrantId?: string;
   beginShutdown(): void;
-  closeBrowserSession(): Promise<void>;
+  closeBrowserSession(options?: { propagateErrors?: boolean }): Promise<void>;
   updateConfig(
     patch: Pick<AgentRuntimeConfig, "mode" | "planEnabled" | "language" | "outputStyle">,
   ): void;
@@ -508,6 +522,12 @@ export interface AgentRuntime {
     traceContext?: TraceContext;
   }): Promise<boolean>;
   markPendingInputPromoting(options: {
+    pendingInputId: string;
+    reservationId: string;
+    traceContext?: TraceContext;
+  }): Promise<boolean>;
+  // FORK(codex-collaboration): 原队列项的所有权留在 Core，协议层不能取消流或复制输入。
+  guidePendingInputById(options: {
     pendingInputId: string;
     reservationId: string;
     traceContext?: TraceContext;

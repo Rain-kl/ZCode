@@ -73,15 +73,25 @@ export function createTestRuntimeModel(input: {
     generateText: input.generateText,
     async *streamText(request) {
       const result = await input.generateText(request);
+      // 原因：真实 runtime 经流式适配后读取这些字段；桩漏投影会丢失部分思考与恢复依据。
+      for (const [index, block] of (result.reasoning ?? []).entries()) {
+        const id = `test-reasoning-${index}`;
+        yield { id, type: "reasoning_start", providerMetadata: block.providerOptions };
+        if (block.text) yield { id, type: "reasoning_delta", text: block.text };
+        yield { id, type: "reasoning_end", providerMetadata: block.providerOptions };
+      }
       if (result.text) {
         yield { id: "test-text", type: "text_start" };
         yield { id: "test-text", type: "text_delta", text: result.text };
         yield { id: "test-text", type: "text_end" };
       }
+      // FORK(codex-collaboration): nonstream-via-stream 消费真实 stream；桩必须投影 tool_call，不能把已返回工具静默丢掉。
+      for (const toolCall of result.toolCalls ?? []) yield { type: "tool_call", toolCall };
       yield {
         type: "finish",
         finishReason: result.finishReason,
         usage: result.usage,
+        providerMetadata: result.providerMetadata,
       };
     },
   };

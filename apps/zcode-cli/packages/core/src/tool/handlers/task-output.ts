@@ -24,11 +24,7 @@ import type {
   ToolInputValidationResult,
   ToolPersistedModelContentInput,
 } from "../types.js";
-import {
-  formatCompactFileSize,
-  projectTask,
-  throwIfAborted,
-} from "./task-output-projection.js";
+import { formatCompactFileSize, projectTask, throwIfAborted } from "./task-output-projection.js";
 
 const TASK_OUTPUT_DEFAULT_LENGTH = 32_000;
 const TASK_OUTPUT_MAX_LENGTH = 160_000;
@@ -171,6 +167,13 @@ function getTaskOutputInputFailure(
     return taskOutputFailure(
       TASK_OUTPUT_ERROR_CODE.TASK_NOT_FOUND,
       `No task found with ID: ${input.task_id}`,
+    );
+  }
+  // FORK(codex-collaboration): 子代理邮箱与终态归控制器所有，不能经旧后台工具旁路读取。
+  if (registry?.get(input.task_id)?.type === "local_agent") {
+    return taskOutputFailure(
+      TASK_OUTPUT_ERROR_CODE.TASK_NOT_FOUND,
+      "Subagent tasks use list_agents and wait_agent; TaskOutput only reads background shell/workflow tasks",
     );
   }
   return undefined;

@@ -1,4 +1,4 @@
-import { ModelCallWrapperSchema } from "@zcode/contracts";
+import { ModelCallWrapperSchema, CollaborationMessageProvenanceSchema } from "@zcode/contracts";
 import {
   hydrateToolSearchContent,
   hydrateCompactDiscovery,
@@ -94,6 +94,19 @@ export async function hydrateMessageHistoryFromSession(input: {
     partCount += parts.length;
 
     if (message.info.role === "user") {
+      // FORK(codex-collaboration): 冷恢复只保存 raw 信息，assistant 信封在唯一 provider 边界生成。
+      const rawCollaboration = (message.info.metadata as Record<string, unknown> | undefined)
+        ?.collaboration;
+      if (rawCollaboration !== undefined) {
+        const collaboration = CollaborationMessageProvenanceSchema.parse(rawCollaboration);
+        const text = parts
+          .filter((part) => part.type === "text")
+          .map((part) => (part.type === "text" ? part.text : ""))
+          .join("\n");
+        input.history.addUser(text, { source: "subagent_message", collaboration });
+        appliedMessageCount++;
+        continue;
+      }
       const sharedContextStatus =
         message.info.source === "shared_context" &&
         message.info.metadata &&
@@ -123,6 +136,10 @@ export async function hydrateMessageHistoryFromSession(input: {
       const presentation = runtimeInputMetadata(
         (message.info.metadata as Record<string, unknown> | undefined)?.inputPresentation,
       );
+      // FORK(codex-collaboration): fork 的用户历史保留上下文，但不能当作新 child 的用户授权。
+      const inherited =
+        (message.info.metadata as Record<string, unknown> | undefined)?.collaborationInherited ===
+        true;
       const boundaryPart = parts.find(isActiveCompactionBoundaryPart);
       const compactBoundary =
         boundaryPart?.type === "compaction"
@@ -139,13 +156,22 @@ export async function hydrateMessageHistoryFromSession(input: {
         };
       }
       input.history.addEntries(
-        presentation
+        inherited
           ? entries.map((entry) =>
               entry.kind === "attachment"
                 ? entry
-                : { ...entry, metadata: { ...entry.metadata, ...presentation } },
+                : {
+                    ...entry,
+                    metadata: { ...entry.metadata, source: "legacy_synthetic" as const },
+                  },
             )
-          : entries,
+          : presentation
+            ? entries.map((entry) =>
+                entry.kind === "attachment"
+                  ? entry
+                  : { ...entry, metadata: { ...entry.metadata, ...presentation } },
+              )
+            : entries,
       );
       appliedMessageCount++;
       continue;

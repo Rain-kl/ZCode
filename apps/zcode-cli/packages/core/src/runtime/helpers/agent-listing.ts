@@ -11,7 +11,8 @@ export function collectRuntimeAgentListing(
   entries: readonly RuntimeMessageEntry[],
   tools: readonly { name: string }[],
 ): RuntimeAttachmentEntry | undefined {
-  if (!tools.some((tool) => tool.name === "Agent")) return undefined;
+  // FORK(codex-collaboration): 目录可见性跟随唯一新创建工具，旧名字不会重新启用目录。
+  if (!tools.some((tool) => tool.name === "spawn_agent")) return undefined;
   return collectAgentListingAttachment({
     definitions: runtime.getAgentDefinitions(),
     entries,

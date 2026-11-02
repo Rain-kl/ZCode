@@ -54,13 +54,16 @@ queue。empty、超限或 runtime reject 返回显式 `rejected/failed`，UI 保
 `editQueueItem` 原地更新，保留 item ID、来源 command、原位置、attachments、client 与 admission 顺序；
 只改变用户明确提交的新字段。reorder/delete 也通过 CLI command 修改同一份权威 queue。
 
-`sendQueuedNow` 不先删后发：
+### Fork：steer 安全边界（codex-collaboration，2026-11-02）
+
+`sendText(requestedDelivery=startNow)` 的运行中投递进入 Core guide admission，不停止当前轮次。
+`sendQueuedNow` 不先删后发，也不再执行 stop barrier：
 
 ```text
 reserve(item)
-  -> stop barrier
-  -> start/promote(item)
-  -> remove(item) only after start succeeds
+  -> busy + 普通文本：同一项原地转 guide，下一安全请求边界消费
+  -> idle：idle-only lease -> start/promote(item) -> remove after start succeeds
+  -> busy + 不能 inline 的项：明确拒绝，保留原项
 
 timeout/failure -> release reservation -> 原 item 原位、原字段保留
 ```
@@ -68,7 +71,8 @@ timeout/failure -> release reservation -> 原 item 原位、原字段保留
 同 item 的连续点击或多端竞争只有一个 reservation owner。
 reservation 位于共享 CLI runtime；`reserved/promoting` 经事件流投影给所有 desktop/mobile
 订阅者，并暂停普通 drain。提升读取完整 QueueItem，沿用原 `sourceCommandId` 和 attachments；
-start 成功后才按相同 reservationId remove。该 remove 使用 `promoted` 原因，只摘 queue、不把
+行内 guide 只由真实 drain 移除；独立 start 成功后才按相同 reservationId remove。
+该 remove 使用 `promoted` 原因，只摘 queue、不把
 durable ledger 标 cancelled；user message 原子提交后由 `SessionInputPromoted` 解 pin，提交前崩溃则
 恢复为 explicit discarded。
 

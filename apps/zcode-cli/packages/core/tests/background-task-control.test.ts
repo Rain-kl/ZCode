@@ -1,7 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import {
   SessionEventType,
@@ -9,7 +5,6 @@ import {
   createSessionId,
   createTurnId,
   type ExecutionPort,
-  type SessionEvent,
 } from "@zcode/contracts";
 import type { AgentRuntime } from "../src/runtime.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
@@ -19,23 +14,8 @@ import {
 } from "../src/runtime-task/registry.js";
 import { BackgroundTaskTracker } from "../src/tool/executor/background-tasks.js";
 import { updateRuntimeBackgroundTask } from "../src/tool/executor/background-task-registry.js";
-import { createExploreSubagentPort } from "../src/subagent/runner.js";
 import { taskStopToolEntry } from "../src/tool/handlers/task-stop.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
-
-function deferred<T = void>(): {
-  promise: Promise<T>;
-  reject: (error: unknown) => void;
-  resolve: (value: T) => void;
-} {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((innerResolve, innerReject) => {
-    resolve = innerResolve;
-    reject = innerReject;
-  });
-  return { promise, reject, resolve };
-}
 
 async function waitForCondition(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const startedAt = Date.now();
@@ -247,65 +227,6 @@ describe("background task control", () => {
     });
   });
 
-  it("treats stopped runtime task results as successful cancellation", async () => {
-    const sessionId = createSessionId("background-control-stopped-status");
-    const eventStore = createTestSessionEventStore();
-    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
-    runtimeTaskRegistry.register({
-      agentId: "agent_stopped",
-      agentType: "general-purpose",
-      description: "stoppable agent",
-      isBackgrounded: true,
-      outputFile: "/tmp/agent_stopped/output.txt",
-      parentToolCallId: "tool_agent_stopped",
-      startedAt: new Date(0),
-      status: "running",
-      taskId: "agent_stopped",
-      taskType: "local_agent",
-      type: "local_agent",
-    } as never);
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        eventStore,
-        runtimeTaskRegistry,
-        subagentPort: {
-          async launch() {
-            throw new Error("launch should not be called");
-          },
-          async run() {
-            throw new Error("run should not be called");
-          },
-          async stopTask(taskId) {
-            return {
-              agentId: taskId,
-              agentType: "general-purpose",
-              childSessionId: "child_stopped" as never,
-              description: "stoppable agent",
-              isBackgrounded: true,
-              outputFile: "/tmp/agent_stopped/output.txt",
-              parentToolCallId: "tool_agent_stopped",
-              parentSessionId: sessionId,
-              prompt: "stop",
-              startedAt: new Date(0),
-              status: "stopped",
-              taskId,
-              taskType: "local_agent",
-              type: "local_agent",
-            } as never;
-          },
-        },
-      },
-    );
-
-    await expect(runtime.cancelBackgroundTask("agent_stopped")).resolves.toMatchObject({
-      cancelled: true,
-      status: "cancelled",
-      taskId: "agent_stopped",
-    });
-  });
-
   it("returns unsupported for runtime task types without a stop handler", async () => {
     const sessionId = createSessionId("background-control-unsupported");
     const eventStore = createTestSessionEventStore();
@@ -333,454 +254,6 @@ describe("background task control", () => {
       taskId: "workflow_bg",
       type: "local_workflow",
     });
-  });
-
-  it("stops running local Agent tasks through the subagent port", async () => {
-    const sessionId = createSessionId("background-control-agent");
-    const eventStore = createTestSessionEventStore();
-    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
-    const stoppedTaskIds: string[] = [];
-    runtimeTaskRegistry.register({
-      agentId: "agent_bg",
-      agentType: "general-purpose",
-      description: "research",
-      isBackgrounded: true,
-      outputFile: "/tmp/agent_bg/output.txt",
-      parentToolCallId: "tool_agent",
-      startedAt: new Date(0),
-      status: "running",
-      taskId: "agent_bg",
-      taskType: "local_agent",
-      type: "local_agent",
-    } as never);
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        eventStore,
-        runtimeTaskRegistry,
-        subagentPort: {
-          async launch() {
-            throw new Error("launch should not be called");
-          },
-          async run() {
-            throw new Error("run should not be called");
-          },
-          async stopTask(taskId) {
-            stoppedTaskIds.push(taskId);
-            return {
-              agentId: taskId,
-              agentType: "general-purpose",
-              description: "research",
-              outputFile: "/tmp/agent_bg/output.txt",
-              startedAt: new Date(0),
-              status: "killed",
-              taskId,
-            };
-          },
-        },
-      },
-    );
-
-    const result = await runtime.cancelBackgroundTask("agent_bg");
-
-    expect(stoppedTaskIds).toEqual(["agent_bg"]);
-    expect(result).toMatchObject({
-      cancelled: true,
-      status: "cancelled",
-      taskId: "agent_bg",
-    });
-  });
-
-  it("uses the local Agent description as the TaskStop command", async () => {
-    const sessionId = createSessionId("background-control-agent-command");
-    const eventStore = createTestSessionEventStore();
-    const runtimeTaskRegistry = new InMemoryRuntimeTaskRegistry();
-    const prompt = "Read every source and return a complete multi-section report.";
-    runtimeTaskRegistry.register({
-      agentId: "agent_command",
-      agentType: "general-purpose",
-      description: "Research the current odds",
-      isBackgrounded: true,
-      prompt,
-      startedAt: new Date(0),
-      status: "running",
-      taskId: "agent_command",
-      taskType: "local_agent",
-      type: "local_agent",
-    } as never);
-    await eventStore.append(
-      createSessionEvent(SessionEventType.BackgroundTaskStarted, sessionId, {
-        cancellable: true,
-        command: prompt,
-        description: "Research the current odds",
-        startedAt: new Date(0),
-        status: "running",
-        taskId: "agent_command",
-        terminalId: "agent_command",
-        toolCallId: "tool_agent_command",
-        toolName: "Agent",
-      }),
-    );
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        eventStore,
-        runtimeTaskRegistry,
-        subagentPort: {
-          async launch() {
-            throw new Error("launch should not be called");
-          },
-          async run() {
-            throw new Error("run should not be called");
-          },
-          async stopTask(taskId) {
-            return {
-              agentId: taskId,
-              agentType: "general-purpose",
-              description: "Research the current odds",
-              startedAt: new Date(0),
-              status: "killed",
-              taskId,
-            };
-          },
-        },
-      },
-    );
-
-    await expect(
-      (runtime as any).stopBackgroundTask("agent_command", { strict: true }),
-    ).resolves.toMatchObject({
-      command: "Research the current odds",
-      ok: true,
-      status: "killed",
-      taskId: "agent_command",
-      type: "local_agent",
-    });
-  });
-
-  it("aborts a running background subagent and enqueues one stopped notification", async () => {
-    const sessionId = createSessionId("background-control-agent-port");
-    const turnId = createTurnId("turn_background_control_agent_port");
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-background-control-agent-port-"));
-    const aborted = deferred();
-    let abortObserved = false;
-    const notifications: string[] = [];
-    const notificationArtifactStates: Array<{ exists: boolean; content: string }> = [];
-    const emittedEvents: Array<{ type: SessionEventType; payload: unknown }> = [];
-    const backgroundCompletedAbortStates: boolean[] = [];
-    const registry = new InMemoryRuntimeTaskRegistry();
-    const port = createExploreSubagentPort({
-      createAgentId: () => "agent_stop",
-      emitParentEvent: async (event) => {
-        if (event.type === SessionEventType.BackgroundTaskCompleted) {
-          backgroundCompletedAbortStates.push(abortObserved);
-        }
-        emittedEvents.push({ type: event.type, payload: event.payload });
-      },
-      enqueueParentTaskNotification: (notification) => {
-        const outputFile = notification.text.match(/<output-file>([^<]+)<\/output-file>/u)?.[1];
-        notificationArtifactStates.push({
-          exists: outputFile ? existsSync(outputFile) : false,
-          content: outputFile && existsSync(outputFile) ? readFileSync(outputFile, "utf8") : "",
-        });
-        notifications.push(notification.text);
-      },
-      outputRootDir,
-      runtimeTaskRegistry: registry,
-      async runExploreAgent(request, options) {
-        await request.onSessionReady?.();
-        return await new Promise((_, reject) => {
-          options?.signal?.addEventListener(
-            "abort",
-            () => {
-              abortObserved = true;
-              aborted.resolve();
-              reject(options.signal?.reason ?? new Error("aborted"));
-            },
-            { once: true },
-          );
-        });
-      },
-    });
-
-    try {
-      await port.start?.({
-        agentType: "general-purpose",
-        description: "Stop me",
-        parentToolCallId: "tool_agent_stop",
-        prompt: "Wait until stopped",
-        sessionId,
-        trace: {
-          traceId: "trace_background_control_agent_port",
-          spanId: "span_background_control_agent_port",
-          sessionId,
-          turnId,
-        },
-        turnId,
-        workingDirectory: outputRootDir,
-        workspaceRoot: outputRootDir,
-      });
-
-      const stopped = await port.stopTask?.("agent_stop");
-      await aborted.promise;
-
-      expect(stopped).toMatchObject({
-        status: "killed",
-        taskId: "agent_stop",
-      });
-      expect(registry.get("agent_stop")).toMatchObject({
-        notified: true,
-        status: "killed",
-      });
-      expect(notifications).toHaveLength(1);
-      expect(notifications[0]).toContain("<status>stopped</status>");
-      expect(notificationArtifactStates).toEqual([
-        expect.objectContaining({
-          exists: true,
-          content: expect.stringContaining("Background agent task stopped."),
-        }),
-      ]);
-      expect(backgroundCompletedAbortStates).toEqual([true]);
-      expect(
-        emittedEvents.filter((event) => event.type === SessionEventType.BackgroundTaskCompleted),
-      ).toHaveLength(1);
-    } finally {
-      await rm(outputRootDir, { force: true, recursive: true });
-    }
-  });
-
-  it("cleans up a background subagent when startup event emission fails before run starts", async () => {
-    const sessionId = createSessionId("background-control-agent-startup-failure");
-    const turnId = createTurnId("turn_background_control_agent_startup_failure");
-    const outputRootDir = await mkdtemp(
-      join(tmpdir(), "zcode-background-control-agent-startup-failure-"),
-    );
-    const registry = new InMemoryRuntimeTaskRegistry();
-    let runCalled = false;
-    const port = createExploreSubagentPort({
-      createAgentId: () => "agent_startup_fail",
-      emitParentEvent: async (event) => {
-        if (event.type === SessionEventType.SubagentSpawned) {
-          throw new Error("spawn event failed");
-        }
-      },
-      enqueueParentTaskNotification: () => {},
-      outputRootDir,
-      runtimeTaskRegistry: registry,
-      async runExploreAgent(request) {
-        runCalled = true;
-        await request.onSessionReady?.();
-        throw new Error("run should not be called");
-      },
-    });
-
-    try {
-      await expect(
-        port.start?.({
-          agentType: "general-purpose",
-          description: "Fail before run",
-          parentToolCallId: "tool_agent_startup_fail",
-          prompt: "This should not start",
-          sessionId,
-          trace: {
-            traceId: "trace_background_control_agent_startup_failure",
-            spanId: "span_background_control_agent_startup_failure",
-            sessionId,
-            turnId,
-          },
-          turnId,
-          workingDirectory: outputRootDir,
-          workspaceRoot: outputRootDir,
-        }),
-      ).rejects.toThrow("spawn event failed");
-
-      expect(runCalled).toBe(true);
-      expect(registry.get("agent_startup_fail")).toBeUndefined();
-    } finally {
-      await rm(outputRootDir, { force: true, recursive: true });
-    }
-  });
-
-  it("does not mark a stopped background subagent terminal until its notification is enqueued", async () => {
-    const sessionId = createSessionId("background-control-agent-stop-finalize-failure");
-    const turnId = createTurnId("turn_background_control_agent_stop_final_failure");
-    const outputRootDir = await mkdtemp(
-      join(tmpdir(), "zcode-background-control-agent-stop-finalize-failure-"),
-    );
-    const aborted = deferred();
-    let abortObserved = false;
-    const registry = new InMemoryRuntimeTaskRegistry();
-    const port = createExploreSubagentPort({
-      createAgentId: () => "agent_stop_finalize_fail",
-      emitParentEvent: async () => {},
-      enqueueParentTaskNotification: () => {
-        throw new Error("enqueue failed");
-      },
-      outputRootDir,
-      runtimeTaskRegistry: registry,
-      async runExploreAgent(request, options) {
-        await request.onSessionReady?.();
-        return await new Promise((_, reject) => {
-          options?.signal?.addEventListener(
-            "abort",
-            () => {
-              abortObserved = true;
-              aborted.resolve();
-              reject(options.signal?.reason ?? new Error("aborted"));
-            },
-            { once: true },
-          );
-        });
-      },
-    });
-
-    try {
-      await port.start?.({
-        agentType: "general-purpose",
-        description: "Stop finalize failure",
-        parentToolCallId: "tool_agent_stop_finalize_fail",
-        prompt: "Wait until stopped",
-        sessionId,
-        trace: {
-          traceId: "trace_background_control_agent_stop_final_failure",
-          spanId: "span_background_control_agent_stop_final_failure",
-          sessionId,
-          turnId,
-        },
-        turnId,
-        workingDirectory: outputRootDir,
-        workspaceRoot: outputRootDir,
-      });
-
-      await expect(port.stopTask?.("agent_stop_finalize_fail")).rejects.toThrow(
-        "stopped notification was not enqueued",
-      );
-
-      expect(abortObserved).toBe(false);
-      expect(registry.get("agent_stop_finalize_fail")).toMatchObject({
-        status: "running",
-      });
-    } finally {
-      await rm(outputRootDir, { force: true, recursive: true });
-    }
-  });
-
-  it("aborts a SendMessage-resumed background subagent when it is stopped", async () => {
-    const sessionId = createSessionId("background-control-agent-resume");
-    const turnId = createTurnId("turn_background_control_agent_resume");
-    const childSessionId = createSessionId("subagent_agent_resume");
-    const outputRootDir = await mkdtemp(join(tmpdir(), "zcode-background-control-agent-resume-"));
-    const agentOutputDir = join(outputRootDir, sessionId, "agent_resume");
-    const aborted = deferred();
-    const parentEvents: SessionEvent[] = [];
-    const registry = new InMemoryRuntimeTaskRegistry();
-    registry.register({
-      agentId: "agent_resume",
-      agentType: "general-purpose",
-      childSessionId,
-      description: "Resume me",
-      isBackgrounded: true,
-      parentSessionId: sessionId,
-      parentToolCallId: "tool_agent_resume",
-      prompt: "Original prompt",
-      startedAt: new Date(0),
-      status: "completed",
-      taskId: "agent_resume",
-      taskType: "local_agent",
-      traceContext: {
-        traceId: "trace_background_control_agent_resume",
-        spanId: "span_background_control_agent_resume",
-        sessionId,
-        turnId,
-      },
-      turnId,
-      type: "local_agent",
-    } as never);
-    const port = createExploreSubagentPort({
-      createAgentId: () => "unused_agent_id",
-      emitParentEvent: async (event) => {
-        parentEvents.push(event);
-      },
-      enqueueParentTaskNotification: () => {},
-      outputRootDir,
-      runtimeTaskRegistry: registry,
-      async runExploreAgent(request, options) {
-        await request.onSessionReady?.();
-        return await new Promise((_, reject) => {
-          options?.signal?.addEventListener(
-            "abort",
-            () => {
-              aborted.resolve();
-              reject(options.signal?.reason ?? new Error("aborted"));
-            },
-            { once: true },
-          );
-        });
-      },
-    });
-
-    try {
-      const result = await port.sendMessage?.({
-        message: "Continue in background",
-        parentToolCallId: "tool_agent_resume_send",
-        sessionId,
-        summary: "Continue resumed work",
-        to: "agent_resume",
-        trace: {
-          traceId: "trace_background_control_agent_resume_send",
-          spanId: "span_background_control_agent_resume_send",
-          sessionId,
-          turnId,
-        },
-        turnId,
-        workingDirectory: outputRootDir,
-        workspaceRoot: outputRootDir,
-      });
-
-      expect(result).toMatchObject({
-        agentId: "agent_resume",
-        delivery: "resumed_background",
-        message: `Agent "agent_resume" was stopped (completed); resumed it in the background with your message. You'll be notified when it finishes. Output: ${join(agentOutputDir, "output.txt")}`,
-        outputFile: join(agentOutputDir, "output.txt"),
-        status: "success",
-        taskId: "agent_resume",
-      });
-      const resumedStartEvents = parentEvents.filter(
-        (event) =>
-          event.type === SessionEventType.SubagentSpawned ||
-          event.type === SessionEventType.BackgroundTaskStarted,
-      );
-      expect(resumedStartEvents.map((event) => event.type)).toEqual([
-        SessionEventType.SubagentSpawned,
-      ]);
-      expect(resumedStartEvents[0]?.payload).toMatchObject({
-        agentId: "agent_resume",
-        background: true,
-        childSessionId,
-        resumed: true,
-        status: "running",
-      });
-
-      const stopped = await port.stopTask?.("agent_resume");
-      await Promise.race([
-        aborted.promise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("resumed subagent was not aborted")), 100),
-        ),
-      ]);
-
-      expect(stopped).toMatchObject({
-        status: "killed",
-        taskId: "agent_resume",
-      });
-      expect(registry.get("agent_resume")).toMatchObject({
-        status: "killed",
-      });
-    } finally {
-      await rm(outputRootDir, { force: true, recursive: true });
-    }
   });
 
   it("does not overwrite a terminal runtime task when a late tracker snapshot arrives", () => {
@@ -1163,7 +636,9 @@ describe("background task per-tool provider lookup", () => {
     expect(notification.toolName).toBe("CreateWorkflow");
     // formatWorkflowTaskNotification 的形状（不是 Bash 的那套）：workflow 措辞的 summary
     // 加上截断后的结果。
-    expect(notification.text).toContain('<summary>Workflow &quot;dwfrun-1&quot; completed.</summary>');
+    expect(notification.text).toContain(
+      "<summary>Workflow &quot;dwfrun-1&quot; completed.</summary>",
+    );
     expect(notification.text).toContain("workflow answer");
     expect(notification.originMeta).toMatchObject({
       backgroundSource: "workflow",
@@ -1339,7 +814,9 @@ describe("background task per-tool provider lookup", () => {
     const guidance = text.indexOf("Present its outcome to the user as a deliverable");
     expect(close).toBeGreaterThanOrEqual(0);
     expect(guidance).toBeGreaterThan(close);
-    expect(text).toContain("which findings were confirmed by a deterministic check or an independent subagent");
+    expect(text).toContain(
+      "which findings were confirmed by a deterministic check or an independent subagent",
+    );
     expect(text).toContain("Do not restate the phase graph or the script.");
     expect(text).not.toContain("Present what it salvaged first");
   });
@@ -1501,7 +978,10 @@ describe("background task per-tool provider lookup", () => {
           version: 2,
           contentType: "application/pdf",
           itemCount: 0,
-          versions: [{ version: 1, publishedAt: 1, bytes: 10 }, { version: 2, publishedAt: 2, bytes: 4096 }],
+          versions: [
+            { version: 1, publishedAt: 1, bytes: 10 },
+            { version: 2, publishedAt: 2, bytes: 4096 },
+          ],
         },
         {
           id: "perf",
@@ -1528,7 +1008,14 @@ describe("background task per-tool provider lookup", () => {
 
   it("failed 与 cancelled 的通知一样带 <artifacts>，并给一句更短的指引", async () => {
     const artifacts = [
-      { id: "notes", kind: "markdown", version: 1, contentType: "text/markdown", itemCount: 0, versions: [{ version: 1, publishedAt: 1, bytes: 128 }] },
+      {
+        id: "notes",
+        kind: "markdown",
+        version: 1,
+        contentType: "text/markdown",
+        itemCount: 0,
+        versions: [{ version: 1, publishedAt: 1, bytes: 128 }],
+      },
     ];
     const failed = await notificationWithReports("dwf-artifacts-failed", {
       status: "failed",
@@ -1729,9 +1216,9 @@ describe("background task per-tool provider lookup", () => {
    * （面板据此退到命令行文本）——三种情形一次钉住。
    */
   it("Bash 的展示名仍是 input.description 优先于快照，缺席时为 undefined", async () => {
-    async function trackBash(input: Record<string, unknown>): Promise<
-      { payload: Record<string, unknown>; type: string }[]
-    > {
+    async function trackBash(
+      input: Record<string, unknown>,
+    ): Promise<{ payload: Record<string, unknown>; type: string }[]> {
       const sessionId = createSessionId("bash-description-pin");
       const turnId = createTurnId("bash-description-pin");
       const events: { payload: Record<string, unknown>; type: string }[] = [];
@@ -1835,32 +1322,28 @@ describe("dynamic workflow run cancellation", () => {
       }),
     );
 
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        dynamicWorkflowRunPort: {
-          async submit() {
-            throw new Error("submit should not be called");
-          },
-          async getTask(taskId: string) {
-            return { taskId, status: cancelled.includes(taskId) ? "cancelled" : "running" };
-          },
-          async waitForTask(taskId: string) {
-            return { taskId, status: "cancelled" };
-          },
-          async cancel(runId: string) {
-            cancelled.push(runId);
-            return true;
-          },
-          async listEvents() {
-            return [];
-          },
+    const runtime = createTestAgentRuntime(sessionId, { mode: "build" }, {
+      dynamicWorkflowRunPort: {
+        async submit() {
+          throw new Error("submit should not be called");
         },
-        eventStore,
-        runtimeTaskRegistry,
-      } as never,
-    );
+        async getTask(taskId: string) {
+          return { taskId, status: cancelled.includes(taskId) ? "cancelled" : "running" };
+        },
+        async waitForTask(taskId: string) {
+          return { taskId, status: "cancelled" };
+        },
+        async cancel(runId: string) {
+          cancelled.push(runId);
+          return true;
+        },
+        async listEvents() {
+          return [];
+        },
+      },
+      eventStore,
+      runtimeTaskRegistry,
+    } as never);
 
     const result = await runtime.cancelBackgroundTask("dwfrun-cancel");
 
@@ -1885,31 +1368,27 @@ describe("dynamic workflow run cancellation", () => {
       type: "local_dynamic_workflow",
     } as never);
 
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        dynamicWorkflowRunPort: {
-          async submit() {
-            throw new Error("submit should not be called");
-          },
-          async getTask() {
-            return undefined;
-          },
-          async waitForTask() {
-            return undefined;
-          },
-          async cancel() {
-            return false;
-          },
-          async listEvents() {
-            return [];
-          },
+    const runtime = createTestAgentRuntime(sessionId, { mode: "build" }, {
+      dynamicWorkflowRunPort: {
+        async submit() {
+          throw new Error("submit should not be called");
         },
-        eventStore,
-        runtimeTaskRegistry,
-      } as never,
-    );
+        async getTask() {
+          return undefined;
+        },
+        async waitForTask() {
+          return undefined;
+        },
+        async cancel() {
+          return false;
+        },
+        async listEvents() {
+          return [];
+        },
+      },
+      eventStore,
+      runtimeTaskRegistry,
+    } as never);
 
     const result = await runtime.cancelBackgroundTask("dwfrun-gone");
     expect(result.cancelled).toBe(false);
@@ -1933,11 +1412,10 @@ describe("dynamic workflow run cancellation", () => {
       type: "local_dynamic_workflow",
     } as never);
 
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      { eventStore, runtimeTaskRegistry } as never,
-    );
+    const runtime = createTestAgentRuntime(sessionId, { mode: "build" }, {
+      eventStore,
+      runtimeTaskRegistry,
+    } as never);
 
     const result = await runtime.cancelBackgroundTask("dwfrun-noport");
     expect(result.cancelled).toBe(false);
@@ -2030,41 +1508,37 @@ describe("dynamic workflow background task registration", () => {
       type: "local_dynamic_workflow",
     } as never);
 
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "build" },
-      {
-        dynamicWorkflowRunPort: {
-          async submit() {
-            throw new Error("submit should not be called");
-          },
-          async getTask(taskId: string) {
-            return { taskId, runId: taskId, startedAt: new Date(0), status: "running" };
-          },
-          async waitForTask(taskId: string) {
-            return { taskId, runId: taskId, startedAt: new Date(0), status: "cancelled" };
-          },
-          async cancel(runId: string) {
-            cancelled.push(runId);
-            return true;
-          },
-          async listEvents() {
-            return [];
-          },
+    const runtime = createTestAgentRuntime(sessionId, { mode: "build" }, {
+      dynamicWorkflowRunPort: {
+        async submit() {
+          throw new Error("submit should not be called");
         },
-        eventStore,
-        runtimeTaskRegistry,
-      } as never,
-    );
+        async getTask(taskId: string) {
+          return { taskId, runId: taskId, startedAt: new Date(0), status: "running" };
+        },
+        async waitForTask(taskId: string) {
+          return { taskId, runId: taskId, startedAt: new Date(0), status: "cancelled" };
+        },
+        async cancel(runId: string) {
+          cancelled.push(runId);
+          return true;
+        },
+        async listEvents() {
+          return [];
+        },
+      },
+      eventStore,
+      runtimeTaskRegistry,
+    } as never);
 
     // 这就是 runtime-tools.ts:144 交给工具执行上下文的那个绑定。
     const backgroundTaskControlPort = {
       stopBackgroundTask: runtime.stopBackgroundTask.bind(runtime),
     };
-    const output = (await taskStopToolEntry.handler(
-      { task_id: "dwfrun-taskstop" },
-      { backgroundTaskControlPort, toolCallId: "tool_task_stop" } as never,
-    )) as { task_id?: string; task_type?: string };
+    const output = (await taskStopToolEntry.handler({ task_id: "dwfrun-taskstop" }, {
+      backgroundTaskControlPort,
+      toolCallId: "tool_task_stop",
+    } as never)) as { task_id?: string; task_type?: string };
 
     // 关键断言：模型侧入口也把 runId 直送到了端口的 cancel。
     expect(cancelled).toEqual(["dwfrun-taskstop"]);

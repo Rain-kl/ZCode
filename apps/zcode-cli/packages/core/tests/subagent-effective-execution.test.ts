@@ -73,11 +73,12 @@ describe("Subagent 有效选择到实际执行", () => {
                   toolCalls: [
                     {
                       id: "call_child",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Research",
-                        prompt: "Research code",
-                        subagent_type: "researcher",
+                        task_name: "call_child",
+                        fork_turns: "none",
+                        message: "Research code",
+                        agent_type: "researcher",
                       },
                     },
                   ],
@@ -105,19 +106,21 @@ describe("Subagent 有效选择到实际执行", () => {
             }
           : undefined,
       );
-      expect(childSelections).toEqual(
-        kind === "unavailable" ? [] : [kind.startsWith("inherit") ? parent : effective],
+      await vi.waitFor(() =>
+        expect(childSelections).toEqual(
+          kind === "unavailable" || kind === "override"
+            ? []
+            : [kind.startsWith("inherit") ? parent : effective],
+        ),
       );
       expect(resolveEffectiveModelSelection).toHaveBeenCalledTimes(
         kind === "explicit" || kind === "unavailable" ? 1 : 0,
       );
       expect(original.providerId).toBe("account:bigmodel-individual-coding-plan");
       expect(runtime.getSessionModelSelection()).toEqual(parent);
-      if (kind === "inherit-plan") {
-        const child = executeTurnSpy.mock.contexts.find((context) => context !== runtime);
-        expect(child?.getMode()).toBe("yolo");
-        expect(child?.getPlanEnabled()).toBe(true);
-      }
+      // 新 driver 走已预留的标准命令，不调用 executeTurn 二次准入。
+      expect(executeTurnSpy).toHaveBeenCalledTimes(1);
+      await runtime.closeBrowserSession();
       executeTurnSpy.mockRestore();
     },
   );

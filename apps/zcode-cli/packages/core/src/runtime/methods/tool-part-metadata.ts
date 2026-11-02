@@ -30,6 +30,8 @@ export function completedToolPartMetadata(result: ToolExecutionResult): Complete
     : undefined;
   return {
     schemaVersion: COMPLETED_TOOL_PART_METADATA_SCHEMA_VERSION,
+    // FORK(codex-collaboration): 私有关系派生自 accepted snapshot，冷读不可从 task_name 猜ID。
+    ...(result.collaboration ? { collaboration: result.collaboration } : {}),
     ...(modelContent.success ? { modelContent: modelContent.data } : {}),
     ...(result.display ? { display: result.display } : {}),
     ...(serialization ? { serialization } : {}),

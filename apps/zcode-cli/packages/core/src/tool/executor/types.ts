@@ -6,7 +6,7 @@ import type {
   BackgroundResultOriginMeta,
   BrowserControlPort,
   CollaborationMode,
-  CoordinatorResponsePort,
+  CollaborationToolPort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
   EmbeddedSearchBackend,
@@ -27,8 +27,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
-  SubagentPort,
-  SubagentRunOptions,
+  ChildModelExecutionOverride,
   ToolArtifactStorePort,
   TraceContext,
   TurnId,
@@ -75,6 +74,8 @@ export type ShouldEnqueueBackgroundTaskNotification = (
 ) => boolean;
 
 export interface ToolExecutorOptions {
+  // FORK(codex-collaboration): 六工具复用完整执行链，身份只由宿主端口绑定。
+  collaborationPort?: CollaborationToolPort;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -100,8 +101,6 @@ export interface ToolExecutorOptions {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
   /** actor 的升级端口；存在即为该会话注册 escalate。 */
   workflowEscalatePort?: WorkflowEscalatePort;
@@ -181,7 +180,7 @@ export interface ToolExecuteOptions {
   offPeakTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
-  subagentModelOverride?: SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: ChildModelExecutionOverride;
   model?: Model;
 }
 
@@ -190,6 +189,8 @@ export interface ToolBatchExecuteOptions extends ToolExecuteOptions {
 }
 
 export interface ToolExecutorDeps {
+  // FORK(codex-collaboration): 端口贯穿执行器，不建立第二个调度器。
+  collaborationPort?: CollaborationToolPort;
   agentTelemetry?: AgentExecutionTelemetryPort;
   agentTelemetryActorKind?: AgentTelemetryActorKind;
   registry: ToolRegistry;
@@ -215,8 +216,6 @@ export interface ToolExecutorDeps {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
   /** actor 的升级端口；存在即为该会话注册 escalate。 */
   workflowEscalatePort?: WorkflowEscalatePort;

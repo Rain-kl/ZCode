@@ -36,14 +36,27 @@ describe("calculateRetryDelay", () => {
     maxDelayMs: 60_000,
   };
 
-  it("uses retry-after hints up to five minutes", () => {
-    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(300_000);
+  it("caps retry-after hints at thirty seconds", () => {
+    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(30_000);
   });
 
   it("falls back to local backoff when retry-after is above five minutes", () => {
     expect(calculateRetryDelay(retry, 1, 300_001)).toBe(2_000);
   });
 });
+
+it.each([0.5, 1])(
+  "rejects a non-growing retry backoff factor %s in options and env",
+  async (factor) => {
+    const { resolveAiSdkModelRetryOptions } = await import("../src/model/retry-policy.js");
+    expect(resolveAiSdkModelRetryOptions({ backoffFactor: factor }, {}).backoffFactor).toBe(2);
+    expect(
+      resolveAiSdkModelRetryOptions(undefined, { ZCODE_MODEL_RETRY_BACKOFF_FACTOR: String(factor) })
+        .backoffFactor,
+    ).toBe(2);
+    expect(resolveAiSdkModelRetryOptions({ backoffFactor: 3 }, {}).backoffFactor).toBe(3);
+  },
+);
 
 describe("toAdapterError attribution context", () => {
   const statusContext = {
@@ -94,7 +107,7 @@ describe("toAdapterError attribution context", () => {
 
     expect(error.context).toMatchObject({
       reason: ModelFailureReason.TlsError,
-      retryable: false,
+      retryable: true,
       source: "network",
     });
   });
@@ -398,3 +411,82 @@ function failureForTerminalTest() {
     retryable: true,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+describe("bounded API recovery", () => {
+  it("defaults to 21 requests and clamps configuration to hard limits", async () => {
+    const { resolveAiSdkModelRetryOptions } = await import("../src/model/retry-policy.js");
+    expect(resolveAiSdkModelRetryOptions(undefined, {})).toMatchObject({
+      maxAttempts: 21,
+      maxDelayMs: 30_000,
+    });
+    expect(
+      resolveAiSdkModelRetryOptions({ maxAttempts: 500, maxDelayMs: 500_000 }, {}),
+    ).toMatchObject({ maxAttempts: 21, maxDelayMs: 30_000 });
+    expect(
+      resolveAiSdkModelRetryOptions(undefined, {
+        ZCODE_MODEL_RETRY_MAX_RETRIES: "100",
+        ZCODE_MODEL_RETRY_MAX_DELAY_MS: "90000",
+      }),
+    ).toMatchObject({ maxAttempts: 21, maxDelayMs: 30_000 });
+  });
+
+  it("caps exponential and provider hinted delays at thirty seconds", () => {
+    const retry = {
+      maxAttempts: 21,
+      maxDelayMs: 90_000,
+      baseDelayMs: 2_000,
+      backoffFactor: 2,
+      jitter: false,
+    };
+    expect([1, 2, 3, 4, 5, 6].map((attempt) => calculateRetryDelay(retry, attempt))).toEqual([
+      2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
+    ]);
+    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(30_000);
+  });
+
+  it.each([400, 401, 403, 404, 422, 499, 503])("recovers actual HTTP %s failures", (statusCode) => {
+    const error = new APICallError({
+      message: "provider diagnostic",
+      url: "http://localhost/model",
+      requestBodyValues: {},
+      statusCode,
+      responseBody: "provider diagnostic",
+      isRetryable: false,
+    });
+    expect(classifyModelFailure(error).retryable).toBe(true);
+  });
+
+  it("recovers unknown API and internal abort failures but honors caller cancellation", () => {
+    const error = new Error("SDK stream rejected");
+    error.name = "AbortError";
+    expect(classifyModelFailure(error).retryable).toBe(true);
+    expect(classifyModelFailure(new Error("unrecognized upstream error")).retryable).toBe(true);
+    const controller = new AbortController();
+    controller.abort();
+    expect(classifyModelFailure(error, controller.signal)).toMatchObject({
+      retryable: false,
+      reason: ModelFailureReason.Cancelled,
+    });
+  });
+
+  it("removes the backoff abort listener after normal completion", async () => {
+    const { sleep } = await import("../src/model/runner-retry.js");
+    const { getEventListeners } = await import("node:events");
+    const controller = new AbortController();
+    await sleep(1, controller.signal);
+    expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
+  });
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it.each(["EACCES", "EPERM", "FORK_UPSTREAM_REQUEST_BLOCKED"])(
+  "does not retry local permission or gate failure %s",
+  (code) => {
+    expect(
+      classifyModelFailure(Object.assign(new Error("local request rejected"), { code })).retryable,
+    ).toBe(false);
+  },
+);
+// FORK-END(codex-collaboration)

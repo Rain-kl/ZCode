@@ -12,7 +12,6 @@ import {
   isOffPeakCreateRestrictedTurn,
   type RegularTurnLoopState,
 } from "../src/runtime/methods/turn-loop-state.js";
-import { sendMessageToolEntry } from "../src/tool/handlers/send-message.js";
 import { workflowToolEntry } from "../src/tool/handlers/workflow.js";
 import { CoreErrorType, type OffPeakPort, type TraceId } from "@zcode/contracts";
 import type { ToolExecutionContext } from "../src/tool/types.js";
@@ -162,8 +161,7 @@ describe("off-peak tools", () => {
   });
 });
 
-describe("闲时轮支持 SendMessage，保留 Workflow 与递归派发限制", () => {
-  const sendMessageInput = { to: "agent_1", summary: "s", message: "continue" };
+describe("闲时轮保留 Workflow 与递归派发限制", () => {
   const workflowInput = { scriptPath: "review.workflow.js" };
 
   it("denylist 保留 OffPeakCreate、Workflow，且哨兵仍是 OffPeakCreate", () => {
@@ -175,25 +173,6 @@ describe("闲时轮支持 SendMessage，保留 Workflow 与递归派发限制", 
       "ResumeWorkflowRun",
       "EvalWorkflowSnippet",
     ]);
-  });
-
-  it("SendMessage 在闲时轮向端口传递当前执行模型，支持终态子 Agent 续跑", async () => {
-    const sendMessage = vi.fn(async () => ({ success: true, message: "queued" }));
-    const modelOverride = {
-      selection: { providerId: "idle", modelId: "model" },
-      background: "allow" as const,
-    };
-    const context = {
-      ...createContext(),
-      offPeakTurn: true,
-      subagentModelOverride: modelOverride,
-      subagentPort: { sendMessage } as never,
-    };
-    await expect(sendMessageToolEntry.handler(sendMessageInput, context)).resolves.toBeDefined();
-    expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining(sendMessageInput),
-      expect.objectContaining({ modelOverride }),
-    );
   });
 
   it("Workflow 在闲时轮抛 PermissionDenied，不触达 WorkflowPort", async () => {
@@ -208,23 +187,6 @@ describe("闲时轮支持 SendMessage，保留 Workflow 与递归派发限制", 
       recoverable: true,
     });
     expect(start).not.toHaveBeenCalled();
-  });
-
-  it("普通轮与 automation 轮不受影响（D49-3 方向：cron 轮照旧放行）", async () => {
-    const sendMessage = vi.fn(async () => ({ status: "success", messageId: "m1" }));
-    const start = vi.fn(async () => ({ status: "backgrounded", runId: "wf_1", response: "ok" }));
-    for (const extra of [{}, { automationTurn: true }]) {
-      const context = {
-        ...createContext(),
-        ...extra,
-        subagentPort: { sendMessage } as never,
-        workflowPort: { start } as never,
-      };
-      await expect(sendMessageToolEntry.handler(sendMessageInput, context)).resolves.toBeDefined();
-      await expect(workflowToolEntry.handler(workflowInput, context)).resolves.toBeDefined();
-    }
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    expect(start).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -246,9 +208,12 @@ describe("isOffPeakCreateRestrictedTurn", () => {
   it("显式 offPeakTaskId 是主信号", () => {
     const state = stateOf({ offPeakTaskId: "offpeak-1" });
     expect(isOffPeakCreateRestrictedTurn(state)).toBe(true);
-    const tools = ["OffPeakCreate", "OffPeakList", "Agent"].map((name) => ({ name }));
+    const tools = ["OffPeakCreate", "OffPeakList", "spawn_agent"].map((name) => ({ name }));
     const runtime = { getTools: () => tools } as unknown as AgentRuntimeInternal;
-    expect(getTurnTools(runtime, state).map((tool) => tool.name)).toEqual(["OffPeakList", "Agent"]);
+    expect(getTurnTools(runtime, state).map((tool) => tool.name)).toEqual([
+      "OffPeakList",
+      "spawn_agent",
+    ]);
   });
 
   it("resume 段 queryId 前缀是兜底信号（首段 traceId 无固定前缀）", () => {

@@ -201,3 +201,11 @@ export type {
   SessionEventSink,
 } from "@zcode/contracts";
 export { LogLevel, SessionEventType } from "@zcode/contracts";
+// FORK(codex-collaboration): 冷投影通过公开查询读取控制器唯一根快照，避免跨包深层导入。
+export {
+  readCollaborationRootEntry,
+  readCollaborationRelation,
+  relationFromSnapshot,
+  COLLABORATION_SESSION_ENTRY,
+} from "./fork/codex-collaboration-runtime/module.js";
+export type { CollaborationRootEntry } from "./fork/codex-collaboration-runtime/module.js";

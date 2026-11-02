@@ -15,10 +15,7 @@ import type {
   RuntimeBackgroundStopTarget,
   TypedRuntimeBackgroundStopTarget,
 } from "./background-stop-types.js";
-import type {
-  RuntimeTaskSnapshot,
-  RuntimeTaskType,
-} from "../../runtime-task/registry.js";
+import type { RuntimeTaskSnapshot, RuntimeTaskType } from "../../runtime-task/registry.js";
 import {
   hasRunningBackgroundRuntimeTask,
   isTerminalRuntimeTask,
@@ -39,7 +36,11 @@ export type {
  * runtime task registry，不能从协议投影或 UI 状态猜测。
  */
 export function hasRunningBackgroundTasks(this: AgentRuntimeInternal): boolean {
-  return hasRunningBackgroundRuntimeTask(this.runtimeTaskRegistry);
+  // FORK(codex-collaboration): 直系registry不是整树寿命；孙任务及已中断未结算IO仍占用根的共享资源。
+  return (
+    this.collaboration?.hasRunningWork() === true ||
+    hasRunningBackgroundRuntimeTask(this.runtimeTaskRegistry)
+  );
 }
 
 export async function cancelBackgroundTask(
@@ -110,7 +111,11 @@ export async function stopBackgroundTask(
   }
 
   if (target.taskType === "local_agent") {
-    return stopLocalAgentBackgroundTask.call(this, target);
+    // FORK(codex-collaboration): 原生 UI 停止走同一 controller，模型 TaskStop 已在 handler 拒绝。
+    if (!this.collaboration || options.initiator === "model")
+      return unsupportedBackgroundStopResult(target);
+    await this.collaboration.interruptChild(taskId);
+    return { ok: true, taskId, type: "local_agent", status: "cancelled" };
   }
 
   if (target.taskType === "local_bash") {
@@ -174,32 +179,6 @@ function unsupportedBackgroundStopResult(
     status: target.currentStatus,
     taskId: target.taskId,
     ...(target.taskType ? { type: target.taskType } : {}),
-  };
-}
-
-async function stopLocalAgentBackgroundTask(
-  this: AgentRuntimeInternal,
-  target: TypedRuntimeBackgroundStopTarget,
-): Promise<RuntimeBackgroundStopResult> {
-  if (!this.subagentPort?.stopTask) {
-    return unsupportedBackgroundStopResult(target);
-  }
-  const snapshot = await this.subagentPort.stopTask(target.taskId);
-  if (!snapshot) {
-    return {
-      ok: false,
-      reason: "background_task_not_found",
-      status: "lost",
-      taskId: target.taskId,
-      ...(target.taskType ? { type: target.taskType } : {}),
-    };
-  }
-  return {
-    command: commandFromRuntimeTask(target.registryTask, target.existing),
-    ok: true,
-    status: snapshot.status,
-    taskId: target.taskId,
-    type: "local_agent",
   };
 }
 
@@ -299,9 +278,7 @@ export async function cancelRunningRuntimeBackgroundTasks(
   const traceContext = input.traceContext ?? this.rootTraceContext;
   const tasks = Object.values(this.runtimeTaskRegistry.all()).filter(
     (task) =>
-      task.type === "local_bash" &&
-      task.isBackgrounded === true &&
-      task.status === "running",
+      task.type === "local_bash" && task.isBackgrounded === true && task.status === "running",
   );
 
   for (const task of tasks) {
@@ -367,7 +344,7 @@ export function buildBackgroundTaskPayload(
     taskId,
     toolCallId: existing?.toolCallId,
     toolName: existing?.toolName,
-    // 此构造器只服务 local Bash stop/update；Agent 终态由 subagent runner 产生。
+    // 此构造器只服务 local Bash stop/update；子代理终态由协作控制器派生。
     taskKind: "bash",
     blocked: existing?.blocked,
     blockedReason: existing?.blockedReason,
@@ -396,8 +373,7 @@ export function buildBackgroundTaskPayload(
 function backgroundInfoFromRuntimeTask(task: RuntimeTaskSnapshot): BackgroundTaskInfo {
   return {
     taskId: task.taskId,
-    toolCallId:
-      typeof task.parentToolCallId === "string" ? task.parentToolCallId : undefined,
+    toolCallId: typeof task.parentToolCallId === "string" ? task.parentToolCallId : undefined,
     toolName: toolNameFromRuntimeTaskType(task.type),
     cancellable: task.status === "running",
     command: commandFromRuntimeTask(task, undefined),
@@ -415,10 +391,8 @@ function commandFromRuntimeTask(
   task: RuntimeTaskSnapshot | undefined,
   existing: BackgroundTaskInfo | undefined,
 ): string | undefined {
-  // TaskStop 对 local_agent 返回短 description；旧 projection 的 command
-  // 可能已保存为完整 prompt，因此运行时任务必须先于 existing.command 取值。
+  // FORK(codex-collaboration): 原生面板从控制器派生条目取短描述，不读取任务私有正文。
   if (task?.type === "local_agent") return task.description;
-  if (!task && existing?.toolName === "Agent") return existing.description;
   if (existing?.command) return existing.command;
   if (task?.type === "local_bash") return task.description || task.prompt;
   return task?.prompt;
@@ -430,7 +404,7 @@ function runtimeTaskTypeFromBackgroundInfo(
   switch (task?.toolName) {
     case "Bash":
       return "local_bash";
-    case "Agent":
+    case "spawn_agent":
       return "local_agent";
     case "Workflow":
       return "local_workflow";
@@ -445,7 +419,7 @@ function runtimeTaskTypeFromBackgroundInfo(
 function toolNameFromRuntimeTaskType(type: RuntimeTaskType): string {
   switch (type) {
     case "local_agent":
-      return "Agent";
+      return "spawn_agent";
     case "local_bash":
       return "Bash";
     case "local_workflow":
@@ -457,9 +431,7 @@ function toolNameFromRuntimeTaskType(type: RuntimeTaskType): string {
   }
 }
 
-function isTerminalBackgroundTaskInfoStatus(
-  status: BackgroundTaskInfoStatus | undefined,
-): boolean {
+function isTerminalBackgroundTaskInfoStatus(status: BackgroundTaskInfoStatus | undefined): boolean {
   return Boolean(status && status !== "running");
 }
 

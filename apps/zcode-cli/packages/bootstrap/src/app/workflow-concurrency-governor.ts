@@ -16,6 +16,8 @@
 
 import { resolveWorkflowModelFailurePolicy } from "@zcode/adapters/model";
 import {
+  // FORK(codex-collaboration): admission 冷却复用模型恢复合同的等待硬上限。
+  MODEL_RECOVERY_MAX_DELAY_MS,
   ModelErrorCode,
   type ModelNetworkStatusEvent,
   type ModelRequestAdmission,
@@ -228,7 +230,11 @@ export function createWorkflowConcurrencyGovernor(
    * 未见终结事件即按 `ended` 处理。结算后的 publish / release 一律惰性——runner 在极少数路径上
    * （尝试已结束后的兜底事件）可能仍会投递。
    */
-  const mintTicket = (bucket: Bucket, runId: string, epoch: number): ModelRequestAdmissionTicket => {
+  const mintTicket = (
+    bucket: Bucket,
+    runId: string,
+    epoch: number,
+  ): ModelRequestAdmissionTicket => {
     let settled = false;
     const settle = (signal: (at: number) => ConcurrencyChange[]): void => {
       if (settled) return;
@@ -263,7 +269,8 @@ export function createWorkflowConcurrencyGovernor(
                   at,
                   epoch,
                   reason as ConcurrencyThrottleReason,
-                  event.retryAfterMs,
+                  // FORK(codex-collaboration): 原始 hint 留在事件里，实际准入等待必须有界。
+                  boundedModelRetryCooldown(event.retryAfterMs),
                 ),
               );
               return;
@@ -287,7 +294,13 @@ export function createWorkflowConcurrencyGovernor(
             // 只当「链结束」会让 cap 从未因它降过。
             if (event.reason === "rate_limited") {
               settle((at) =>
-                bucket.controller.throttled(at, epoch, "rate_limited", event.retryAfterMs),
+                bucket.controller.throttled(
+                  at,
+                  epoch,
+                  "rate_limited",
+                  // FORK(codex-collaboration): terminal 限流也不能把后续 workflow 冻结数分钟。
+                  boundedModelRetryCooldown(event.retryAfterMs),
+                ),
               );
               return;
             }
@@ -303,6 +316,13 @@ export function createWorkflowConcurrencyGovernor(
     };
   };
 
+  // FORK(codex-collaboration): provider 诊断事实与本地执行等待分离，避免原始 hint 绕过30秒政策。
+  function boundedModelRetryCooldown(retryAfterMs: number | undefined): number | undefined {
+    return retryAfterMs === undefined || !Number.isFinite(retryAfterMs) || retryAfterMs <= 0
+      ? undefined
+      : Math.min(retryAfterMs, MODEL_RECOVERY_MAX_DELAY_MS);
+  }
+
   /** 放行一个请求：`observe` 在前（准入也是一次「信号」），再 `admitted` 拿 epoch。 */
   const grant = (bucket: Bucket, runId: string): ModelRequestAdmissionTicket => {
     fanOut(bucket, bucket.controller.observe(now()));
@@ -314,7 +334,9 @@ export function createWorkflowConcurrencyGovernor(
 
   /** 按轮转挑下一个有等待者的 run。 */
   const nextRunWithWaiters = (bucket: Bucket): string | undefined => {
-    const runs = [...bucket.queues.keys()].filter((runId) => (bucket.queues.get(runId)?.length ?? 0) > 0);
+    const runs = [...bucket.queues.keys()].filter(
+      (runId) => (bucket.queues.get(runId)?.length ?? 0) > 0,
+    );
     if (runs.length === 0) return undefined;
     const last = bucket.lastGrantedRun;
     const lastIndex = last === undefined ? -1 : runs.indexOf(last);

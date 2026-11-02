@@ -4205,7 +4205,7 @@ export function SessionPane({
       const current = snapshotRef.current;
       if (!sessionId || current === null) return;
       // 用户明确点击“立即发送”时，视觉意图等价于点击“滚动到底部”；command 的
-      // reserve/stop/promote 生命周期仍由 CLI 裁决，不把滚动状态混入协议。
+      // FORK(codex-collaboration): guide/idle-only promotion 由 CLI 裁决，不把滚动状态混入协议。
       focusTimelineToLatest();
       const highspeedOrigin = captureHighspeedPaneOrigin();
       void (async () => {

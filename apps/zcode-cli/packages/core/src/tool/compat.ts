@@ -1,16 +1,11 @@
-export const AGENT_TOOL_NAME = "Agent";
-export const TASK_TOOL_NAME = "Task";
-
-const subagentDispatchToolNames = new Set<string>([AGENT_TOOL_NAME, TASK_TOOL_NAME]);
+// FORK(codex-collaboration): 旧 Agent/Task 不再拥有别名或执行入口。
 
 const hookMatcherAliasesByToolName = new Map<string, readonly string[]>([
-  [AGENT_TOOL_NAME, [TASK_TOOL_NAME]],
-  [TASK_TOOL_NAME, [AGENT_TOOL_NAME]],
   ["ApplyPatch", ["Write", "Edit"]],
 ]);
 
 export function isSubagentDispatchToolName(toolName: string | undefined): boolean {
-  return toolName ? subagentDispatchToolNames.has(toolName) : false;
+  return toolName === "spawn_agent";
 }
 
 export function hookMatcherToolNamesForTool(toolName: string): readonly string[] {

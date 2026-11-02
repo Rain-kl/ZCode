@@ -19,8 +19,8 @@ describe("resolveModelRetryBudgetFromTaskType", () => {
 
 describe("AgentRuntime model requests carry modelRetryBudget", () => {
   it.each<{ expected: "default" | "unbounded"; taskType: SessionTaskType }>([
-    { expected: "unbounded", taskType: "workflow_child" },
-    { expected: "unbounded", taskType: "nested_workflow_child" },
+    { expected: "default", taskType: "workflow_child" },
+    { expected: "default", taskType: "nested_workflow_child" },
     { expected: "default", taskType: "subagent_child" },
     { expected: "default", taskType: "interactive" },
   ])("$taskType → $expected", async ({ expected, taskType }) => {

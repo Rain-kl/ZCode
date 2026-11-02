@@ -796,6 +796,12 @@ export interface ZCodeApp {
     reservationId: string,
     options?: { traceContext?: TraceContext },
   ): Promise<boolean>;
+  // FORK(codex-collaboration): 转 guide 后由原轮次在安全请求边界消费；false 表示不可 inline。
+  guideQueueItem(
+    pendingInputId: string,
+    reservationId: string,
+    options?: { traceContext?: TraceContext },
+  ): Promise<boolean>;
   releaseQueueItemReservation(
     pendingInputId: string,
     reservationId: string,

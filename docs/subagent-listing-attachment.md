@@ -1,8 +1,15 @@
 # Agent listing attachment
 
+## 二开替换说明：codex-collaboration
+
+2026-11-02 起目录服务于 `spawn_agent` 的 profile 选择；旧 Agent/Task/SendMessage 与专属回信工具
+均废弃，不保留执行别名。目录是定义的投影，身份、运行状态和消息由唯一根控制器管理。
+下方按日期保留的历史验证不证明六工具运行链已验收；当前进度见
+[实施记录](features/codex-collaboration/implementation.md)。
+
 ## 行为与边界
 
-Agent 工具 description 仅指向会话中的 `<system-reminder>`。完整目录通过
+`spawn_agent` 的 profile 目录通过会话中的 `<system-reminder>` 提供。完整目录通过
 `agent_listing_delta` attachment 通知模型；不改变 profile
 执行权限。配置刷新由 [父上下文刷新合同](./subagent-runtime-refresh.md) 规定；listing 只消费本轮有效目录，不另建配置加载或通知状态。
 
@@ -13,12 +20,10 @@ Agent 工具 description 仅指向会话中的 `<system-reminder>`。完整目�
 配置加载失败在父轮准备阶段结束本轮；listing 无需 available 降级开关，既有目录历史保持不变。
 收集器不补齐内置类型、不缓存名单、不读文件；单条格式化保留现有名称、描述、工具语义。
 
-Agent description 的文案固定为 first-party MCS 分支的 lean 版本。
-续跑说明采用 `Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.`；
-当前只支持 agent ID 寻址，不引入按名称寻址的 `or name`。
-定义来源采用 ``Each agent type's model, reasoning effort, and tools come from its definition (`.zcode/agents/*.md` frontmatter).``；
-沿用定义来源句式并替换为 ZCode 的 Markdown 目录，不加入未支持的 SDK `agents` 入口；不改变实际加载路径、覆盖优先级或执行行为。
-并发提示只保留在首次 listing，description 删除重复句；后台默认行为与 isolation 保持现状。
+使用指导与角色片段以[六工具合同](features/codex-collaboration/tools-contract.md)为准。
+`spawn_agent` 创建新身份，`followup_task` 用任务路径继续已有子会话，`send_message` 只投递消息。
+profile 定义来源仍为既有 `.zcode/agents/*.md` 和 Host definitions 入口；目录不新增配置加载器，
+也不覆盖 fork 的模型继承规则。并发限制读取根控制器配置，不另建 listing 名额状态。
 
 本次 provider-visible 合同限定上述 first-party MCS 分支。关闭 MCS 的测试用于验证现有
 ZCode 兼容路径：不额外引入把 reminder 合入末条 tool_result 的序列化行为，也不宣称
@@ -31,7 +36,7 @@ ZCode 兼容路径：不额外引入把 reminder 合入末条 tool_result 的序
 按顺序应用 `addedTypes`、`removedTypes` 后与当前 definitions 精确名称集合比较。
 新增按名称 localeCompare 排序，移除按字符串排序；重命名等价删旧加新。
 计算移除项时直接遍历已通知集合；确认有增删后才排序，不复制完整集合为临时数组。
-同名描述/tools/model 变化不产生 delta；无变化或当前有效工具无 Agent 时不追加。
+同名描述/tools/model 变化不产生 delta；无变化或当前有效工具无 `spawn_agent` 时不追加。
 已通知集合为空时 `isInitial=true`，包括全部移除后再次新增；空目录无首次通知。
 
 ```mermaid
@@ -43,7 +48,7 @@ sequenceDiagram
     participant P as Provider
     R->>D: 读取 activeAgents
     R->>H: 扫描 listing 元数据并计算增删
-    opt 有变化且 Agent 可用
+    opt 有变化且 spawn_agent 可用
         R->>H: 持久化后提交 attachment
     end
     R->>F: 当前有效历史
@@ -86,9 +91,10 @@ microcompact 只清工具结果时无需补发。cold resume、fork、rewind 从
 跳过压缩时不额外构建工具合同。普通请求仍在 MCP 初始化后读取当前工具，保留本轮禁用规则，
 不跨 MCP 初始化复用旧集合；工具读取失败仍向上抛出，不计为压缩失败。
 
-## 验收
+## 旧目录实现的验收记录
 
-测试按责任边界分配，剪枝 profile × MCS × compact 的重复交叉；每项新增逻辑保留直接断言：
+以下是旧工具时代的测试映射和执行证据，不作为新六工具运行链通过的证明。
+测试按责任边界分配，剪枝 profile × MCS × compact 的重复交叉；每项逻辑保留直接断言：
 
 | 覆盖位置                                    | 负责的断言                                                                                                                                                                                                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,5 +1,9 @@
 # zcode-cli background subagent 修复计划
 
+> **二开替换说明（2026-11-02，codex-collaboration）**：下文记录旧执行器的设计与当时证据，
+> 旧工具、自动前后台转换和通知唤醒方案不再是当前实施合同。当前采用根控制器、持久邮箱和六工具；
+> 见[当前设计](features/codex-collaboration/design.md)与[实施进度](features/codex-collaboration/implementation.md)。
+
 ## 目标
 
 本计划只基于当前 worktree，不参考其他分支。目标不是重新实现 subagent，而是在现有 `Agent` / profile loader / child runtime / `RuntimeTaskRegistry` 基础上修复 background subagent 的完成唤醒问题，并补齐 foreground subagent 超时自动转后台的核心机制。

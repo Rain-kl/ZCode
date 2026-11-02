@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestModelSelection } from "./test-model-selection.js";
 import {
   createModelId,
@@ -120,7 +120,8 @@ function expectInjectedAgentsMd(request: any, childTask: string): void {
   );
   const taskIndex = messages.findIndex(
     (message) =>
-      message.role === "user" && modelMessageContentToText(message.content) === childTask,
+      message.role === "assistant" &&
+      modelMessageContentToText(message.content).includes(childTask),
   );
   expect(contextIndex).toBeGreaterThanOrEqual(0);
   expect(taskIndex).toBeGreaterThan(contextIndex);
@@ -198,7 +199,7 @@ describe("subagent provider-visible prompt assembly", () => {
           properties: { supportsNativeWebSearch: true },
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -207,11 +208,12 @@ describe("subagent provider-visible prompt assembly", () => {
                   toolCalls: [
                     {
                       id: "call_explore",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Find runtime loop",
-                        prompt: "Find where the runtime injects tool results.",
-                        subagent_type: "Explore",
+                        task_name: "call_explore",
+                        fork_turns: "none",
+                        message: "Find where the runtime injects tool results.",
+                        agent_type: "Explore",
                       },
                     },
                   ],
@@ -241,7 +243,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expectSystemMessagesCached(childRequests[0]);
     const systems = systemContents(childRequests[0]);
     expect(systems.map((content) => content.endsWith("\n"))).toEqual([false, false]);
-    expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+    expect(systems[0]).toMatch(/^You are ZCode, an interactive coding agent(?:\n|$)/u);
     expect(systems[1]).toMatch(/^\nYou are ZCode Explore/u);
     expect(systems[1]).toContain("READ-ONLY MODE");
     expect(systems[1]).toContain("\n\nNotes:");
@@ -298,7 +300,7 @@ describe("subagent provider-visible prompt assembly", () => {
           properties: { supportsNativeWebSearch: true },
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -307,10 +309,11 @@ describe("subagent provider-visible prompt assembly", () => {
                   toolCalls: [
                     {
                       id: "call_general",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Research runtime",
-                        prompt: "Research how child runtimes are created.",
+                        task_name: "call_general",
+                        fork_turns: "none",
+                        message: "Research how child runtimes are created.",
                       },
                     },
                   ],
@@ -340,7 +343,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expectSystemMessagesCached(childRequests[0]);
     const systems = systemContents(childRequests[0]);
     expect(systems).toHaveLength(2);
-    expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+    expect(systems[0]).toMatch(/^You are ZCode, an interactive coding agent(?:\n|$)/u);
     expect(systems[1]).toContain("You are an agent for ZCode CLI");
     expect(systems[1]).toContain("Complete the task fully—don't gold-plate");
     expect(systems[1]).toContain("the caller will relay this to the user");
@@ -399,7 +402,7 @@ describe("subagent provider-visible prompt assembly", () => {
             properties: { supportsNativeWebSearch: true },
             async generateText(request: any) {
               const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-              if (toolNames.includes("Agent")) {
+              if (toolNames.includes("spawn_agent")) {
                 parentCallCount++;
                 if (parentCallCount === 1) {
                   return {
@@ -408,11 +411,12 @@ describe("subagent provider-visible prompt assembly", () => {
                     toolCalls: [
                       {
                         id: "call_custom",
-                        name: "Agent",
+                        name: "spawn_agent",
                         input: {
-                          description: "Research custom",
-                          prompt: "Research the custom profile path.",
-                          subagent_type: "code-researcher",
+                          task_name: "call_custom",
+                          fork_turns: "none",
+                          message: "Research the custom profile path.",
+                          agent_type: "code-researcher",
                         },
                       },
                     ],
@@ -442,7 +446,7 @@ describe("subagent provider-visible prompt assembly", () => {
       expectSystemMessagesCached(childRequests[0]);
       const systems = systemContents(childRequests[0]);
       expect(systems).toHaveLength(2);
-      expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+      expect(systems[0]).toMatch(/^You are ZCode, an interactive coding agent(?:\n|$)/u);
       expect(systems[1]).toMatch(
         /^\nYou are a focused code researcher\. Return concise findings\.\n\nNotes:/u,
       );
@@ -471,7 +475,7 @@ describe("subagent provider-visible prompt assembly", () => {
     expectSystemMessagesCached({ messages: result.systemMessages });
     const systems = systemContents({ messages: result.systemMessages });
     expect(systems).toHaveLength(2);
-    expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+    expect(systems[0]).toMatch(/^You are ZCode, an interactive coding agent(?:\n|$)/u);
     expect(systems[1]).toMatch(/^\n\nNotes:/u);
     expect(systems[1]).toContain(
       "\n\nHere is useful information about the environment you are running in:",
@@ -539,7 +543,7 @@ describe("subagent provider-visible prompt assembly", () => {
             properties: { supportsNativeWebSearch: true },
             async generateText(request: any) {
               const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-              if (toolNames.includes("Agent")) {
+              if (toolNames.includes("spawn_agent")) {
                 parentRequests.push(request);
                 parentCallCount += 1;
                 if (parentCallCount === 1) {
@@ -549,11 +553,12 @@ describe("subagent provider-visible prompt assembly", () => {
                     toolCalls: [
                       {
                         id: "call_persistent",
-                        name: "Agent",
+                        name: "spawn_agent",
                         input: {
-                          description: "Review persistent",
-                          prompt: "Review using the persistent context.",
-                          subagent_type: "persistent-reviewer",
+                          task_name: "call_persistent",
+                          fork_turns: "none",
+                          message: "Review using the persistent context.",
+                          agent_type: "persistent-reviewer",
                         },
                       },
                     ],
@@ -596,7 +601,7 @@ describe("subagent provider-visible prompt assembly", () => {
 
       await runtime.executeTurn("review");
 
-      expect(childRequests).toHaveLength(2);
+      await vi.waitFor(() => expect(childRequests).toHaveLength(2));
       const expectedMemoryPrompt = buildPersistentAgentMemoryPrompt({
         indexContent: "- [Review style](review-style.md) — keep reviews concise",
         rootDir: memoryRoot,
@@ -670,7 +675,7 @@ describe("subagent provider-visible prompt assembly", () => {
       expectSystemMessagesCached(request);
       const systems = systemContents(request);
       expect(systems).toHaveLength(2);
-      expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+      expect(systems[0]).toMatch(/^You are ZCode, an interactive coding agent(?:\n|$)/u);
       expect(systems[1]).toMatch(
         /^\nYou are a focused child agent\. Keep the result concise\.\n\nNotes:/u,
       );

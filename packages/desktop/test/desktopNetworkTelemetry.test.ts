@@ -2,6 +2,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 const ARMS_CUSTOM_PROPERTY_LIMIT = 20;
 
+const localPolicy = vi.hoisted(() => ({ enabled: false }));
+vi.mock("@zcode/shared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zcode/shared")>()),
+  get FORK_LOCAL_MODE() {
+    return localPolicy.enabled;
+  },
+}));
+
 vi.mock("@arms/rum-electron", () => ({
   default: {
     sendCustom: vi.fn(),
@@ -150,3 +158,28 @@ describe("desktopNetworkTelemetry", () => {
     }
   });
 });
+
+// FORK-BEGIN(local-mode)
+describe("local-mode startup SDK config", () => {
+  for (const enabled of [true, false]) {
+    it(`local-mode=${enabled} uses the same ARMS initialization policy`, async () => {
+      localPolicy.enabled = enabled;
+      const arms = await import("@arms/rum-electron");
+      const { configureDesktopNetworkTelemetry } =
+        await import("../src/main/desktopNetworkTelemetry.js");
+      vi.mocked(arms.default.setConfig).mockClear();
+      try {
+        configureDesktopNetworkTelemetry({
+          deviceMid: "local-device",
+          platform: "darwin",
+          appVersion: "test",
+          armsEnv: "local",
+        });
+        expect(arms.default.setConfig).toHaveBeenCalledTimes(enabled ? 0 : 1);
+      } finally {
+        localPolicy.enabled = false;
+      }
+    });
+  }
+});
+// FORK-END(local-mode)

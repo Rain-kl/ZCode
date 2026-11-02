@@ -9,6 +9,7 @@ import {
   type WorkflowPort,
   type WorkflowStartRequest,
 } from "@zcode/contracts";
+import type { ToolExecutionContext } from "../src/tool/types.js";
 import { PermissionService, defaultPermissionConfig } from "../src/permission/service.js";
 import { createToolExecutor } from "../src/tool/executor.js";
 import { registerBuiltInTools } from "../src/tool/handlers/index.js";
@@ -18,7 +19,7 @@ import { createToolRegistry } from "../src/tool/registry.js";
 describe("Workflow tool", () => {
   it("keeps Workflow out of built-in registration even when orchestration is configured", () => {
     const defaultRegistry = createToolRegistry();
-    registerBuiltInTools(defaultRegistry, { includeAgent: true });
+    registerBuiltInTools(defaultRegistry, { includeCollaboration: true });
     expect(defaultRegistry.has("Workflow")).toBe(false);
 
     const workflowRegistry = createToolRegistry();
@@ -107,5 +108,23 @@ describe("Workflow tool", () => {
 
     expect(result.success).toBe(false);
     expect(result.error?.message).toContain("WorkflowPort is not configured");
+  });
+
+  it("keeps rejected workflow guidance within current executable capabilities", async () => {
+    const sessionId = createSessionId("workflow-current-guidance");
+    const context: ToolExecutionContext = {
+      abortSignal: new AbortController().signal,
+      offPeakTurn: true,
+      sessionId,
+      toolCallId: createToolCallId("workflow-current-guidance"),
+      traceId: createRootTraceContext({ sessionId }).traceId,
+      workingDirectory: "/repo",
+      workspaceRoot: "/repo",
+    };
+    await expect(
+      workflowToolEntry.handler({ scriptPath: "review.workflow.js" }, context),
+    ).rejects.toThrow(
+      "Workflow is not allowed while running an idle-time task. Handle the work in the current session, or explain this execution limit to the user.",
+    );
   });
 });

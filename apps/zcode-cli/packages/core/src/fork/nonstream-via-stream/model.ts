@@ -123,6 +123,8 @@ export function withNonStreamingViaStream(model: Model): Model {
     modelId: model.modelId,
     displayName: model.displayName,
     properties: model.properties,
+    // 原因：包装层漏传可选能力，ToolSearch 会误判底层协议不支持；转换通道必须保留模型声明。
+    requestCapabilities: model.requestCapabilities,
     optionSpecs: model.optionSpecs,
     options: model.options,
     bind(options) {

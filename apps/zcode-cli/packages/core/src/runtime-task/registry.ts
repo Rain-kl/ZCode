@@ -1,11 +1,4 @@
-import type {
-  ModelUsage,
-  SessionId,
-  SubagentTaskSnapshot,
-  TraceContext,
-  TurnId,
-} from "@zcode/contracts";
-import type { AgentOutput } from "@zcode/contracts";
+import type { ModelUsage, SessionId, ToolCallId, TraceContext, TurnId } from "@zcode/contracts";
 
 // local_dynamic_workflow 与 local_workflow 刻意分开：后者是 legacy `Workflow` 工具（不可取消），
 // 前者是 workflow run（经 DynamicWorkflowRunPort.cancel 可取消）。合成一个类型，取消分派就无法区分。
@@ -23,24 +16,21 @@ export interface RuntimeTaskUsageSnapshot {
   totalTokens?: number;
 }
 
-export interface RuntimeTaskPendingMessage {
-  id: string;
-  isMeta?: boolean;
-  message: string;
-  origin?: {
-    kind: "coordinator";
-    toolCallId?: string;
-  };
-  queuedAt: Date;
-  summary?: string;
-  traceContext?: TraceContext;
-}
-
-export interface RuntimeTaskMessageSink {
-  send(message: RuntimeTaskPendingMessage): Promise<"queued" | "steered">;
-}
-
-export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
+// FORK(codex-collaboration): 面板 registry 只承载派生视图；不再继承已移除旧工具的执行协议。
+export interface RuntimeTaskSnapshot {
+  taskId: string;
+  agentId: string;
+  agentType: string;
+  description: string;
+  status: "running" | "completed" | "failed" | "cancelled" | "killed" | "stopped" | "lost";
+  startedAt: Date;
+  completedAt?: Date;
+  childSessionId?: SessionId;
+  parentToolCallId?: ToolCallId | string;
+  pid?: number;
+  error?: string;
+  outputFile?: string;
+  notified?: boolean;
   /** 内存执行归属；重启不会恢复闲时后台任务。 */
   offPeakExecutionId?: string;
   offPeakCancelled?: boolean;
@@ -49,10 +39,7 @@ export interface RuntimeTaskSnapshot extends SubagentTaskSnapshot {
   exitCode?: number;
   type: RuntimeTaskType;
   isBackgrounded?: boolean;
-  messageSink?: RuntimeTaskMessageSink;
-  output?: AgentOutput;
   parentSessionId?: SessionId;
-  pendingMessages?: RuntimeTaskPendingMessage[];
   prompt?: string;
   /**
    * workflow run 产物的序列化文本。TaskOutput 的投影只读得到 registry 条目（dwf 从不写
@@ -75,8 +62,6 @@ export interface RuntimeTaskRegistry {
   setOffPeakExecutionId?(executionId: string | undefined): void;
   all(): Record<string, RuntimeTaskSnapshot>;
   get(id: string): RuntimeTaskSnapshot | undefined;
-  drainMessages(id: string): RuntimeTaskPendingMessage[];
-  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined;
   register(task: RuntimeTaskSnapshot): void;
   remove(id: string): void;
   requestBackground(id: string): boolean;
@@ -186,22 +171,6 @@ export class InMemoryRuntimeTaskRegistry implements RuntimeTaskRegistry {
 
   all(): Record<string, RuntimeTaskSnapshot> {
     return Object.fromEntries(this.tasks);
-  }
-
-  queueMessage(id: string, message: RuntimeTaskPendingMessage): RuntimeTaskSnapshot | undefined {
-    return this.update(id, (task) => ({
-      ...task,
-      pendingMessages: [...(task.pendingMessages ?? []), message],
-    }));
-  }
-
-  drainMessages(id: string): RuntimeTaskPendingMessage[] {
-    const task = this.tasks.get(id);
-    if (!task || !task.pendingMessages || task.pendingMessages.length === 0) return [];
-    const messages = task.pendingMessages;
-    this.tasks.set(id, { ...task, pendingMessages: [] });
-    this.changed();
-    return messages;
   }
 
   waitForBackgroundRequest(

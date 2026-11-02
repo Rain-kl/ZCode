@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- FORK(codex-collaboration): 现有上游模型合同已超限；仅补充已在 JSON schema 的 timeoutMs 在 started 事件上的类型。 */
 import type { ModelToolReferenceContentBlock } from "../tools/tool-search.js";
 // ============================================================
 // Model Protocol - provider-neutral model contracts
@@ -35,13 +36,11 @@ export const ModelRequestSessionType = {
 
 /**
  * 模型请求的重试预算档位（runtime-only）。
- * - `default`：adapter 构造时解析出的 maxAttempts（默认 10 次重试）。
- * - `unbounded`：**瞬态**失败无上限重试（退避曲线不变、封顶 60s 后无限探测），永久失败照旧立即抛。
- *   给 workflow actor（taskType workflow_child / nested_workflow_child）使用：模型错误绝不是
- *   workflow 错误，唯一出口是用户 cancel。
+ * - `default`：共享恢复链默认最多20次重试，配置只收紧21个物理请求的硬上限。
+ * - `unbounded`：兼容旧 wire 值；实际执行同样有界，新的 workflow 绑定 default。
  * - `single-attempt`：本次请求 maxAttempts 收敛为 1，瞬态失败也不重试、首次失败即上抛。
  *   给带 selectionFallback 声明的执行作用域 Selection（如 Highspeed 加速卡）使用：失败后由 core
- *   退回会话模型继续本轮，适配层再按默认 10 次退避重试只会把降级拖到数分钟之后。
+ *   退回会话模型继续本轮，额外尝试不能绕过共享物理预算。
  */
 export const ModelRetryBudget = {
   Default: "default",
@@ -196,6 +195,8 @@ export interface ModelStreamRecoveryStatus {
 
 export interface ModelRequestStartedStatusEvent extends ModelNetworkStatusBase {
   type: "model_request_started";
+  /** FORK(codex-collaboration): SSE attempt 的 idle deadline，复用已有 schema 字段供 watchdog 避让。 */
+  timeoutMs?: number;
 }
 
 /**

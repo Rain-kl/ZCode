@@ -31,7 +31,10 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 **2. Dispatch code reviewer subagent:**
 
-Use Task tool with `general-purpose` type, fill template at `code-reviewer.md`
+Use `spawn_agent` with `task_name: "code_review"` and `fork_turns: "none"`.
+Fill `message` from the template at `code-reviewer.md`. Wait with `wait_agent`
+for activity, then read the reviewer's message; waiting does not return the
+review body itself. Ask the same reviewer to recheck fixes with `followup_task`.
 
 **Placeholders:**
 - `{DESCRIPTION}` - Brief summary of what you built

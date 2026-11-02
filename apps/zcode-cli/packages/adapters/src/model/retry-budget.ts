@@ -2,17 +2,12 @@ import { ModelRetryBudget } from "@zcode/contracts";
 import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 
 /**
- * 重试预算档位的判定。
- *
- * 「无上限」**只**放宽瞬态失败的放弃条件：runner 的 attempt 循环、失败后「还能不能再试」两处闸门；
- * 退避曲线（2s→60s、jitter、Retry-After 优先）、`isRetryableFailure` 的分类、
- * `emittedRetryBoundaryEvent` 之后不重试、空补全重试与 compact 路径一律不动。
- *
- * 「单次尝试」只把本次请求的 `maxAttempts` 收敛为 1：runner 两处闸门与 empty completion 重试都读
- * 同一个 `retry.maxAttempts`，因此瞬态失败首次即上抛；鉴权刷新/签名修复的额外尝试不占预算，语义不变。
+ * FORK(codex-collaboration): legacy unbounded 档位只保留兼容识别，所有 API 请求统一有界。
+ * single-attempt 只限制当前 provider invocation；共享 chain budget 包含后续声明式 fallback。
+ * auth、签名修复和排队探测均为物理请求，不再拥有额外预算。
  */
 
-/** 状态事件里 `maxAttempts` 表示「无上限」的哨兵（Infinity 不可序列化，0 不占用合法计数）。 */
+/** 旧状态事件「无上限」的兼容哨兵；新执行路径只发布有限的 maxAttempts。 */
 export const UNBOUNDED_RETRY_MAX_ATTEMPTS = 0;
 /** `single-attempt` 预算下本次请求允许的总尝试数（含首次）。 */
 export const SINGLE_ATTEMPT_MAX_ATTEMPTS = 1;
@@ -38,28 +33,34 @@ export function resolveRetryOptionsForBudget(
     : retry;
 }
 
-/** 失败之后还允许再试一次吗（等价于既有的 `retryBudgetAttempt < maxAttempts`，unbounded 恒真）。 */
+/** 失败之后还允许再试一次吗（等价于既有的 `retryBudgetAttempt < maxAttempts`，兼容旧档位也受硬上限约束）。 */
 export function retryBudgetAllows(
-  budget: ModelRetryBudget | undefined,
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  _budget: ModelRetryBudget | undefined,
   retryBudgetAttempt: number,
   maxAttempts: number,
 ): boolean {
-  return isUnboundedRetryBudget(budget) || retryBudgetAttempt < maxAttempts;
+  // FORK(codex-collaboration): 兼容旧档位，但工作流也遵守硬预算。
+  return retryBudgetAttempt < Math.min(maxAttempts, 21);
 }
 
-/** attempt 循环的继续条件（等价于既有的 `attempt <= loopMaxAttempts`，unbounded 恒真）。 */
+/** attempt 循环的继续条件（等价于既有的 `attempt <= loopMaxAttempts`，兼容旧档位也受硬上限约束）。 */
 export function retryAttemptLoopContinues(
-  budget: ModelRetryBudget | undefined,
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  _budget: ModelRetryBudget | undefined,
   attempt: number,
   loopMaxAttempts: number,
 ): boolean {
-  return isUnboundedRetryBudget(budget) || attempt <= loopMaxAttempts;
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  return attempt <= Math.min(loopMaxAttempts, 21);
 }
 
-/** 写进状态事件 / 日志的 maxAttempts：unbounded 下是哨兵 0。 */
+/** 写进新状态事件 / 日志的有限 maxAttempts。 */
 export function retryBudgetMaxAttempts(
-  budget: ModelRetryBudget | undefined,
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  _budget: ModelRetryBudget | undefined,
   maxAttempts: number,
 ): number {
-  return isUnboundedRetryBudget(budget) ? UNBOUNDED_RETRY_MAX_ATTEMPTS : maxAttempts;
+  // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+  return Math.min(maxAttempts, 21);
 }

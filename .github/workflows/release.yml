@@ -178,6 +178,9 @@ jobs:
       - name: Fork contract tests
         run: pnpm test:unit:fork
 
+      - name: Source Server publication contracts
+        run: node --test scripts/test/source-server-release.test.mjs
+
       # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
       # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
       # 打包链路本身不校验清单新鲜度（scripts/third-party-notices.mjs:9-12），不影响产物。
@@ -412,24 +415,112 @@ jobs:
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/latest.yml
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/dev.yml
 
+  build-source-server:
+    name: Build companion Source Server (Linux and macOS)
+    needs: [resolve, verify]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # staging 使用各目标的 Node / node-pty / native tools，不复用宿主编译的二进制。
+      ZCODE_NODE_DIST_MIRROR: https://nodejs.org/dist
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # tar 包含生成时间；已公开版本重跑时复用已校验的原包，而不是重建后替换不可变依赖。
+      - name: Reuse published Source Server on rerun
+        id: reuse
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/ci/source-server-release.mjs reuse "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.reuse.outputs.reused != 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts --fetch-retries=5
+
+      - name: Apply release version
+        if: steps.reuse.outputs.reused != 'true'
+        run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Build all four Source Server targets
+        if: steps.reuse.outputs.reused != 'true'
+        run: pnpm prepare:remote-assets
+
+      - name: Verify Source Server descriptor and archive contents
+        run: node scripts/ci/source-server-release.mjs verify "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}"
+
+      - name: Smoke test packaged Linux Server entrypoint
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          root=$(mktemp -d)
+          trap 'rm -rf "$root"' EXIT
+          tar -xzf "packages/desktop/mock-cdn/releases/${VERSION}/zcode-server-linux-x64.tar.gz" -C "$root"
+          actual=$("$root/zcode-server-linux-x64/bin/zcode" --version)
+          test "$actual" = "$VERSION"
+
+      - name: Upload Source Server artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-server
+          if-no-files-found: error
+          retention-days: ${{ needs.resolve.outputs.prerelease == 'true' && 14 || 90 }}
+          path: |
+            packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}/source-server-release.json
+            packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}/zcode-server-*.tar.gz
+
   publish:
     name: Publish GitHub Release
-    needs: [resolve, build-macos, build-windows]
+    needs: [resolve, build-macos, build-windows, build-source-server]
     # 必须显式写条件：无 if 的作业隐式条件是 success()，而它要求依赖图上**所有祖先**作业成功，
     # 被跳过的 verify 是 publish 的传递祖先，会把 publish 一起判掉（dev 渠道实测踩到）。
-    # 这里只要求三个直接依赖成功，因此 dev 渠道（verify skipped）能发布，
-    # 而 tag 渠道 verify 失败时两个构建会被上面的条件挡掉、publish 随之不成立。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' }}
+    # 所有通道都要求 verify 以及桌面和配套 Server 构建成功，避免只发布桌面半套产物。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-source-server.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
     steps:
+      - name: Checkout publication scripts
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
           path: release-assets
+          pattern: "{mac-*,win-*}"
           merge-multiple: true
+
+      - name: Download Source Server artifacts separately
+        uses: actions/download-artifact@v8
+        with:
+          name: source-server
+          path: source-server-assets
+
+      - name: Publish version-pinned Source Server before desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: node scripts/ci/source-server-release.mjs publish source-server-assets "${{ needs.resolve.outputs.version }}"
 
       - name: Generate checksums
         working-directory: release-assets
@@ -443,7 +534,7 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 该 job 不 checkout，gh 需要显式仓库上下文才能操作 Release。
+          # 显式固定发布仓库，避免 gh 的仓库推断改变发布目的地。
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
           VERSION: ${{ needs.resolve.outputs.version }}

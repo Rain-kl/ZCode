@@ -55,7 +55,8 @@ export async function serializeOutput(
   const effectiveBudget: ToolResultBudget = entry.resultBudget ?? DEFAULT_RESULT_BUDGET;
   const modelContent = stringifyOutputForModel(output, entry);
   const content = stringifyModelContentForSerialization(modelContent);
-  if (isEmptyModelContent(modelContent)) {
+  // FORK(codex-collaboration): 明确声明的空成功结果仍保留 tool_call/result 配对，正文按合同为空。
+  if (isEmptyModelContent(modelContent) && entry.preserveEmptyModelContent !== true) {
     // Bash 空输出也需要通用占位，避免模型把静默成功误读成缺失工具结果。
     const emptyContent = `(${entry.metadata.name} completed with no output)`;
     return {

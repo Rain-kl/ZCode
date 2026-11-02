@@ -3,9 +3,10 @@
 Use this template when dispatching an implementer subagent.
 
 ```
-Task tool (general-purpose):
-  description: "Implement Task N: [task name]"
-  prompt: |
+spawn_agent:
+  task_name: "implement_n"
+  fork_turns: "none"
+  message: |
     You are implementing Task N: [task name]
 
     ## Task Description

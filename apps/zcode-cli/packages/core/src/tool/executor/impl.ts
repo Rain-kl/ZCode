@@ -28,6 +28,8 @@ export class ToolExecutorImpl implements ToolExecutor {
 
   constructor(options: ToolExecutorOptions) {
     this.deps = {
+      // FORK(codex-collaboration): 使用普通权限与 hook 链传入唯一协作端口。
+      collaborationPort: options.collaborationPort,
       agentTelemetry: options.agentTelemetry,
       agentTelemetryActorKind: options.agentTelemetryActorKind,
       registry: options.registry,
@@ -53,8 +55,6 @@ export class ToolExecutorImpl implements ToolExecutor {
       embeddedSearchBackend: options.embeddedSearchBackend,
       nativeSearchEnhancementsEnabled: options.nativeSearchEnhancementsEnabled,
       skillPort: options.skillPort,
-      subagentPort: options.subagentPort,
-      coordinatorResponsePort: options.coordinatorResponsePort,
       workflowSubmitPort: options.workflowSubmitPort,
       workflowEscalatePort: options.workflowEscalatePort,
       artifactStore: options.artifactStore,

@@ -33,9 +33,6 @@ export async function projectTask(
       runningOutputPrefixBytes: TASK_OUTPUT_RUNNING_BASH_PREFIX_BYTES,
     });
   }
-  if (task.type === "local_agent") {
-    return projectAgentTask(task, context);
-  }
   if (task.type === "local_dynamic_workflow") {
     return projectDynamicWorkflowTask(task, context);
   }
@@ -53,7 +50,7 @@ export async function projectTask(
 
 /**
  * workflow run 的投影优先读取终态更新时写入的 resultText；只读 outputFile 可能遗漏结果。
- * 文件读取保留为回退，返回形状与 {@link projectAgentTask} 一致。
+ * 文件读取保留为回退。
  */
 async function projectDynamicWorkflowTask(
   task: RuntimeTaskSnapshot,
@@ -70,29 +67,6 @@ async function projectDynamicWorkflowTask(
     output,
     ...(outputFile ? { outputFile } : {}),
     ...(task.resultText === undefined ? {} : { result: task.resultText }),
-    ...(task.error ? { error: task.error } : {}),
-  };
-}
-
-async function projectAgentTask(
-  task: RuntimeTaskSnapshot,
-  context: ToolExecutionContext,
-): Promise<TaskOutputTask> {
-  const outputFile = task.outputFile;
-  const diskOutput = await readTaskOutputFile(outputFile, context);
-  const completedOutput = task.output?.status === "completed" ? task.output : undefined;
-  const cleanResult = completedOutput?.content.map((block) => block.text).join("\n");
-  const output = cleanResult || diskOutput;
-
-  return {
-    task_id: task.taskId,
-    task_type: task.type,
-    status: task.status,
-    description: task.description,
-    output,
-    ...(outputFile ? { outputFile } : {}),
-    ...(task.prompt ? { prompt: task.prompt } : {}),
-    ...(output ? { result: output } : {}),
     ...(task.error ? { error: task.error } : {}),
   };
 }

@@ -54,9 +54,11 @@ jobs:
           }
           # Dev 通道不属于本流水线的清理范围。canary-build 是 preview 更新通道的固定 tag 指针
           # （客户端读它资产里的 dev.yml / dev-mac.yml，见 release.yml 的「更新通道」说明），
-          # 只保留它：dev-* 自 2026-09-29 起不再由流水线创建（发布只更新指针），遗留的一律清掉。
+          # 同时保留 server-v*：它们是旧客户端仍需下载的配套运行时，不是桌面更新通道。
+          # dev-* 自 2026-09-29 起不再由流水线创建，遗留的一律清掉。
           is_dev_channel_tag() {
-            [[ "$1" == "canary-build" ]]
+            # Server 按完整版本长期保留；旧客户端安装仍引用它，不能作为 dangling release 删除。
+            [[ "$1" == "canary-build" || "$1" == server-v* ]]
           }
 
           DELETED_TAGS=0

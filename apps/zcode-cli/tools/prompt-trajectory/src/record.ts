@@ -366,7 +366,7 @@ export function buildRecorderRuntimeConfig(input: {
     modelSelection: input.modelSelection,
     modelStreaming: fixtureRuntimeConfig?.modelStreaming ?? "on",
     outputStyle: fixtureRuntimeConfig?.outputStyle,
-    subagents: fixtureRuntimeConfig?.subagents ?? { enabled: false },
+    subagents: fixtureRuntimeConfig?.subagents,
     titleGeneration: { enabled: false },
     workingDirectory: input.workingDirectory,
   };

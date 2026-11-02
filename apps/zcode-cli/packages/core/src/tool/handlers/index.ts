@@ -4,6 +4,8 @@ import { replyToChannelToolEntry } from "./reply-to-channel.js";
 // ============================================================
 
 import {
+  // FORK(codex-collaboration): 六工具合同从公开入口接入。
+  COLLABORATION_TOOL_NAMES,
   AMEND_WORKFLOW_TOOL_NAME,
   CREATE_WORKFLOW_TOOL_NAME,
   EVAL_WORKFLOW_SNIPPET_TOOL_NAME,
@@ -31,13 +33,8 @@ import { globToolEntry } from "./glob.js";
 import { grepToolEntry } from "./grep.js";
 import { webFetchToolEntry } from "./webfetch.js";
 import { webSearchToolEntry } from "./websearch.js";
-import {
-  agentToolEntry,
-  createAgentToolEntry,
-  createTaskToolEntry,
-  taskToolEntry,
-} from "./agent.js";
-import { isSubagentDispatchToolName } from "../compat.js";
+// FORK(codex-collaboration): 用户要求全面替换旧工具；新条目保持在独立 fork 模块。
+import { createCollaborationToolEntries } from "../../fork/codex-collaboration-tools/module.js";
 import { skillToolEntry } from "./skill.js";
 import { todoReadToolEntry, todoWriteToolEntry } from "./todo.js";
 import {
@@ -54,8 +51,6 @@ import {
   exitPlanModeToolEntry,
 } from "./plan-mode.js";
 import { askUserQuestionToolEntry } from "./ask-user-question.js";
-import { sendMessageToolEntry } from "./send-message.js";
-import { respondToCoordinatorToolEntry } from "./respond-to-coordinator.js";
 import { createSubmitResultToolEntry, submitResultToolEntry } from "./submit-result.js";
 import { escalateToolEntry } from "./escalate.js";
 import { resolveWorkflowQuestionToolEntry } from "./resolve-workflow-question.js";
@@ -100,8 +95,8 @@ export const builtInTools: ToolEntry[] = [
   enterPlanModeToolEntry,
   exitPlanModeToolEntry,
   askUserQuestionToolEntry,
-  sendMessageToolEntry,
-  respondToCoordinatorToolEntry,
+  // FORK(codex-collaboration): 旧消息/回报工具不再保留隐藏执行入口。
+  ...createCollaborationToolEntries(),
   submitResultToolEntry,
   // actor 的升级通道。与 submit_result 完全同构：
   // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
@@ -112,8 +107,6 @@ export const builtInTools: ToolEntry[] = [
   taskStopToolEntry,
   readSessionContextToolEntry,
   replyToChannelToolEntry,
-  agentToolEntry,
-  taskToolEntry,
   skillToolEntry,
   jsToolEntry,
   createWorkflowToolEntry,
@@ -175,11 +168,10 @@ export function isDynamicWorkflowToolName(toolName: string): boolean {
 }
 
 interface RegisterBuiltInToolsOptions {
+  // FORK(codex-collaboration): Task3b 装配唯一端口后启用；不由旧端口恢复旧工具。
+  includeCollaboration?: boolean;
   bashTimeoutPolicy?: BashTimeoutPolicy;
   includeSkill?: boolean;
-  includeAgent?: boolean;
-  includeSendMessage?: boolean;
-  includeRespondToCoordinator?: boolean;
   includeSubmitResult?: boolean;
   /**
    * 在场时 submit_result 以 typed 声明注册（`{ result: <schema> }`，strict 资格），供 dwf mono
@@ -216,6 +208,11 @@ export function registerBuiltInTools(
 ): void {
   const allowedTools = options.allowedTools ? new Set(options.allowedTools) : undefined;
   const disallowedTools = createToolRuleNameSet(options.disallowedTools);
+  // FORK(codex-collaboration): 与下方注册使用同一组归一化权限，防止计划提示推荐被禁工具。
+  const spawnAgentAvailable =
+    options.includeCollaboration === true &&
+    (!allowedTools || allowedTools.has("spawn_agent")) &&
+    !disallowedTools?.has("spawn_agent");
 
   for (const entry of builtInTools) {
     if (
@@ -230,19 +227,13 @@ export function registerBuiltInTools(
     if (disallowedTools?.has(entry.metadata.name)) {
       continue;
     }
-    if (isSubagentDispatchToolName(entry.metadata.name) && options.includeAgent !== true) {
-      continue;
-    }
-    if (entry.metadata.name === "Skill" && options.includeSkill === false) {
-      continue;
-    }
-    if (entry.metadata.name === "SendMessage" && options.includeSendMessage !== true) {
-      continue;
-    }
+    // FORK(codex-collaboration): 六工具只随新运行时能力注册。
     if (
-      entry.metadata.name === "RespondToCoordinator" &&
-      options.includeRespondToCoordinator !== true
-    ) {
+      COLLABORATION_TOOL_NAMES.some((name) => name === entry.metadata.name) &&
+      options.includeCollaboration !== true
+    )
+      continue;
+    if (entry.metadata.name === "Skill" && options.includeSkill === false) {
       continue;
     }
     if (entry.metadata.name === "submit_result" && options.includeSubmitResult !== true) {
@@ -273,7 +264,7 @@ export function registerBuiltInTools(
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
       continue;
     }
-    registry.register(resolveBuiltInToolEntryForBranch(entry, options), {
+    registry.register(resolveBuiltInToolEntryForBranch(entry, options, spawnAgentAvailable), {
       silentDuplicateWarning: options.silentDuplicateWarnings,
     });
   }
@@ -282,6 +273,7 @@ export function registerBuiltInTools(
 function resolveBuiltInToolEntryForBranch(
   entry: ToolEntry,
   options: RegisterBuiltInToolsOptions,
+  spawnAgentAvailable: boolean,
 ): ToolEntry {
   if (entry.metadata.name === "Bash") {
     return createBashToolEntry({
@@ -292,22 +284,11 @@ function resolveBuiltInToolEntryForBranch(
   if (entry.metadata.name === SUBMIT_RESULT_TOOL_NAME && options.submitResultSchema !== undefined) {
     return createSubmitResultToolEntry(options.submitResultSchema);
   }
-  // 灰度门同时管工具面和**描述**：Agent / Task 的描述里有一条「工作流请求必须改用
-  // CreateWorkflow」，关闭时那个工具不存在，留着只会把模型指向不存在的工具。用的是与注册过滤同一个
-  // options.includeDynamicWorkflow，所以首次装配与分支刷新产出的描述必然一致。
-  if (entry.metadata.name === "Agent") {
-    return createAgentToolEntry({
-      dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
-    });
-  }
-  if (entry.metadata.name === "Task") {
-    return createTaskToolEntry({
-      dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
-    });
-  }
   if (entry.metadata.name === "EnterPlanMode") {
     return createEnterPlanModeToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,
+      // FORK(codex-collaboration): 能力来自本次注册条件，不能从搜索模式猜测。
+      spawnAgentAvailable,
     });
   }
   if (entry.metadata.name === "js") {

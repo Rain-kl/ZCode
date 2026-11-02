@@ -1,0 +1,13 @@
+# Task3b review P1：整树寿命不能从直系registry推断
+
+独立实际runtime复现root→parent→grandchild：parent完成、grandchild provider仍pending，root的
+hasResidencyBlockingWork返回false。宿主自动回收会关闭app/整树，违反父完成不停止child的规则。
+
+先补runtime-integration驻留合同，再扩展原nested回归RED。binding新增同步只读hasRunningWork：
+root读整树，child读自身子树，来自唯一controller snapshot与已有driver原run临时资源句柄。
+interrupted状态不代表IO已经退出；root的待写派生事件也阻止回收。runtime背景工作查询复用此结果，
+原Bash/workflow registry保持原职责，不加状态owner、计时器或新调度路径。
+
+增强回归证明parent完成及卸载后root仍驻留；interrupt提交终态但grandchild模型gate未释放时仍驻留；
+释放provider并结算生命周期后解除驻留。实际runtime/residency/background6文件96/96 GREEN；
+core noEmit与定向lint/架构随提交。不把UI展示或自动回收进程端到端当作已覆盖。

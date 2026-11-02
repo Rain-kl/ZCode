@@ -10,7 +10,12 @@ import { buildToolSearchAnnouncement } from "../src/tool/search/exposure.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 const RESIDENT_NAMES = [
-  "Agent",
+  "spawn_agent",
+  "send_message",
+  "followup_task",
+  "interrupt_agent",
+  "list_agents",
+  "wait_agent",
   "AskUserQuestion",
   "Bash",
   "Edit",
@@ -26,10 +31,8 @@ const RESIDENT_NAMES = [
 function fixture(embeddedSearchEnabled = false) {
   const registry = createToolRegistry();
   registerBuiltInTools(registry, {
-    includeAgent: true,
+    includeCollaboration: true,
     includeSkill: true,
-    includeSendMessage: true,
-    includeRespondToCoordinator: true,
     includeSubmitResult: true,
     submitResultSchema: { type: "object", properties: { answer: { type: "string" } } },
     includeEscalate: true,
@@ -59,7 +62,7 @@ it.each([false, true])(
       { config: { toolSearch: { mode: "auto" } } },
       { ...input, entries },
     );
-    const expectedResidents = RESIDENT_NAMES.filter((name) => input.registry.has(name));
+    const expectedResidents = RESIDENT_NAMES.filter((name) => input.registry.has(name)).sort();
     expect(prepared.request.toolSearchEnabled).toBe(true);
     expect(prepared.request.tools.map((tool) => tool.name).sort()).toEqual(expectedResidents);
     expect(prepared.request.tools.every((tool) => tool.deferLoading === undefined)).toBe(true);

@@ -1,5 +1,20 @@
 # Tool Change Chain Spec
 
+## Fork：Codex 协作调度设计评审（2026-10-29）
+
+当前仅设计，产品行为尚未改变。拟引入 Codex MultiAgent V2 的 spawn_agent、
+send_message、followup_task、interrupt_agent、list_agents、wait_agent，完整合同见
+[协作与重试设计](../../../../../../docs/features/codex-collaboration/design.md)。
+
+实施时必须覆盖：模型可见 schema/描述和角色提示 → ToolSearch/权限/执行器 →
+根 runtime 协作控制器的任务 admission、邮箱和独立取消信号 → 子 session 持久化 →
+有序事件 → V4/TUI/Desktop/mobile 投影。按2026-11-02用户新指示，废弃旧 Agent/Task/
+SendMessage/RespondToCoordinator，不保留注册、执行、隐藏兼容、搜索或别名入口；
+同步清理旧提示词、技能与示例，增加移除守卫。TaskOutput/TaskStop 仅保留 Bash/workflow
+等非子代理合同。本文后续旧入口说明属于迁移前事实，落地时须改成六工具的实际链路。
+重点验收 spawn 接受前后取消、wait 被 steer 唤醒而 child 继续、API 预算耗尽后的
+同身份 followup，以及已执行工具和已接受 spawn 在流恢复中不重复。
+
 ## Bash 临时输出路径隔离
 
 主应用及 workflow 子运行时装配 tmp 父目录 → execution adapter 实际准备具名输出文件 →
@@ -311,7 +326,7 @@ canonical 载荷、工具输入/输出、权限审批与主子 Agent 身份不�
 为完整前缀和整批正文添加一次 `<system-reminder>`。Agent/Bash/Workflow 原始结果、通知批处理、
 主子工具权限、持久化与 UI 可见性不变；BG25/BG36 在 MCS 与非 MCS 请求中验证 user 包装。
 
-运行中立即发送：纯文本 human 输入实际抢占 Core 前台执行后，复用 `user_steer` 的 provider 投影；工具取消、结果配对、审批、队列提升与执行轮边界不变。MCS 合法位置及 user 包装继续由共享投影裁决，不因新 turn 强行插入 system。具体边界见 [turn steering](../loop/turn-steering.md#运行中立即发送的-human-提示2026-09-12)。
+Fork 更正（2026-11-02，codex-collaboration）：运行中立即发送不再抢占 Core 前台执行；纯文本 human 输入在当前响应和工具结果完整结算后，以同一 turn 的 guide 复用 `user_steer` provider 投影。审批、工具结果配对与 MCS 合法位置仍由既有所有者裁决，不取消流、不强行插入 system。具体边界见 [turn steering](../loop/turn-steering.md)。
 
 ### 动态工作流子代理的 Browser Use
 
@@ -1824,3 +1839,12 @@ MCP isError 和历史 hydration 不触发创建。工具执行、权限、原始
 ### 文档插件多窗口视图修复（2026-10-16）
 
 MCP app-only report_view 增加可选 viewId，release_view 释放指定窗口；模型 get_view 可选 viewId，缺省且存在多个上报窗口时返回歧义与清单。状态唯一归属 DocumentOwner，不由页面决定其他窗口的视图；旧客户端缺省 viewId 仍走 legacy 槽。show_in_viewer 保持专用 surface 路由并明确工具描述。导入仍为 app-only workspace 副作用；串行 admission、10 分钟未活动过期与部分文件清扫归 importer，完成副本不清理。覆盖 schema 到真实 MCP/AppBridge 的多窗口回归。
+# Fork：Codex 协作六工具（Task3a）
+
+schema/调用方端口（contracts fork 公共入口）→ 六个 ToolEntry（core fork）→ 显式注册选项
+→ 既有权限/hook/executor/结果预算 → registry.toContracts → ToolSearch catalog。
+Task3b 完成实际 runtime 接线。最终全面使用六工具，删除旧 Agent/Task/SendMessage/
+RespondToCoordinator 的 provider 声明、搜索与直接执行；不保留隐藏工具、旧端口开关或别名转发。
+TaskOutput/TaskStop 的子代理分支删除，后台命令/工作流用途保留并验证；旧调用不新增兼容恢复。
+caller 与 toolCallId 来自执行上下文；spawn 的私有身份通过内部生命周期持久化，模型仅见 task_name。
+完整合同与状态映射：[tools-contract](../../../../../../../docs/features/codex-collaboration/tools-contract.md)。

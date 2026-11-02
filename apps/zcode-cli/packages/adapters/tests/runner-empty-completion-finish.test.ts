@@ -293,6 +293,18 @@ describe.each(["stream", "generate"] as const)("%s empty completion finish seman
       "preserves the existing retry for other finish $finishReason / $rawFinishReason",
       async (entry) => {
         const run = harness(entry.finishReason, entry.rawFinishReason, rawSource);
+        // FORK(codex-collaboration): other 无 provider stop reason 是 SDK 合成的 EOF，不能当作正常空补全。
+        if (
+          mode === "stream" &&
+          entry.finishReason === "other" &&
+          entry.rawFinishReason === undefined
+        ) {
+          await expect(run.read(mode)).rejects.toMatchObject({
+            code: ModelErrorCode.InvalidModelResponse,
+          });
+          expect(run.attempts).toBe(MAX_ATTEMPTS);
+          return;
+        }
         const result = await run.read(mode);
 
         expect(run.attempts).toBe(2);

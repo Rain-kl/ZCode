@@ -1,3 +1,6 @@
+/* eslint-disable max-lines -- FORK(codex-collaboration): 上游流状态机原已超限；本修复统一错误路径并缩短文件，保持现有 iterator/工具提交顺序。 */
+// FORK(codex-collaboration): Core/Adapter 必须共享物理请求计数，含鉴权及签名修复。
+import { createModelRecoveryBudget, ModelRetryBudget as RetryBudgetTier } from "@zcode/contracts";
 import type { TextStreamPart, ToolSet } from "ai";
 import type { Logger, ModelStatusSink, ModelStreamEvent } from "@zcode/contracts";
 import {
@@ -8,8 +11,10 @@ import {
   ModelTransportKind as ModelTransportKindValue,
   type ModelRetryBudget,
 } from "@zcode/contracts";
+// FORK(codex-collaboration): 异步 SDK 本地校验必须与实际 API 失败分开归因。
 import {
   classifyModelFailure,
+  isLocalModelRequestFailure,
   findProviderBusinessError,
   inspectProviderFailure,
   type ClassifiedModelFailure,
@@ -49,17 +54,15 @@ import {
 } from "./runner-debug.js";
 import { sanitizeModelNetworkHeaders } from "./runner-network-headers.js";
 import { admitAttempt, type AttemptAdmission } from "./request-admission.js";
-import {
-  retryAttemptLoopContinues,
-  retryBudgetAllows,
-  retryBudgetMaxAttempts,
-} from "./retry-budget.js";
+// FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+import { retryBudgetAllows } from "./retry-budget.js";
 import { toModelStreamEvent } from "./runner-normalization.js";
 import type { EnvRecord } from "./model-execution.js";
 import { detectProviderBusinessFinishError } from "./provider-finish-business-error.js";
 import { createRequestVerificationEmptyStreamError } from "./request-security-edition/recovery.js";
 import {
   calculateRetryDelay,
+  classifyAttemptAdmissionFailure,
   logRetryDelayDecision,
   sleep,
   TerminalStreamChunkError,
@@ -108,17 +111,61 @@ export async function* runStreamText(input: {
   streamIdleTimeoutMs: number;
   modelIoFullRetentionEnabled: boolean;
 }): AsyncGenerator<ModelStreamEvent> {
-  // 重试预算档位：只放宽瞬态失败的放弃条件；
-  // `emittedRetryBoundaryEvent` 之后不重试的规则不变。状态事件 maxAttempts 以 0 表示无上限。
+  // FORK-BEGIN(codex-collaboration)
+  const recoveryBudget =
+    input.request.modelRecoveryBudget ?? createModelRecoveryBudget(input.retry.maxAttempts);
+  // 配置必须收紧整条恢复链；SingleAttempt 只限制声明式 fallback 的当前 provider。
+  if (input.request.modelRetryBudget !== RetryBudgetTier.SingleAttempt)
+    recoveryBudget.constrainMaxAttempts(input.retry.maxAttempts);
+  const firstAttempt = recoveryBudget.attempts + 1;
+  const lastAttempt = Math.min(
+    recoveryBudget.maxAttempts,
+    recoveryBudget.attempts + input.retry.maxAttempts,
+  );
+  if (firstAttempt > lastAttempt) {
+    throw new AiSdkModelAdapterError(
+      ModelErrorCode.ModelRequestFailed,
+      "Model recovery request budget exhausted.",
+      {
+        context: {
+          attempts: recoveryBudget.attempts,
+          maxAttempts: recoveryBudget.maxAttempts,
+          recoveryBudgetExhausted: true,
+          retryable: false,
+        },
+      },
+    );
+  }
   const retryBudget = input.request.modelRetryBudget;
-  const statusMaxAttempts = (extraAttempts: number): number =>
-    retryBudgetMaxAttempts(retryBudget, input.retry.maxAttempts + extraAttempts);
+  // FORK-END(codex-collaboration)
   const baseStatusContext = createStatusContext({
-    maxAttempts: statusMaxAttempts(0),
+    maxAttempts: lastAttempt,
     request: input.request,
     resolved: input.resolved,
     transport: ModelTransportKindValue.Sse,
   });
+  // FORK-BEGIN(codex-collaboration)
+  // Core 安全锚点恢复创建新 invocation；沿用物理次数计算退避，不能重置为首请求。
+  if (firstAttempt > 1) {
+    const delayMs = calculateRetryDelay(input.retry, firstAttempt - 1);
+    await publishRetryScheduledStatus(
+      input,
+      baseStatusContext,
+      firstAttempt - 1,
+      delayMs,
+      {
+        code: ModelErrorCode.ModelRequestFailed,
+        message: "Recovering the interrupted model request.",
+        reason: ModelFailureReasonValue.Unknown,
+        retryReason: ModelRetryReason.NetworkError,
+        retryable: true,
+      },
+      {},
+      {},
+    );
+    await sleep(delayMs, input.request.abortSignal);
+  }
+  // FORK-END(codex-collaboration)
   const recordModelIO = shouldRecordModelIO(input.env);
   const isDev = isDevelopmentModelIOEnv(input.env);
   let requestMessages = input.request.messages;
@@ -126,28 +173,25 @@ export async function* runStreamText(input: {
   const authRetry = new AccountRequestRetry(input.request, input.resolved, input.logger);
   let emptyCompletionRetryCount = 0;
 
-  for (
-    let attempt = 1;
-    retryAttemptLoopContinues(
-      retryBudget,
-      attempt,
-      input.retry.maxAttempts + Number(signatureRepairAttempted) + authRetry.extraAttempts,
-    );
-    attempt += 1
-  ) {
-    const retryBudgetAttempt = attempt - Number(signatureRepairAttempted) - authRetry.extraAttempts;
+  // FORK(codex-collaboration): 每一物理尝试计入同一个硬预算，特殊修复不再豁免。
+  for (let attempt = firstAttempt; attempt <= lastAttempt; attempt += 1) {
+    const retryBudgetAttempt = attempt;
     const startedAt = Date.now();
     // SSE idle timeout 后的重试如果仍固定首请求窗口，容易被同一段 provider 静默窗口反复打断；
     // core recovery 和 adapter 内部 retry 都统一按重试次数每次增加 30s。
     const streamIdleTimeoutMs = resolveModelStreamIdleTimeoutMs({
       baseTimeoutMs: input.streamIdleTimeoutMs,
-      retryNumber: (input.request.streamIdleTimeoutRetryNumber ?? 0) + retryBudgetAttempt - 1,
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      retryNumber: Math.max(
+        input.request.streamIdleTimeoutRetryNumber ?? 0,
+        retryBudgetAttempt - 1,
+      ),
     });
     let emittedEvent = false;
     let emittedRetryBoundaryEvent = false;
     let emittedError = false;
-    let retryScheduledFromStreamChunk = false;
-    let offPeakQueueHoldFromStreamChunk = false;
+    // FORK(codex-collaboration): chunk 错误统一抛到 catch；不保留跳过物理计数的旁路。
+    let providerStopReasonObserved = false;
     const pendingRetrySafeEvents: ModelStreamEvent[] = [];
     const diagnostics = createStreamDiagnostics();
     const attemptAbortController = createLinkedAbortController(input.request.abortSignal);
@@ -159,12 +203,15 @@ export async function* runStreamText(input: {
     let statusContext = createAttemptStatusContext(
       {
         ...baseStatusContext,
-        maxAttempts: statusMaxAttempts(Number(signatureRepairAttempted) + authRetry.extraAttempts),
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        maxAttempts: lastAttempt,
       },
       attempt,
     );
     const toolCallAssembler = new StreamingToolCallAssembler({ logger: input.logger });
     let streamIterator: AsyncIterator<TextStreamPart<ToolSet>> | undefined;
+    // FORK(codex-collaboration): 本地状态/持久化错误不属于 provider 请求失败。
+    let providerOperationInProgress = false;
     let streamReachedNaturalEnd = false;
     let attemptFailed = false;
     let awaitIteratorClose = false;
@@ -192,7 +239,8 @@ export async function* runStreamText(input: {
       if (!repairedMessages) return false;
 
       // 签名只对生成它的 thinking block 有效。流尚未提交输出时，只替换
-      // 本次请求副本，并给一次不占普通 retry 预算且拥有新 requestId 的物理请求机会；
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      // 本次请求副本，并在共享预算内给一次拥有新 requestId 的物理请求机会；
       // 不能把清理结果写回 canonical history。
       signatureRepairAttempted = true;
       requestMessages = repairedMessages;
@@ -251,7 +299,7 @@ export async function* runStreamText(input: {
       });
     } catch (admitError) {
       attemptAbortController.cleanup();
-      const admitFailure = classifyModelFailure(admitError, input.request.abortSignal);
+      const admitFailure = classifyAttemptAdmissionFailure(admitError, input.request.abortSignal);
       await publishModelStatus(
         {
           ...statusContext,
@@ -306,16 +354,24 @@ export async function* runStreamText(input: {
           attempt,
           requestHeaderCount,
           requestHeaders,
+          // FORK(codex-collaboration): child watchdog 必须让 Adapter 的递增 idle timeout 先判定断流。
+          timeoutMs: streamIdleTimeoutMs,
           timestamp: new Date(startedAt).toISOString(),
           type: "model_request_started",
         },
         statusPublishOptions(input, admission),
       );
+      // FORK(codex-collaboration): 准入和本地配置检查通过后才计数，SDK 内置 retry 已关闭。
+      if (recoveryBudget.claimAttempt() === undefined)
+        throw new Error("Model recovery request budget exhausted.");
+      providerOperationInProgress = true;
       const streamResult = input.runtime.streamText(options);
       result = streamResult;
       streamIterator = streamResult.fullStream[Symbol.asyncIterator]();
 
       while (true) {
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        providerOperationInProgress = true;
         const next = await readNextWithStreamIdleTimeout(streamIterator, {
           abortController: attemptAbortController.controller,
           onTimeout: async (error) => {
@@ -338,6 +394,8 @@ export async function* runStreamText(input: {
           },
           timeoutMs: streamIdleTimeoutMs,
         });
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        providerOperationInProgress = false;
         if (next.done) {
           streamReachedNaturalEnd = true;
           break;
@@ -358,6 +416,8 @@ export async function* runStreamText(input: {
 
         let event: Awaited<ReturnType<typeof handleStreamChunk>>;
         try {
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          providerOperationInProgress = true;
           event = await handleStreamChunk({
             admission,
             attempt,
@@ -392,6 +452,15 @@ export async function* runStreamText(input: {
           }
           throw error;
         }
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        providerOperationInProgress = true;
+        // FORK(codex-collaboration): 原生 stop_reason 是真实终态，后续空 delta 不能撤销已观察证据。
+        providerStopReasonObserved ||= event.visibleEvents.some(
+          (visibleEvent) =>
+            visibleEvent.type === "compact_stream_boundary" &&
+            visibleEvent.boundary === "provider_stop_reason" &&
+            visibleEvent.present,
+        );
         if (event.visibleEvents.some((visibleEvent) => visibleEvent.type === "finish")) {
           const contextError = createEmptyContextExceededError({
             finishReason: diagnostics.finishReason,
@@ -402,6 +471,20 @@ export async function* runStreamText(input: {
           });
           // 先于 yield finish 进入既有 catch，每个请求只发布一个失败终态。
           if (contextError) throw contextError;
+          // FORK(codex-collaboration): AI SDK 在 provider EOF 后也会合成 other finish，不能当作完整回答。
+          if (
+            ["other", "unknown"].includes(diagnostics.finishReason ?? "") &&
+            !providerStopReasonObserved &&
+            String(diagnostics.rawFinishReason ?? "").trim().length === 0
+          ) {
+            throw new AiSdkModelAdapterError(
+              ModelErrorCode.InvalidModelResponse,
+              "Provider stream ended without a terminal stop reason.",
+              {
+                context: { errorPhase: "stream", reason: "stream_incomplete", retryable: true },
+              },
+            );
+          }
         }
         const shouldHoldEmptyCompletionEvents =
           !event.emittedError &&
@@ -418,7 +501,8 @@ export async function* runStreamText(input: {
           canRetryEmptyCompletion({
             abortSignal: input.request.abortSignal,
             attempt,
-            maxAttempts: input.retry.maxAttempts,
+            // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+            maxAttempts: lastAttempt,
             retryCount: emptyCompletionRetryCount,
           });
         if (shouldHoldEmptyCompletionEvents) {
@@ -430,19 +514,8 @@ export async function* runStreamText(input: {
         emittedEvent = emittedEvent || event.emittedEvent;
         emittedRetryBoundaryEvent = emittedRetryBoundaryEvent || event.emittedRetryBoundaryEvent;
 
-        if (event.retryScheduled) {
-          // SSE error chunk 的 retry 是正常控制流，不会进入 catch；
-          // 若不显式标记失败，finally 会跳过旧 attempt 的 iterator/tee 清理。
-          // 下一次物理请求必须等待本轮 abort 与有界清理后才能启动。
-          attemptFailed = true;
-          awaitIteratorClose = true;
-          retryScheduledFromStreamChunk = true;
-          offPeakQueueHoldFromStreamChunk = event.offPeakQueueHold;
-          break;
-        }
-        if (event.terminalError) {
-          throw event.terminalError;
-        }
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        providerOperationInProgress = false;
         if (event.visibleEvents.length > 0) {
           for (const visibleEvent of event.visibleEvents) {
             const observation = observeVisibleStreamEvent(visibleEvent, Date.now() - startedAt);
@@ -453,14 +526,19 @@ export async function* runStreamText(input: {
         }
       }
 
-      if (retryScheduledFromStreamChunk) {
-        if (offPeakQueueHoldFromStreamChunk) {
-          // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试。
-          attempt -= 1;
-        }
-        continue;
+      // FORK(codex-collaboration): 自然 EOF 不证明生成完成；缺少 terminal 必须走统一恢复。
+      providerOperationInProgress = true;
+      if (!diagnostics.lastFinishChunk) {
+        throw new AiSdkModelAdapterError(
+          ModelErrorCode.InvalidModelResponse,
+          "Provider stream ended before terminal finish.",
+          {
+            context: { errorPhase: "stream", reason: "stream_incomplete", retryable: true },
+          },
+        );
       }
 
+      providerOperationInProgress = false;
       const flushedEvents = applyStreamEventsToRetryBoundary({
         emittedRetryBoundaryEvent,
         events: toolCallAssembler.flush(),
@@ -487,6 +565,8 @@ export async function* runStreamText(input: {
         yield pendingEvent;
       }
 
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      providerOperationInProgress = true;
       if (!emittedError) {
         // 自然 EOF 后合成的业务错误会通过 TerminalStreamChunkError 直接离开外层 catch；
         // compact 上下文在普通主链路为空，因此必须在合成现场显式保留 stream 阶段。
@@ -567,7 +647,8 @@ export async function* runStreamText(input: {
             canRetryEmptyCompletion({
               abortSignal: input.request.abortSignal,
               attempt,
-              maxAttempts: input.retry.maxAttempts,
+              // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+              maxAttempts: lastAttempt,
               retryCount: emptyCompletionRetryCount,
             })
           ) {
@@ -662,7 +743,10 @@ export async function* runStreamText(input: {
         });
       }
       return;
-    } catch (error) {
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    } catch (caughtError) {
+      const error =
+        caughtError instanceof TerminalStreamChunkError ? caughtError.adapterError : caughtError;
       attemptFailed = true;
       if (recordModelIO && options) {
         await recordStreamTextDebug({
@@ -680,10 +764,7 @@ export async function* runStreamText(input: {
           result,
           startedAt,
         });
-      }
-      if (error instanceof TerminalStreamChunkError) {
-        awaitIteratorClose = true;
-        throw error.adapterError;
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
       }
       if (
         error instanceof ModelProtocolError &&
@@ -696,19 +777,32 @@ export async function* runStreamText(input: {
 
       const completedAt = Date.now();
       const retryWithRepairedHistory =
-        !emittedRetryBoundaryEvent && repairThinkingSignatureRejection(error);
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        !emittedRetryBoundaryEvent &&
+        attempt < lastAttempt &&
+        repairThinkingSignatureRejection(error);
       if (retryWithRepairedHistory) {
         statusContext = {
           ...statusContext,
-          maxAttempts: statusMaxAttempts(1 + authRetry.extraAttempts),
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          maxAttempts: lastAttempt,
         };
       }
       const classified = classifyModelFailure(error, input.request.abortSignal);
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      if (!providerOperationInProgress) {
+        classified.retryable = false;
+        if (classified.reason !== ModelFailureReasonValue.Cancelled)
+          classified.localControl ??= "prepare_failed";
+      }
       if (error instanceof RuntimeHeadersRefreshError) {
         classified.message = error.message;
         classified.retryable = false;
+        // FORK(codex-collaboration): 本地刷新失败不能让 workflow 外层重新驱动。
+        classified.localControl ??= "prepare_failed";
       }
-      // off-peak 特判（仅 idle plan provider）：排队 429 豁免预算无限探测；3102 标记落败触发续跑。
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      // off-peak 特判（仅 idle plan provider）：排队 429 在同一预算内探测；3102 标记落败触发续跑。
       const offPeak = resolveOffPeakFailureDecision({
         offPeak: resolved.accountAccess?.mode === "off-peak",
         failure: classified,
@@ -717,8 +811,8 @@ export async function* runStreamText(input: {
       const failure: ClassifiedModelFailure =
         offPeak?.kind === "ticketExpired"
           ? {
+              // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
               ...classified,
-              retryable: false,
               message: offPeakTicketExpiredMessage(classified.message),
             }
           : offPeak?.kind === "queued"
@@ -728,8 +822,11 @@ export async function* runStreamText(input: {
                 retryReason: ModelRetryReason.OffpeakQueued,
               }
             : classified;
-      const errorPhase =
-        readModelFailureErrorPhase(error) ?? (streamIterator === undefined ? "prepare" : "stream");
+      // FORK(codex-collaboration): SDK 校验即使从 fullStream 抛出也仍属于准备阶段。
+      const errorPhase = isLocalModelRequestFailure(error)
+        ? "prepare"
+        : (readModelFailureErrorPhase(error) ??
+          (streamIterator === undefined ? "prepare" : "stream"));
       awaitIteratorClose = failure.reason !== ModelFailureReasonValue.Cancelled;
       const responseHeaders = sanitizeModelNetworkHeaders(
         getResponseHeaders(unwrapRetryError(error)),
@@ -739,7 +836,8 @@ export async function* runStreamText(input: {
         emittedRetryBoundaryEvent,
         error,
         failure,
-        maxAttempts: input.retry.maxAttempts,
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        maxAttempts: lastAttempt,
         preserveProviderStreamBoundaries: input.request.preserveProviderStreamBoundaries,
         responseHeaders,
         retryBudget,
@@ -748,31 +846,35 @@ export async function* runStreamText(input: {
           diagnostics.lastErrorChunk || diagnostics.lastFinishChunk,
         ),
       });
-      const retryWithAuth = authRetry.claim(
-        error,
-        options === undefined ||
-          emittedRetryBoundaryEvent ||
-          streamOutputCommitted ||
-          (input.request.preserveProviderStreamBoundaries === true &&
-            failureDecision.context?.streamFailurePhase === "response_body"),
-      );
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      const retryWithAuth =
+        attempt < lastAttempt &&
+        authRetry.claim(
+          error,
+          options === undefined ||
+            emittedRetryBoundaryEvent ||
+            streamOutputCommitted ||
+            (input.request.preserveProviderStreamBoundaries === true &&
+              failureDecision.context?.streamFailurePhase === "response_body"),
+        );
       if (retryWithAuth) {
         failureDecision.canRetry = true;
         statusContext = {
           ...statusContext,
-          maxAttempts: statusMaxAttempts(
-            Number(signatureRepairAttempted) + authRetry.extraAttempts,
-          ),
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          maxAttempts: lastAttempt,
         };
       }
-      // off-peak 排队 429 豁免预算：不消耗 maxAttempts，SSE 可见输出边界仍适用。
-      if (offPeak?.kind === "queued" && !emittedRetryBoundaryEvent) {
+      // FORK(codex-collaboration): 排队等待占用同一预算，SSE 可见输出边界仍适用。
+      if (offPeak?.kind === "queued" && !emittedRetryBoundaryEvent && attempt < lastAttempt) {
         failureDecision.canRetry = true;
       }
       if (retryWithRepairedHistory) {
         failureDecision.canRetry = true;
       }
 
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      failureDecision.canRetry = failureDecision.canRetry && attempt < lastAttempt;
       logStreamFailureDiagnostics({
         attempt,
         canRetry: failureDecision.canRetry,
@@ -812,34 +914,10 @@ export async function* runStreamText(input: {
       );
       terminalStatusPublished = true;
 
-      if (retryWithAuth) {
-        await publishRetryScheduledStatus(
-          input,
-          statusContext,
-          attempt,
-          0,
-          { ...failure, retryReason: ModelRetryReason.AuthRefresh },
-          requestHeaders,
-          responseHeaders,
-        );
-        continue;
-      }
-      if (retryWithRepairedHistory) {
-        await publishRetryScheduledStatus(
-          input,
-          statusContext,
-          attempt,
-          0,
-          {
-            ...failure,
-            retryReason: ModelRetryReason.ReasoningSignatureRepair,
-          },
-          requestHeaders,
-          responseHeaders,
-          admission,
-        );
-        continue;
-      }
+      // FORK(codex-collaboration): 鉴权/签名修复同样遵循指数退避，不能另开零延迟尝试链。
+      if (retryWithAuth) failure.retryReason = ModelRetryReason.AuthRefresh;
+      else if (retryWithRepairedHistory)
+        failure.retryReason = ModelRetryReason.ReasoningSignatureRepair;
 
       if (!failureDecision.canRetry) {
         logRetryDelayDecision({
@@ -851,6 +929,8 @@ export async function* runStreamText(input: {
           statusContext,
         });
         throw toAdapterError(error, failure, statusContext, attempt, {
+          // FORK(codex-collaboration): workflow driver 不得在预算耗尽后重开一条无限链。
+          recoveryBudgetExhausted: recoveryBudget.attempts >= recoveryBudget.maxAttempts,
           ...failureDecision.context,
           errorPhase,
         });
@@ -858,7 +938,8 @@ export async function* runStreamText(input: {
 
       const delayMs =
         offPeak?.kind === "queued"
-          ? offPeak.delayMs
+          ? // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+            Math.min(offPeak.delayMs, 30_000, input.retry.maxDelayMs)
           : calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs);
       logRetryDelayDecision({
         attempt,
@@ -912,15 +993,13 @@ export async function* runStreamText(input: {
         throw toAdapterError(sleepError, sleepFailure, statusContext, attempt, {
           errorPhase: "connect",
         });
-      }
-      if (offPeak?.kind === "queued") {
-        // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试，无限探测。
-        attempt -= 1;
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
       }
     } finally {
       if (
-        !streamReachedNaturalEnd &&
-        (attemptFailed || input.request.preserveProviderStreamBoundaries === true)
+        // FORK(codex-collaboration): EOF 也可能是失败；失败 terminal 必须中止并清理，只有成功自然 EOF 豁免。
+        attemptFailed ||
+        (!streamReachedNaturalEnd && input.request.preserveProviderStreamBoundaries === true)
       ) {
         // 普通 stream 的 429 retry 失败若不进入本清理分支，
         // AI SDK fullStream tee 会持有旧 provider 请求，连续重试会让后续物理请求卡在发送前。
@@ -1073,10 +1152,7 @@ async function handleStreamChunk(input: {
   emittedError: boolean;
   emittedEvent: boolean;
   emittedRetryBoundaryEvent: boolean;
-  retryScheduled: boolean;
-  /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
-  offPeakQueueHold: boolean;
-  terminalError?: TerminalStreamChunkError;
+  // FORK(codex-collaboration): 错误唯一由 catch 恢复，chunk 不发布第二套重试控制状态。
   visibleEvents: ModelStreamEvent[];
 }> {
   recordStreamChunkDiagnostic(input.diagnostics, input.chunk);
@@ -1087,6 +1163,15 @@ async function handleStreamChunk(input: {
     ? toProviderStreamBoundaryEvent(input.chunk)
     : undefined;
   const emittedRetryBoundaryEvent = input.emittedRetryBoundaryEvent || providerEventObserved;
+  // FORK(codex-collaboration): 本地 code 不能被业务扫描包装为 provider 错误并抹去禁止重试的事实。
+  if (
+    input.chunk.type === "error" &&
+    input.chunk.error instanceof Error &&
+    classifyModelFailure(input.chunk.error, input.input.request.abortSignal).localControl !==
+      undefined
+  ) {
+    throw input.chunk.error;
+  }
   const providerBusinessFinishError = detectProviderBusinessFinishError({
     providerId: String(input.statusContext.providerId),
     providerKind: input.statusContext.providerKind,
@@ -1256,165 +1341,8 @@ async function handleStreamErrorEvent(
   input: Parameters<typeof handleStreamChunk>[0],
   error: unknown,
 ): Promise<Awaited<ReturnType<typeof handleStreamChunk>>> {
-  if (isRequestVerificationRejection(error) || input.canRecoverProjectToken(error)) throw error;
-  const retryWithRepairedHistory =
-    !input.emittedRetryBoundaryEvent && input.repairThinkingSignatureRejection(error);
-  const statusContext = retryWithRepairedHistory
-    ? {
-        ...input.statusContext,
-        maxAttempts: retryBudgetMaxAttempts(
-          input.input.request.modelRetryBudget,
-          input.input.retry.maxAttempts + 1,
-        ),
-      }
-    : input.statusContext;
-  const classified = classifyModelFailure(error, input.input.request.abortSignal);
-  // off-peak 特判：SSE 首块即错（尚无可见输出）时的排队 429 同样豁免预算重试。
-  const offPeak = resolveOffPeakFailureDecision({
-    offPeak: input.input.resolved.accountAccess?.mode === "off-peak",
-    failure: classified,
-    error: unwrapRetryError(error),
-  });
-  const failure: ClassifiedModelFailure =
-    offPeak?.kind === "ticketExpired"
-      ? {
-          ...classified,
-          retryable: false,
-          message: offPeakTicketExpiredMessage(classified.message),
-        }
-      : offPeak?.kind === "queued"
-        ? {
-            ...classified,
-            retryable: true,
-            retryReason: ModelRetryReason.OffpeakQueued,
-          }
-        : classified;
-  const responseHeaders = sanitizeModelNetworkHeaders(getResponseHeaders(unwrapRetryError(error)));
-  const failureDecision = resolveStreamFailureDecision({
-    attempt: input.retryBudgetAttempt,
-    emittedRetryBoundaryEvent: input.emittedRetryBoundaryEvent,
-    error,
-    failure,
-    maxAttempts: input.input.retry.maxAttempts,
-    preserveProviderStreamBoundaries: input.input.request.preserveProviderStreamBoundaries,
-    responseHeaders,
-    retryBudget: input.input.request.modelRetryBudget,
-    streamErrorChunkObserved: true,
-  });
-  // off-peak 排队 429 豁免预算：不消耗 maxAttempts，SSE 可见输出边界仍适用。
-  if (offPeak?.kind === "queued" && !input.emittedRetryBoundaryEvent) {
-    failureDecision.canRetry = true;
-  }
-  if (retryWithRepairedHistory) {
-    failureDecision.canRetry = true;
-  }
-  await publishModelStatus(
-    {
-      ...statusContext,
-      attempt: input.attempt,
-      durationMs: Date.now() - input.startedAt,
-      message: failure.message,
-      reason: failure.reason,
-      requestHeaderCount: input.requestHeaderCount,
-      requestHeaders: input.requestHeaders,
-      responseHeaderCount: Object.keys(responseHeaders).length,
-      responseHeaders,
-      retryable: failureDecision.canRetry,
-      statusCode: failure.statusCode,
-      streamOutputCommitted: input.emittedRetryBoundaryEvent,
-      ...modelFailureStatusFields(error, failure, "stream"),
-      timestamp: new Date().toISOString(),
-      type: "model_request_failed",
-    },
-    {
-      ...statusPublishOptions(input.input, input.admission),
-      failureError: unwrapRetryError(error),
-    },
-  );
-
-  if (retryWithRepairedHistory) {
-    await publishRetryScheduledStatus(
-      input.input,
-      statusContext,
-      input.attempt,
-      0,
-      {
-        ...failure,
-        retryReason: ModelRetryReason.ReasoningSignatureRepair,
-      },
-      input.requestHeaders,
-      responseHeaders,
-      input.admission,
-    );
-    return streamChunkResult({
-      emittedError: true,
-      retryScheduled: true,
-    });
-  }
-
-  if (!failureDecision.canRetry) {
-    logRetryDelayDecision({
-      attempt: input.attempt,
-      canRetry: failureDecision.canRetry,
-      failure,
-      logger: input.input.logger,
-      responseHeaders,
-      statusContext,
-    });
-    return streamChunkResult({
-      emittedError: true,
-      terminalError: new TerminalStreamChunkError(
-        toAdapterError(error, failure, statusContext, input.attempt, {
-          ...failureDecision.context,
-          errorPhase: "stream",
-        }),
-      ),
-    });
-  }
-
-  const delayMs =
-    offPeak?.kind === "queued"
-      ? offPeak.delayMs
-      : calculateRetryDelay(input.input.retry, input.retryBudgetAttempt, failure.retryAfterMs);
-  logRetryDelayDecision({
-    attempt: input.attempt,
-    canRetry: failureDecision.canRetry,
-    delayMs,
-    failure,
-    logger: input.input.logger,
-    responseHeaders,
-    statusContext,
-  });
-
-  await publishRetryScheduledStatus(
-    input.input,
-    statusContext,
-    input.attempt,
-    delayMs,
-    failure,
-    input.requestHeaders,
-    responseHeaders,
-    input.admission,
-  );
-  // 退避期间不持票：这次尝试到此结束，槽位让给别人。
-  input.admission.release();
-  // Note: AI SDK can surface pre-output APICallError as an error chunk;
-  // retry it here so protocol clients still receive the normal apiRetry status updates.
-  try {
-    await sleep(delayMs, input.input.request.abortSignal);
-  } catch (sleepError) {
-    const sleepFailure = classifyModelFailure(sleepError, input.input.request.abortSignal);
-    // SSE error chunk 在 helper 内等待 retry；取消发生时 iterator 仍存在，
-    // 外层仅按 iterator 判断会误记为 stream。先在真实等待边界写入 connect 事实。
-    throw toAdapterError(sleepError, sleepFailure, statusContext, input.attempt, {
-      errorPhase: "connect",
-    });
-  }
-  return streamChunkResult({
-    emittedError: true,
-    retryScheduled: true,
-    offPeakQueueHold: offPeak?.kind === "queued",
-  });
+  // FORK(codex-collaboration): chunk 和 iterator reject 必须经过同一预算、退避与清理路径。
+  throw error;
 }
 
 function classifyStreamFailurePhase(input: {
@@ -1524,10 +1452,9 @@ function canRetryStreamFailure(input: {
   retryBudget?: ModelRetryBudget;
   streamFailurePhase?: StreamFailurePhase;
 }): boolean {
-  // workflow 流量（无上限预算）不读分类器的 retryable，读策略表：只有确定性的模型侧错误
-  // 才不重试；3008/3009/3010 这类并发上限在这里是 retry。
+  // FORK(codex-collaboration): workflow 与主会话共享实际 API 失败分类。
   const providerCode = inspectProviderFailure(input.error).providerErrorCode;
-  // 可见输出已发出后绝不重放（交给 core 的 stream recovery）；预算门在 unbounded 下恒开。
+  // FORK(codex-collaboration): 可见输出交给 Core 安全锚点恢复；所有档位均有界。
   if (
     input.emittedRetryBoundaryEvent ||
     !retryBudgetAllows(input.retryBudget, input.attempt, input.maxAttempts)
@@ -1601,10 +1528,7 @@ function streamChunkResult(
     emittedError: boolean;
     emittedEvent: boolean;
     emittedRetryBoundaryEvent: boolean;
-    retryScheduled: boolean;
-    /** off-peak 排队重试：外层 for 冻结 attempt 预算。 */
-    offPeakQueueHold: boolean;
-    terminalError?: TerminalStreamChunkError;
+    // FORK(codex-collaboration): 错误唯一由 catch 恢复，chunk 不发布第二套重试控制状态。
     visibleEvents: ModelStreamEvent[];
   }> = {},
 ) {
@@ -1612,8 +1536,7 @@ function streamChunkResult(
     emittedError: false,
     emittedEvent: false,
     emittedRetryBoundaryEvent: false,
-    retryScheduled: false,
-    offPeakQueueHold: false,
+    // FORK(codex-collaboration): chunk 仅投影数据，不保留跳过物理预算的控制位。
     visibleEvents: [],
     ...overrides,
   };

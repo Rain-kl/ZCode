@@ -5,19 +5,19 @@ import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
 describe("main agent tool pool", () => {
-  it("does not expose subagent tools when subagents are disabled", () => {
+  it("does not expose collaboration tools for an isolated host binding", () => {
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-without-model-factory"),
       {
         mode: "build",
-        subagents: { enabled: false },
         workingDirectory: "/workspace/project",
       },
-      { eventStore: createTestSessionEventStore() },
+      { eventStore: createTestSessionEventStore(), createCollaborationBinding: () => undefined },
     );
 
     expect(runtime.getToolRegistry().has("Agent")).toBe(false);
     expect(runtime.getToolRegistry().has("Task")).toBe(false);
+    expect(runtime.getToolRegistry().has("spawn_agent")).toBe(false);
   });
 
   it("registers the embedded-search Explore tool pool with read-only behavior enforced by prompt", () => {

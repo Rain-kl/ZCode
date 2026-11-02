@@ -2,6 +2,8 @@
 
 import {
   ConfigKey,
+  // FORK(codex-collaboration): 所有配置层在统一入口校验，不引入旁路开关。
+  CollaborationConfigSchema,
   type ConfigValue,
   type ConfigSource,
   type RuntimeConfig,
@@ -74,6 +76,13 @@ class ConfigStore {
   }
 
   merge(config: RuntimeConfigPatch, scope: ConfigScope): void {
+    // FORK(codex-collaboration): patch 按当前值补全，保留层级覆盖的已接受策略。
+    if (config.subagents)
+      this.set(
+        ConfigKey.Subagents,
+        CollaborationConfigSchema.parse({ ...this.get(ConfigKey.Subagents), ...config.subagents }),
+        scope,
+      );
     if (config.modelStream?.idleTimeoutMs !== undefined) {
       this.set(ConfigKey.ModelStreamIdleTimeout, config.modelStream.idleTimeoutMs, scope);
     }
@@ -257,6 +266,8 @@ export class ConfigPortImpl implements ConfigPort {
 
   getAll(): RuntimeConfig {
     return {
+      // FORK(codex-collaboration): 调用方读取同一配置 owner 的归一化值。
+      subagents: this.store.get(ConfigKey.Subagents) ?? DefaultConfig.subagents,
       modelStream: {
         idleTimeoutMs:
           this.store.get(ConfigKey.ModelStreamIdleTimeout) ??
@@ -435,6 +446,9 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.logging.format;
     case ConfigKey.ToolConcurrencyMax:
       return defaults.toolConcurrency.maxConcurrency;
+    // FORK(codex-collaboration): 无文件声明时仍使用唯一明确默认值。
+    case ConfigKey.Subagents:
+      return defaults.subagents;
     case ConfigKey.ModelAnomalyGuard:
       return defaults.modelAnomalyGuard;
     case ConfigKey.Hooks:

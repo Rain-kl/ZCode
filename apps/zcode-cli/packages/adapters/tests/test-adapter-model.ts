@@ -1,6 +1,7 @@
 import {
   runWithModelInvocationContext,
   type ModelInvocationContext,
+  type ModelRecoveryBudget,
   type ModelRequest,
   type ModelResult,
   type ModelProperties,
@@ -12,6 +13,7 @@ import { createTestModelProperties } from "./test-model-format.js";
 import type { ZhipuAccountMode } from "@zcode/provider";
 
 type TestModelTextRequest = ModelTextRequest & {
+  modelRecoveryBudget?: ModelRecoveryBudget;
   properties?: ModelProperties;
   accountMode?: ZhipuAccountMode;
 };
@@ -68,13 +70,15 @@ function modelRequest(request: ModelTextRequest): ModelRequest {
   };
 }
 
-function invocationContext(request: ModelTextRequest): ModelInvocationContext {
+function invocationContext(request: TestModelTextRequest): ModelInvocationContext {
   return {
     metadata: request.metadata,
     modelCall: request.modelCall,
     // 准入端口与重试预算（docs/dynamic-workflow/concurrency.md「Where the port is bound」）同样经调用上下文到 runner。
     modelRequestAdmission: request.modelRequestAdmission,
     modelRetryBudget: request.modelRetryBudget,
+    // FORK(codex-collaboration): 测试与真实 invocation 合同一致。
+    modelRecoveryBudget: request.modelRecoveryBudget,
     modelRequestSessionType: request.modelRequestSessionType,
     preserveProviderStreamBoundaries: request.preserveProviderStreamBoundaries,
     refreshRuntimeHeadersBeforeAttempt: request.refreshRuntimeHeadersBeforeAttempt,

@@ -27,7 +27,7 @@ test("注册表里的每个工具都被归类且只归一次", () => {
   assert.deepEqual(stale, [], `分类里的工具已不在注册表：${stale.join(", ")}`);
 });
 
-test("档位解析：极简 8 个、基础 33 个、标准不下发", () => {
+test("档位解析：极简 8 个、基础 38 个、标准不下发", () => {
   const minimal = resolveForkToolModeToolNames("minimal");
   assert.equal(minimal?.length, 8);
   assert.ok(minimal?.includes("Read"));
@@ -35,15 +35,15 @@ test("档位解析：极简 8 个、基础 33 个、标准不下发", () => {
   assert.ok(!minimal?.includes("CronCreate"));
 
   const basic = resolveForkToolModeToolNames("basic");
-  assert.equal(basic?.length, 34);
-  assert.ok(basic?.includes("Agent") && basic?.includes("Skill"));
+  assert.equal(basic?.length, 38);
+  assert.ok(basic?.includes("spawn_agent") && basic?.includes("Skill"));
   assert.ok(!basic?.includes("js"));
 
   // undefined = 不下发 = 不加约束（标准档等于改动前的行为）。
   assert.equal(resolveForkToolModeToolNames("standard"), undefined);
 });
 
- test("延迟工具发现与调用只在标准档开放", () => {
+test("延迟工具发现与调用只在标准档开放", () => {
   for (const mode of ["minimal", "basic"] as const) {
     const tools = resolveForkToolModeToolNames(mode);
     assert.ok(!tools?.includes("ToolSearch"));

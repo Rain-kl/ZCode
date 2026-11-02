@@ -8,6 +8,7 @@ import {
 import { normalizeModelToolInput } from "../src/model/tool-input-normalization.js";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 
+// Normalization fixtures inspect one provider response; request recovery is covered by runner retry suites.
 describe("model tool input normalization", () => {
   const feedbackMalformedCases = [
     {
@@ -66,6 +67,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -189,7 +191,11 @@ describe("model tool input normalization", () => {
         throw new Error("not used");
       },
     };
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
+      registry: registry(),
+      runtime,
+    });
 
     const result = await executeAdapterGenerateText(adapter, {
       providerId: "test" as never,
@@ -228,6 +234,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -271,6 +278,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       logger: testLogger(warn),
       registry: registry(),
       runtime,
@@ -354,6 +362,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -421,6 +430,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       logger: testLogger(warn),
       registry: registry(),
       runtime,
@@ -494,6 +504,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -538,7 +549,11 @@ describe("model tool input normalization", () => {
           throw new Error("not used");
         },
       };
-      const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+      const adapter = new AiSdkModelAdapter({
+        retry: { maxAttempts: 1 },
+        registry: registry(),
+        runtime,
+      });
 
       await expect(
         executeAdapterGenerateText(adapter, {
@@ -574,6 +589,7 @@ describe("model tool input normalization", () => {
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -603,11 +619,13 @@ describe("model tool input normalization", () => {
               toolName,
               input: { offset: 48 },
             },
+            { type: "finish", finishReason: "tool-calls", totalUsage: usage(2, 1) },
           ]),
         } as never;
       },
     };
     const adapter = new AiSdkModelAdapter({
+      retry: { maxAttempts: 1 },
       registry: registry(),
       runtime,
     });
@@ -667,7 +685,11 @@ describe("model tool input normalization", () => {
           } as never;
         },
       };
-      const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+      const adapter = new AiSdkModelAdapter({
+        retry: { maxAttempts: 1 },
+        registry: registry(),
+        runtime,
+      });
       const request = {
         providerId: "test" as never,
         modelId: "model-a" as never,
@@ -750,6 +772,7 @@ async function generateTextWithToolInput(options: {
     },
   };
   const adapter = new AiSdkModelAdapter({
+    retry: { maxAttempts: 1 },
     registry: registry(),
     runtime,
   });

@@ -119,6 +119,8 @@ async function resolveRemoteDescriptor(
     ? join(cacheRoot, SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME)
     : null;
   let lastError: unknown;
+  // FORK(github-update): 发布资源缺失曾被统一提示掩盖，保留各下载源的失败上下文；见 FEATURES.md 的 github-update 条目。
+  const failures: string[] = [];
   const fetchImpl = resolveRemoteAssetFetch(remoteAssetNetwork);
   for (const url of descriptorUrls) {
     try {
@@ -129,7 +131,17 @@ async function resolveRemoteDescriptor(
       if (cachedDescriptorPath) await writeTextAtomic(cachedDescriptorPath, text);
       return { descriptor, releaseBases };
     } catch (error) {
-      lastError = error;
+      // FORK-BEGIN(github-update)
+      // RPC 不传递 cause 链，必须保留各下载源和错误上下文。
+      const failure = new Error(
+        `${url}: ${error instanceof Error ? error.message : String(error)}`,
+        {
+          cause: error,
+        },
+      );
+      lastError = failure;
+      failures.push(failure.message);
+      // FORK-END(github-update)
     }
   }
   if (cachedDescriptorPath && (await pathExists(cachedDescriptorPath))) {
@@ -138,7 +150,11 @@ async function resolveRemoteDescriptor(
       releaseBases,
     };
   }
-  throw new Error("Unable to resolve Source Server release descriptor", { cause: lastError });
+  // FORK(github-update): 不能把 404、代理故障和清单校验失败隐藏成同一句提示；见 FEATURES.md 的 github-update 条目。
+  throw new Error(
+    `Unable to resolve Source Server release descriptor: ${failures.join("; ") || "No release URLs configured"}`,
+    { cause: lastError },
+  );
 }
 
 async function downloadArchive(

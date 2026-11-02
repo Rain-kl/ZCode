@@ -1,5 +1,62 @@
 # Stream Error Retry
 
+## Fork：统一模型失败恢复预算（codex-collaboration）
+
+本节定义本 fork 的统一硬预算；后文细化 stream 与 compact 的提交边界。
+实际模型 API 的所有失败（HTTP 4xx/5xx、未知业务错误、解析失败、网络失败和 SDK 内部
+AbortError）统一自动恢复。只有调用方 signal 明确取消、本地配置/权限和请求前网络门禁失败
+不得重试。错误归一化保留原 cause 和 provider/request/trace 上下文。
+
+每个逻辑模型步骤最多 21 个物理请求，即首次加 20 次重试。Core 是跨断流/模型 fallback
+预算的 owner；Adapter 在真正调用 SDK 前通过 `ModelRecoveryBudget.claimAttempt()`
+领取一次请求，auth、签名修复、空响应、workflow 和 offpeak 均计入同一预算。
+普通 adapter 通过 `constrainMaxAttempts()` 只收紧链上限；SingleAttempt 仅限制当前 provider，
+不能提前耗尽声明式 fallback 的全链预算。
+`ModelInvocationContext.modelRecoveryBudget` 传递同一个引用；成功完成模型步骤后才重置。
+Adapter 独立调用在入口创建同一合同的本地预算。环境变量/显式配置只能收紧硬上限。
+退避从 2/4/8/16/30 秒起封顶 30 秒，允许现有 jitter；Retry-After 同样封顶。
+backoffFactor 配置或环境覆盖必须大于 1；小于等于 1 的值按非法覆盖回退（默认 2），
+避免所谓指数恢复变成恒定或递减间隔。其余允许值仍受 30 秒硬上限约束。
+等待必须可取消、释放监听器，合法退避不得被 subagent activity watchdog 判死。
+`model_request_started.timeoutMs`（已有 JSON 字段）在 SSE 请求声明该 attempt 的 idle deadline，
+child watchdog 等待此 deadline 加自身 setup grace；terminal 状态清理活动请求 allowance，
+后续 attempt 不能退回较短的初始 watchdog 窗口。SDK typed local prompt/config/参数校验不重试。
+SDK 本地错误和权限/网络门禁沿 cause 链按类型与稳定 code 识别（含外层包装与循环 cause）；
+归一化必须携带 `localControl` disposition，workflow inspector 据此停止，不能由 driver 再开无限恢复链。
+SDK 请求前的配置准备与 runtime header 刷新失败标记 `prepare_failed`，也不得被外层重新驱动。
+admission 每次物理请求独立领票并恰好释放一次；HTTP 400 也遵守有界恢复，不能当作本地永久拒绝跳过预算。
+caller cancel 仍以调用方 signal 为准。非空的 context-exceeded finish 仍是失败链的一部分，
+normal → compact → normal 共用同一 owner 和递增计数，不能在 SDK 返回时提前清空预算。
+permission/message 等待的 watchdog 生命周期交接属于后续 Task 2/3。
+
+```text
+core logical step owns budget -> adapter claim -> physical SDK request
+     ^                          | failure before output -> bounded backoff
+     | partial failure -> settle completed tools -> safe anchor -> backoff
+     +--------------------------+ same budget, no completed side effect replay
+success complete -> release budget; next model step creates a fresh budget
+```
+
+缺少 terminal finish 的 EOF 一律是结构化 provider stream failure，不能当作成功半句。
+compact 原生 raw message_delta 中明确的 stop_reason 也是终态证据；SDK 后续合成 other、
+或随后 raw message_delta 的空 stop_reason 不能抹去已观察到的真实终态。
+同一 compact attempt 的 Core collector 与 Adapter 都单调保留此正向证据，不能因后续
+`provider_stop_reason.present=false` 触发一次不必要的 HTTP fallback。
+compact 的 SSE→HTTP fallback 也必须先检查完整 cause 链上的 `localControl`：权限拒绝、
+upstream blocked、prepare failed 与 local invalid request 均原样抛出已有错误，不发起 HTTP。
+该控制事实优先于 `streamFailurePhase=response_body`；真实可恢复 API 错误仍按既有提交边界、
+上下文/取消排除和剩余共享物理预算决定 transport fallback。
+SDK `error` chunk 的类型化本地控制错误必须在 provider 业务错误扫描前原样进入统一 catch；
+不能把其稳定 code 包装成 ProviderBusinessError 并丢失原 cause/localControl。
+输出后的失败通过现有安全锚点恢复，丢弃失败 assistant tail，保留已完成工具结果；
+不得重放已完成写入、命令或 spawn。所有异步 request/iterator 清理应观察 rejection，
+不得让可恢复 API 失败漏至 CLI unhandledRejection；不得全局吞掉进程错误。
+桌面 continuous 与手机 replayable 继续消费同一 retry/session 事件，无客户端日志的 UI 重试提示。
+
+验收以实际 SDK/runtime 调用数与本地 HTTP 请求数为准：未知错误、AbortError、4xx/5xx、
+error chunk、iterator rejection、正文中断、缺少 finish、auth/empty/fallback 混合链均不得超过
+21；显式取消为零次额外请求；完整工具副作用只执行一次，恢复请求携带真实结果。
+
 ## 背景
 
 app-server 模式默认开启模型流式输出。Vercel AI SDK 的 `streamText().fullStream` 可能把 provider 429、5xx 或网络失败作为 `error` chunk 产出，而不是直接从 async iterator 抛出异常。
@@ -11,8 +68,7 @@ app-server 模式默认开启模型流式输出。Vercel AI SDK 的 `streamText(
 - 对普通主请求（`preserveProviderStreamBoundaries` 未开启），如果一次模型 attempt
   正常结束但同时满足：`finishReason` 非 `stop`/`tool-calls`、text 为 0、reasoning
   为 0、tool call 为 0、usage 为 0，则 adapter 将其识别为 generic empty
-  completion，并自动重试 **最多 1 次**。该重试复用统一退避和状态事件，但不占用
-  core stream recovery budget；如果 adapter 的 `maxAttempts` 已禁止下一次物理请求，
+  completion，并自动重试 **最多 1 次**。该重试复用统一退避、状态事件和共享物理请求预算；如果 adapter 的 `maxAttempts` 已禁止下一次物理请求，
   则不重试。
 - 新增例外只覆盖上下文超限、拒绝和内容过滤：`finishReason` 或 `rawFinishReason` 命中
   `context_exceeded`、`context_length_exceeded`、`context_window_exceeded`、
@@ -72,7 +128,7 @@ provider completion -> adapter 检查终止原因
 - SSE idle timeout 触发时必须发布 `model_stream_stalled`，abort 当前 provider 请求，并归一为 `stream_idle_timeout`。如果尚未越过重试边界，则复用 adapter 统一 retry budget；如果已经产出非空 `reasoning_delta`、非空 `text_delta`、`tool_call` 或 `finish`，adapter 不得自动重放，本次 stream 失败交给 core runtime recovery 判断是否重新发起新的 SSE streaming request。
 - v1 不新增 `stream_reset` 事件；adapter 在达到重试边界或 stream 成功结束前不向上游释放不可见的 retry-safe 前奏。非空 `reasoning_delta` 已是实时可见边界，core 通过现有 `stream_recovery_tail_discarded` 让投影把失败行收口为 interrupted，再由新 assistant message id 承接恢复流。
 - 非可重试错误或重试预算耗尽时，应包装为稳定的 adapter error，保留原始 cause、statusCode、attempt、requestId、traceId 和 model 信息。
-- 重试预算档位 `modelRetryBudget` 由 runtime 绑定在模型句柄上，adapter 只读不改：`default` 用 adapter 解析出的 `maxAttempts`；`unbounded` 给 workflow actor，瞬态失败无上限；`single-attempt` 把本次请求的 `maxAttempts` 收敛为 1，瞬态失败不重试、首次失败即上抛给 core。`single-attempt` 只用于带 `selectionFallback` 声明的执行作用域 Selection（如 Highspeed 加速卡），由 core 在失败后退回会话模型继续本轮；它不改变退避曲线、失败分类、鉴权刷新/签名修复的额外尝试和 compact 边界，状态事件的 `maxAttempts` 如实上报 1。
+- 重试预算档位 `modelRetryBudget` 由 runtime 绑定在模型句柄上，adapter 只读不改：`default` 用 adapter 解析出的 `maxAttempts`；`unbounded` 仅兼容旧 wire 值，与 workflow actor 一样受共享硬预算约束；`single-attempt` 把本次请求的 `maxAttempts` 收敛为 1，瞬态失败不重试、首次失败即上抛给 core。`single-attempt` 只用于带 `selectionFallback` 声明的执行作用域 Selection（如 Highspeed 加速卡），由 core 在失败后退回会话模型继续本轮；它保留 compact 边界；鉴权/签名修复必须计入同一共享预算，状态事件报告当前 invocation 的物理上限。
 - adapter 内部 retry 是新的物理 provider 请求，每次新的 `model_request_started` 都必须带新的 `requestId` 和 `x-request-id`，通过相同 `traceId` 与递增 `attempt` 串联；`model_retry_scheduled` 仍归属于刚失败的旧 request。
 - 每个因 provider、网络或流读取错误而结束的物理 stream attempt，都必须在进入下一次 retry 或抛出最终错误前 abort 自己的请求信号，并在同一个有界屏障内等待 iterator 的异步关闭和 AI SDK `fullStream` tee 保留分支的消费清理完成；该清理不依赖 `preserveProviderStreamBoundaries`。关闭异常或超时仅记录低频 warn，不得覆盖原始 provider 错误或无限阻塞重试。自然 EOF 不额外 abort；普通 consumer 主动提前结束和 caller stop 继续异步 best-effort 关闭，不能被内部清理超时拖慢。
 - HTTP 200 SSE 中的 provider business error 必须优先在 provider fetch 边界识别，例如 `event: error` + `data` JSON 的 `error.code/error.message`。如果该业务错误可映射为 `HTTP 5xx`，或其结构化 provider code 明确表示上游网络失败，例如 `1234`、`network_error` 或 `network_error_retryable`，并且请求尚未向 core 产出任何已提交模型事件，则应复用 adapter 的统一 retry budget；否则 stream body 应失败并由 Model Runner 发布最终的 `model_request_failed`。
@@ -139,16 +195,16 @@ core recovery 的可观测性要求：
 
 | 环境变量 | 默认值 | 语义 |
 | --- | --- | --- |
-| `ZCODE_MODEL_RETRY_MAX_RETRIES` | `10` | 可重试失败最多重试次数，不包含第一次请求；运行时事件中的 `maxAttempts` 等于该值加一。 |
+| `ZCODE_MODEL_RETRY_MAX_RETRIES` | `20` | 可重试失败最多重试次数，不包含第一次请求；运行时事件中的 `maxAttempts` 等于该值加一。 |
 | `ZCODE_MODEL_RETRY_BASE_DELAY_MS` | `2000` | 指数退避的初始延迟毫秒数，允许为 `0`。 |
-| `ZCODE_MODEL_RETRY_BACKOFF_FACTOR` | `2` | 每次重试延迟的指数退避倍率，必须大于 `0`。 |
-| `ZCODE_MODEL_RETRY_MAX_DELAY_MS` | `60000` | 普通指数退避延迟上限毫秒数，允许为 `0`；provider `retry-after` 提示在 `x-should-retry` 未显式为 `false`，且不超过 5 分钟或短于当前指数退避时仍优先。 |
+| `ZCODE_MODEL_RETRY_BACKOFF_FACTOR` | `2` | 每次重试延迟的指数退避倍率，必须大于 `1`；非法覆盖回退默认值。 |
+| `ZCODE_MODEL_RETRY_MAX_DELAY_MS` | `30000` | 普通退避与 Retry-After 的共同上限毫秒数，允许为 `0`；配置只可收紧 30000 硬上限。 |
 
 优先级：显式传入 adapter 的 `retry` 选项 > `ZCODE_MODEL_RETRY_*` 环境变量 > 内置默认值。非法环境变量值不会让启动失败；adapter 忽略该变量并回退到下一层默认值，避免一个错误的调试变量让 CLI 完全不可用。日志和状态事件不得输出完整环境变量集合，只能暴露归一化后的 retry budget。
 
 ## 测试覆盖
 
-- 纯签名或空正文 delta 后，仅出现尚未完成的 `tool_input_start` / `tool_input_delta`，随后发生 SSE 503 error chunk、连接重置或 idle timeout 时，应走 adapter retry，且不向 core 泄漏失败 attempt 的签名、空 delta 和工具输入。AI SDK 将提前 EOF 归一为空 completion 时，继续验证既有一次 empty completion retry；本次不扩展 EOF 检测或其预算。
+- 纯签名或空正文 delta 后，仅出现尚未完成的 `tool_input_start` / `tool_input_delta`，随后发生 SSE 503 error chunk、连接重置或 idle timeout 时，应走 adapter retry，且不向 core 泄漏失败 attempt 的签名、空 delta 和工具输入。AI SDK 将提前 EOF 合成 other finish 时，应转为 incomplete-stream 并受共享恢复预算限制。
 - 成功 attempt 的签名必须完整保留并在完整工具调用前按原序释放；非空正文/思考、完整 `tool_call`、compact provider boundary 仍停止 adapter 重放。取消、非可重试错误和预算耗尽均不增加请求。
 - stream `error` chunk 为 429 时，首个已提交输出前应重试并发布 `model_retry_scheduled`。
 - 普通流式 SSE 以 `finishReason=other`、零 text/reasoning/tool/usage 结束时，应只
@@ -169,14 +225,17 @@ core recovery 的可观测性要求：
   规则增加额外重试。
 - 重试后的第二次 stream 成功时，最终只向 core 产出成功事件。
 - `model_retry_scheduled` 事件应保留 `reason=rate_limited`、`statusCode=429`、`nextAttempt` 和 `delayMs`，供 ZCode app-server 转换为 `_meta.zcode.apiRetry`。
+- provider 的原始 `Retry-After` 应保留在状态事件用于诊断；workflow admission governor 只能使用钳制到 30 秒的值，不能在 adapter 已结束退避后继续冻结请求槽位。
+- generate/stream 在 model admission 获取票据前发生的本地错误必须标记为 `localControl=prepare_failed`、零次 SDK 请求，并由 workflow 停止外层重驱；调用方取消仍保持 cancelled 语义。
 - 普通 adapter retry 的 `model_request_started attempt>1` 不应清空 `apiRetry`；下一次模型进展或成功完成才清空，避免重试状态闪烁。
 - provider SSE `event: error` 中携带非零业务 code 时，应归一为 `ProviderBusinessError`，最终用户看到 provider message，而不是空输出或 `finishReason: other`。
+- compact fallback 检查必须遍历并列的 `cause`、`lastError`、`error` 和 adapter wrapper 分支；外层 `EPIPE` 不得遮住另一分支上的 `permission_denied` 并触发第二个 transport 请求。
 - provider business error 可映射为 `HTTP 5xx` 或明确表示 provider 网络失败时，在首个已提交输出前应走统一 retry budget；达到上限后再发布最终失败。
 - iterator 在仅收到 `reasoning_delta` 后发生 `ECONNRESET` 或 idle timeout 时，adapter 应保留实时可见 reasoning 并把失败上抛；core 必须丢弃该 attempt 的未完成 reasoning tail，从前一个 provider-safe anchor 发起新 SSE 请求。恢复请求不得携带失败 reasoning，也不得把新输出追加到旧 assistant message id。
-- 没有任何 provider event，或只有尚未释放的 retry-safe prelude 时发生可重试失败，仍由 adapter 在同一个逻辑请求内重试，不额外消耗 core recovery budget。
+- 没有任何 provider event，或只有尚未释放的 retry-safe prelude 时发生可重试失败，仍由 adapter 重试，每次物理请求都消耗同一共享恢复预算。
 - iterator 在仅收到 `tool_input_delta`、尚未收到 `tool_call` 时发生 `ECONNRESET`，应丢弃该 attempt 的暂存 tool input 事件并重试。
 - 普通 stream 的失败 attempt 即使未启用 `preserveProviderStreamBoundaries`，也必须在下一次 retry 启动前 abort 请求信号，并等待 iterator 异步关闭完成或达到内部清理超时；测试需分别证明异步关闭完成前不会启动下一 attempt，以及永不完成的关闭不会无限阻塞。普通 consumer 主动提前结束的既有行为不得随之改变。
-- 连续 HTTP business error 的资源隔离必须使用真实 AI SDK provider 与本地 HTTP server 覆盖完整默认 retry budget；测试必须从服务端证明 11 个物理请求均实际到达，并在 budget 耗尽后收到最后一个 provider 原始错误。mock iterator 回调、`Response.bodyUsed` 或 `model_request_started` 只能证明调用方进入过清理/重试代码，不能替代连接槽与 reader 已释放的证据。
+- 连续 HTTP business error 的资源隔离必须使用真实 AI SDK provider 与本地 HTTP server 覆盖完整默认 retry budget；测试必须从服务端证明 21 个物理请求均实际到达，并在 budget 耗尽后收到最后一个 provider 原始错误。mock iterator 回调、`Response.bodyUsed` 或 `model_request_started` 只能证明调用方进入过清理/重试代码，不能替代连接槽与 reader 已释放的证据。
 - SSE 事件间隔超过 `modelStream.idleTimeoutMs` 时，应发布 `model_stream_stalled`，abort provider 请求，并以 `stream_idle_timeout` 进入失败/重试事件。
 - SSE retry 的 idle timeout 应按重试次数递增；测试必须覆盖 adapter 根据请求级 retry number 发布递增后的 `model_stream_stalled.timeoutMs`。
 - SSE 总耗时超过 `modelStream.idleTimeoutMs` 但每个事件间隔都小于 idle timeout 时，应继续正常完成，不应触发普通 HTTP 总超时。

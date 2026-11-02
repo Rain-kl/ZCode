@@ -1,15 +1,25 @@
+// FORK(codex-collaboration): 恢复预算引用跨 Core/Adapter 传递，不进入 provider JSON。
+import type { ModelRecoveryBudget } from "../fork/codex-collaboration/model-recovery/contract.js";
 import type { RequestVerificationReason } from "@zcode/shared";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { ModelApiCallObservation } from "../telemetry/index.js";
 import type { TraceContext } from "../tracing/tracer.js";
 import type {
+  ModelSelection,
   ModelRequestAdmission,
   ModelRequestSessionType,
   ModelRetryBudget,
   ModelStatusSink,
   ModelStreamRecoveryStatus,
 } from "./index.js";
+
+// FORK(codex-collaboration): 执行期选模由模型执行边界持有，不再依赖已废弃的子代理工具端口。
+export interface ChildModelExecutionOverride {
+  selection: ModelSelection;
+  requestDependencies?: ModelRequestDependencies;
+  background: "deny" | "allow";
+}
 
 /**
  * Runtime 与 Adapter 之间的调用级执行信息。
@@ -21,8 +31,10 @@ export interface ModelInvocationContext {
   metadata?: Record<string, unknown>;
   modelCall?: ModelApiCallObservation;
   modelRequestSessionType?: ModelRequestSessionType;
-  /** 重试预算档位；runtime 按 taskType 决定，adapter 据此放宽瞬态失败的放弃条件。 */
+  /** FORK(codex-collaboration): 保留旧档位兼容；所有会话共用有界策略，单次档位只限制当前 provider。 */
   modelRetryBudget?: ModelRetryBudget;
+  // FORK(codex-collaboration): 唯一计数所有者在逻辑模型步骤，所有物理请求共用。
+  modelRecoveryBudget?: ModelRecoveryBudget;
   /** 准入端口；runtime 从 deps 带入，adapter 每次尝试先 acquire。 */
   modelRequestAdmission?: ModelRequestAdmission;
   statusSink?: ModelStatusSink;

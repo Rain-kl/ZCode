@@ -2603,7 +2603,7 @@ describe("AgentRuntime manual compact", () => {
       // 本场景固定截断预算；目录补齐另由 agent-listing-persistence 覆盖。
       {
         systemPrompt: "You are a compact prompt-too-long test agent.",
-        subagents: { enabled: false },
+        subagents: {},
       },
       {
         eventStore,

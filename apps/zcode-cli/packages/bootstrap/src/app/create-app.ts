@@ -294,7 +294,6 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         pluginRuntimeFeatures,
         builtInSubagentModelSelectionOverrides:
           zcodeSubagentProfileOutcome.builtInModelSelectionOverrides,
-        subagentOutputRootDir: join(cliStorageRoot, "agents"),
         subagentProfiles,
         storageRoot,
         workingDirectory,

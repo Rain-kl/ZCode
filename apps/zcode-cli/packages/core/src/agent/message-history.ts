@@ -4,6 +4,8 @@
 
 import {
   type RuntimeInputPresentation,
+  // FORK(codex-collaboration): 私有来源保留在 canonical history，不进入 provider 公共协议。
+  type CollaborationMessageProvenance,
   type ModelCallWrapper,
   type FilePart,
   modelMessageContentToText,
@@ -59,9 +61,12 @@ export type RuntimeMessageSource =
   | SystemReminderSource
   | "shared_context"
   | "real_user"
+  // FORK(codex-collaboration): durable provenance distinguishes teammate input from user authorization.
+  | "subagent_message"
   | "legacy_synthetic";
 
 export interface RuntimeMessageMetadata {
+  collaboration?: CollaborationMessageProvenance;
   compactBoundary?: { boundaryId: string; preCompactDiscoveredTools?: readonly string[] };
   toolSearchAnnouncement?: {
     addedNames: readonly string[];
@@ -491,6 +496,8 @@ export function cloneRuntimeMessageMetadata(
   const delta = parseAgentListingDelta(agentListingDelta);
   return {
     ...rest,
+    // FORK(codex-collaboration): 防御复制私有来源，防止请求投影修改持久身份。
+    ...(metadata.collaboration ? { collaboration: { ...metadata.collaboration } } : {}),
     ...(delta ? { agentListingDelta: delta } : {}),
     ...(metadata.compactBoundary
       ? {

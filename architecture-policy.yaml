@@ -2,6 +2,87 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: codex-collaboration-shutdown
+    roots:
+      - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-shutdown
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/runtime-cleanup.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/runtime-resources.ts
+    managed: true
+    requires: [zcode-cli]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-shutdown/module.ts
+      - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-shutdown/contract.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/runtime-cleanup.ts
+      - apps/zcode-cli/packages/bootstrap/src/zcode-protocol/runtime-resources.ts
+    layers: { adapters: . }
+    owner: agent
+  - id: codex-collaboration-runtime
+    roots:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-runtime
+      - apps/zcode-cli/packages/core/test/fork-codex-collaboration-runtime
+      - apps/zcode-cli/packages/core/src/subagent/listing.ts
+      - apps/zcode-cli/packages/core/src/runtime/off-peak/runtime.ts
+      - apps/zcode-cli/packages/core/src/runtime/helpers/agent-listing.ts
+    managed: true
+    requires: [zcode-cli, shared, codex-collaboration-controller, codex-collaboration-tools, codex-collaboration-tools-contract]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-runtime/contract.ts
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-runtime/module.ts
+    layers: { app: . }
+    owner: agent
+  - id: codex-collaboration-tools-contract
+    roots:
+      - apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/tools
+      - apps/zcode-cli/packages/contracts/test/fork-codex-collaboration-tools
+    managed: true
+    requires: [zcode-cli, shared]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/tools/contract.ts
+    layers: { contract: . }
+    owner: agent
+  - id: codex-collaboration-tools
+    roots:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools
+      - apps/zcode-cli/packages/core/src/tool/handlers/task-output-projection.ts
+      - apps/zcode-cli/packages/bootstrap/src/builtin-workflow-command.ts
+      - apps/zcode-cli/packages/core/test/fork-codex-collaboration-tools
+    managed: true
+    requires: [zcode-cli, shared, codex-collaboration-tools-contract, codex-collaboration-controller]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/contract.ts
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/module.ts
+    layers: { app: . }
+    owner: agent
+  - id: codex-collaboration-controller
+    roots:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration
+      - apps/zcode-cli/packages/core/test/fork-codex-collaboration
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration/contract.ts
+      - apps/zcode-cli/packages/core/src/fork/codex-collaboration/module.ts
+    layers: { contract: contracts, app: app }
+    layerOrder: [contract, app]
+    owner: agent
+  - id: codex-adapter-failure-policy
+    roots:
+      - apps/zcode-cli/packages/adapters/src/fork/codex-collaboration/model-failure-policy
+      - apps/zcode-cli/packages/adapters/src/model/workflow-model-failure-policy.ts
+    managed: true
+    requires: [zcode-cli]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/adapters/src/fork/codex-collaboration/model-failure-policy/contract.ts
+      - apps/zcode-cli/packages/adapters/src/model/workflow-model-failure-policy.ts
+    layers: {adapters: .}
+    owner: agent
+  - id: codex-model-recovery
+    roots: [apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/model-recovery]
+    managed: true
+    requires: []
+    publicEntrypoints: [apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/model-recovery/contract.ts]
+    layers: {domain: .}
+    owner: agent
   - id: fork-upstream-network
     roots: [packages/shared/src/fork/upstream-network]
     managed: true

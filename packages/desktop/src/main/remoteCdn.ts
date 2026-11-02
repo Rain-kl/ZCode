@@ -1,12 +1,9 @@
 import { ZCODE_VERSION, type ZCodeEnv } from "@zcode/shared";
+// FORK(github-update): fork 版本未发布到上游 CDN，必须复用自有 GitHub 仓库身份；见 FEATURES.md 的 github-update 条目。
+import { resolveForkGithubServerReleaseBaseUrl } from "./fork/github-update/feed.js";
 
 declare const __ZCODE_REMOTE_CDN_RELEASE_ROOTS__: readonly string[] | undefined;
 
-const REMOTE_CDN_RELEASE_ROOTS = {
-  domestic: "https://cdn.codegeex.cn/zcode/electron/releases",
-  // 开发构建未注入 CDN_DOMAIN 时也须使用当前发布域名，避免仍请求旧域名。
-  overseas: "https://cdn-zcode.z.ai/zcode/electron/releases",
-} as const;
 const TEST_REMOTE_CDN_RELEASE_ROOT = "http://intranet.example.invalid:12345/ssh-remote-assets";
 
 export interface ResolveRemoteCdnOptions {
@@ -49,9 +46,6 @@ export function resolveRemoteCdnBaseUrls(options: ResolveRemoteCdnOptions = {}):
     return [normalizeBaseUrl(overrideBaseUrl)];
   }
 
-  const orderedReleaseRoots = shouldPreferDomesticRemoteCdn(options)
-    ? [REMOTE_CDN_RELEASE_ROOTS.domestic, REMOTE_CDN_RELEASE_ROOTS.overseas]
-    : [REMOTE_CDN_RELEASE_ROOTS.overseas, REMOTE_CDN_RELEASE_ROOTS.domestic];
   const version = options.version ?? ZCODE_VERSION;
 
   if (options.env === "test") {
@@ -70,7 +64,8 @@ export function resolveRemoteCdnBaseUrls(options: ResolveRemoteCdnOptions = {}):
     );
   }
 
-  return orderedReleaseRoots.map((releaseRoot) => `${releaseRoot}/${version}`);
+  // FORK(github-update): canary 指针会覆盖旧资产，远程安装必须锁定同版本发布；见 FEATURES.md 的 github-update 条目。
+  return [resolveForkGithubServerReleaseBaseUrl(version)];
 }
 
 export function resolvePrimaryRemoteCdnBaseUrl(

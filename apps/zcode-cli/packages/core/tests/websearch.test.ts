@@ -127,7 +127,7 @@ describe("provider-visible WebSearch wrapper", () => {
 
   it("registers WebSearch as a client-side built-in tool", () => {
     const registry = createToolRegistry();
-    registerBuiltInTools(registry, { includeAgent: true });
+    registerBuiltInTools(registry, { includeCollaboration: true });
 
     expect(registry.has("WebSearch")).toBe(true);
     expect(registry.has("web_search")).toBe(false);

@@ -20,6 +20,69 @@
  */
 export const REGISTRY = [
   {
+    featureId: "codex-collaboration",
+    absentFiles: [
+      ...[
+        "runtime/methods/subagent.ts",
+        "runtime/methods/subagent-messages.ts",
+        "subagent/runner.ts",
+        "subagent/message-steering.ts",
+        "subagent/coordinator-response.ts",
+      ].map((file) => ({
+        path: `apps/zcode-cli/packages/core/src/${file}`,
+        reason: "协作控制器替代旧 runner 与消息 owner，禁止恢复第二写入路径",
+      })),
+      ...[
+        "interfaces/subagent.port.ts",
+        "interfaces/coordinator-response.port.ts",
+        "tools/agent.ts",
+        "tools/send-message.ts",
+        "tools/respond-to-coordinator.ts",
+      ].map((file) => ({
+        path: `apps/zcode-cli/packages/contracts/src/${file}`,
+        reason: "旧子代理模型工具协议已全面移除",
+      })),
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/agent.ts",
+        reason: "旧子代理执行工具已移除",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/send-message.ts",
+        reason: "旧消息执行工具已移除",
+      },
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/respond-to-coordinator.ts",
+        reason: "旧回报执行工具已移除",
+      },
+    ],
+    absentPatterns: [],
+    requiredFiles: [
+      {
+        path: "apps/zcode-cli/packages/core/src/fork/codex-collaboration-tools/module.ts",
+        reason: "新六工具模块必须保留",
+      },
+      {
+        path: "apps/zcode-cli/packages/contracts/src/fork/codex-collaboration/tools/contract.ts",
+        reason: "新六工具公共合同必须保留",
+      },
+    ],
+    absentPatternsInFile: [
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/index.ts",
+        pattern:
+          /\b(?:agentToolEntry|taskToolEntry|sendMessageToolEntry|respondToCoordinatorToolEntry|includeAgent|includeSendMessage|includeRespondToCoordinator)\b|(?:name|aliases)\s*:\s*["'](?:Agent|Task|SendMessage|RespondToCoordinator)["']/,
+        reason: "用户要求全面替换旧四工具，不能恢复隐藏入口或旧启用开关",
+      },
+    ],
+    requiredPatterns: [
+      {
+        path: "apps/zcode-cli/packages/core/src/tool/handlers/index.ts",
+        pattern: /\.\.\.createCollaborationToolEntries\(\)/,
+        reason: "六工具必须从唯一新条目注册路径装配",
+      },
+    ],
+  },
+  {
     featureId: "local-mode",
     absentFiles: [],
     absentPatterns: [],

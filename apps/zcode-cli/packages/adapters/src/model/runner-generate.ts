@@ -1,11 +1,20 @@
+// FORK(codex-collaboration): Core/Adapter 必须共享物理请求计数，含鉴权及签名修复。
+import { createModelRecoveryBudget, ModelRetryBudget as RetryBudgetTier } from "@zcode/contracts";
 import type { Logger, ModelStatusSink, ModelTextResult } from "@zcode/contracts";
 import {
   ModelErrorCode,
+  // FORK(codex-collaboration): 本地准备失败的处置必须保留取消语义。
+  ModelFailureReason as ModelFailureReasonValue,
   ModelProtocolError,
   ModelRetryReason,
   ModelTransportKind as ModelTransportKindValue,
 } from "@zcode/contracts";
-import { classifyModelFailure, inspectProviderFailure } from "./failure-classifier.js";
+// FORK(codex-collaboration): 异步 SDK 本地校验必须与实际 API 失败分开归因。
+import {
+  classifyModelFailure,
+  inspectProviderFailure,
+  isLocalModelRequestFailure,
+} from "./failure-classifier.js";
 import type { ClassifiedModelFailure } from "./failure-classifier.js";
 import { getResponseHeaders, unwrapRetryError } from "./failure-inspection.js";
 import { offPeakTicketExpiredMessage, resolveOffPeakFailureDecision } from "./offpeak-retry.js";
@@ -35,6 +44,7 @@ import { sanitizeModelNetworkHeaders } from "./runner-network-headers.js";
 import { canRetryEmptyCompletion, scheduleEmptyCompletionRetry } from "./empty-completion-retry.js";
 import {
   calculateRetryDelay,
+  classifyAttemptAdmissionFailure,
   logRetryDelayDecision,
   sleep,
   toAdapterError,
@@ -58,11 +68,8 @@ import { retryAllowedByFailurePolicy } from "./workflow-model-failure-policy.js"
 import { modelFailureStatusFields, providerRequestIdFromHeaders } from "./runner-telemetry.js";
 import { repairReasoningHistoryAfterSignatureRejection } from "./reasoning-history-normalization.js";
 import { admitAttempt, type AttemptAdmission } from "./request-admission.js";
-import {
-  retryAttemptLoopContinues,
-  retryBudgetAllows,
-  retryBudgetMaxAttempts,
-} from "./retry-budget.js";
+// FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+import { retryBudgetAllows } from "./retry-budget.js";
 
 export async function runGenerateText(input: {
   debugDir?: string;
@@ -76,17 +83,61 @@ export async function runGenerateText(input: {
   statusSink?: ModelStatusSink;
   modelIoFullRetentionEnabled: boolean;
 }): Promise<ModelTextResult> {
-  // 重试预算档位：workflow actor 的请求带 unbounded，
-  // 只放宽瞬态失败的放弃条件；状态事件里的 maxAttempts 以 0 表示无上限。
+  // FORK-BEGIN(codex-collaboration)
+  const recoveryBudget =
+    input.request.modelRecoveryBudget ?? createModelRecoveryBudget(input.retry.maxAttempts);
+  // 配置必须收紧整条恢复链；SingleAttempt 只限制声明式 fallback 的当前 provider。
+  if (input.request.modelRetryBudget !== RetryBudgetTier.SingleAttempt)
+    recoveryBudget.constrainMaxAttempts(input.retry.maxAttempts);
+  const firstAttempt = recoveryBudget.attempts + 1;
+  const lastAttempt = Math.min(
+    recoveryBudget.maxAttempts,
+    recoveryBudget.attempts + input.retry.maxAttempts,
+  );
+  if (firstAttempt > lastAttempt) {
+    throw new AiSdkModelAdapterError(
+      ModelErrorCode.ModelRequestFailed,
+      "Model recovery request budget exhausted.",
+      {
+        context: {
+          attempts: recoveryBudget.attempts,
+          maxAttempts: recoveryBudget.maxAttempts,
+          recoveryBudgetExhausted: true,
+          retryable: false,
+        },
+      },
+    );
+  }
   const retryBudget = input.request.modelRetryBudget;
-  const statusMaxAttempts = (extraAttempts: number): number =>
-    retryBudgetMaxAttempts(retryBudget, input.retry.maxAttempts + extraAttempts);
+  // FORK-END(codex-collaboration)
   const baseStatusContext = createStatusContext({
-    maxAttempts: statusMaxAttempts(0),
+    maxAttempts: lastAttempt,
     request: input.request,
     resolved: input.resolved,
     transport: ModelTransportKindValue.Http,
   });
+  // FORK-BEGIN(codex-collaboration)
+  // Core 安全锚点恢复创建新 invocation；沿用物理次数计算退避，不能重置为首请求。
+  if (firstAttempt > 1) {
+    const delayMs = calculateRetryDelay(input.retry, firstAttempt - 1);
+    await publishRetryScheduledStatus(
+      input,
+      baseStatusContext,
+      firstAttempt - 1,
+      delayMs,
+      {
+        code: ModelErrorCode.ModelRequestFailed,
+        message: "Recovering the interrupted model request.",
+        reason: "unknown",
+        retryReason: ModelRetryReason.NetworkError,
+        retryable: true,
+      },
+      {},
+      {},
+    );
+    await sleep(delayMs, input.request.abortSignal);
+  }
+  // FORK-END(codex-collaboration)
   const recordModelIO =
     input.request.metadata?.skipTranscript !== true && shouldRecordModelIO(input.env);
   const isDev = isDevelopmentModelIOEnv(input.env);
@@ -95,28 +146,24 @@ export async function runGenerateText(input: {
   const authRetry = new AccountRequestRetry(input.request, input.resolved, input.logger);
   let emptyCompletionRetryCount = 0;
 
-  for (
-    let attempt = 1;
-    retryAttemptLoopContinues(
-      retryBudget,
-      attempt,
-      input.retry.maxAttempts + Number(signatureRepairAttempted) + authRetry.extraAttempts,
-    );
-    attempt += 1
-  ) {
-    const retryBudgetAttempt = attempt - Number(signatureRepairAttempted) - authRetry.extraAttempts;
+  // FORK(codex-collaboration): 每一物理尝试计入同一个硬预算，特殊修复不再豁免。
+  for (let attempt = firstAttempt; attempt <= lastAttempt; attempt += 1) {
+    const retryBudgetAttempt = attempt;
     const attemptRequest = { ...input.request, messages: requestMessages };
     const startedAt = Date.now();
     let resolved = input.resolved;
     let statusContext = createAttemptStatusContext(
       {
         ...baseStatusContext,
-        maxAttempts: statusMaxAttempts(Number(signatureRepairAttempted) + authRetry.extraAttempts),
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        maxAttempts: lastAttempt,
       },
       attempt,
     );
     let options: ReturnType<typeof createGenerateTextOptions> | undefined;
     let requestInvocationCompleted = false;
+    // FORK(codex-collaboration): 本地状态/持久化错误不属于 provider 请求失败。
+    let providerOperationInProgress = false;
     let requestHeaders: Record<string, string> = {};
     let requestHeaderCount = 0;
 
@@ -132,7 +179,7 @@ export async function runGenerateText(input: {
         ...admissionWaitPublishers(statusContext, attempt, statusPublishOptions(input)),
       });
     } catch (admitError) {
-      const admitFailure = classifyModelFailure(admitError, input.request.abortSignal);
+      const admitFailure = classifyAttemptAdmissionFailure(admitError, input.request.abortSignal);
       await publishModelStatus(
         {
           ...statusContext,
@@ -194,6 +241,10 @@ export async function runGenerateText(input: {
       // 部分非流式 provider/fetch 兼容层收到 AbortSignal 后不会及时 settle
       // generateText promise，导致 runtime 已 Stop，goal verifier 仍要等上游自然返回才收口。
       // adapter 是本地取消契约边界：signal 一旦 abort 就立即拒绝，迟到 provider 结果只丢弃。
+      // FORK(codex-collaboration): 准入和本地配置检查通过后才计数，SDK 内置 retry 已关闭。
+      if (recoveryBudget.claimAttempt() === undefined)
+        throw new Error("Model recovery request budget exhausted.");
+      providerOperationInProgress = true;
       const pendingResult = input.runtime.generateText(options);
       // options 构造成功不等于 runtime 已接受请求；同步 setup 异常会在调用点直接抛出。
       // 只有 generateText 调用返回 pending promise 后才进入 response 归因边界，避免把本地 setup 记成 provider。
@@ -255,7 +306,8 @@ export async function runGenerateText(input: {
         canRetryEmptyCompletion({
           abortSignal: input.request.abortSignal,
           attempt,
-          maxAttempts: input.retry.maxAttempts,
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          maxAttempts: lastAttempt,
           retryCount: emptyCompletionRetryCount,
         })
       ) {
@@ -291,6 +343,8 @@ export async function runGenerateText(input: {
         continue;
       }
       const completedAt = Date.now();
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      providerOperationInProgress = false;
 
       recordGenerateTextDebug({
         modelIoFullRetentionEnabled: input.modelIoFullRetentionEnabled,
@@ -356,8 +410,16 @@ export async function runGenerateText(input: {
       if (error instanceof RuntimeHeadersRefreshError) {
         classified.message = error.message;
         classified.retryable = false;
+        // FORK(codex-collaboration): 本地刷新失败不能让 workflow 外层重新驱动。
+        classified.localControl ??= "prepare_failed";
       }
-      // off-peak 特判（仅 idle plan provider，见 offpeak-retry.ts）：排队 429 豁免预算、
+      // FORK(codex-collaboration): SDK 调用前的配置/权限失败不属于 API 恢复。
+      if (!providerOperationInProgress) {
+        classified.retryable = false;
+        if (classified.reason !== ModelFailureReasonValue.Cancelled)
+          classified.localControl ??= "prepare_failed";
+      }
+      // off-peak 特判（仅 idle plan provider，见 offpeak-retry.ts）：排队 429 保留归因、
       // 3102（兼容旧 3001）以稳定标记落败触发 desktop 侧续跑。
       const offPeak = resolveOffPeakFailureDecision({
         offPeak: resolved.accountAccess?.mode === "off-peak",
@@ -367,8 +429,8 @@ export async function runGenerateText(input: {
       const failure: ClassifiedModelFailure =
         offPeak?.kind === "ticketExpired"
           ? {
+              // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
               ...classified,
-              retryable: false,
               message: offPeakTicketExpiredMessage(classified.message),
             }
           : offPeak?.kind === "queued"
@@ -381,37 +443,43 @@ export async function runGenerateText(input: {
         !signatureRepairAttempted && resolved.providerKind === "anthropic"
           ? repairReasoningHistoryAfterSignatureRejection(requestMessages, error)
           : undefined;
-      const retryWithRepairedHistory = repairedMessages !== undefined;
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      const retryWithRepairedHistory = repairedMessages !== undefined && attempt < lastAttempt;
       if (repairedMessages) {
         // 签名只对生成它的 thinking block 有效。明确收到签名校验 400 时，
-        // 只替换本次请求副本，并给一次不占普通 retry 预算的物理请求机会；不能通过
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+        // 只替换本次请求副本，并在共享预算内给一次物理请求机会；不能通过
         // 回退 attempt 复用 requestId，也不能改写 canonical history。
         signatureRepairAttempted = true;
         requestMessages = repairedMessages;
         statusContext = {
           ...statusContext,
-          maxAttempts: statusMaxAttempts(1 + authRetry.extraAttempts),
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          maxAttempts: lastAttempt,
         };
       }
       const canRetryWithFailurePolicy =
         offPeak?.kind === "queued"
           ? true
           : retryBudgetAllows(retryBudget, retryBudgetAttempt, input.retry.maxAttempts) &&
-            // workflow 流量（无上限预算）读策略表而不是分类器的 retryable；有界预算逐字不变。
+            // FORK(codex-collaboration): 所有宿主消费同一分类事实，额外恢复不放宽物理预算。
             retryAllowedByFailurePolicy(
               failure,
               retryBudget,
               inspectProviderFailure(error).providerErrorCode,
             );
-      const retryWithAuth = authRetry.claim(error, options === undefined);
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      const retryWithAuth = attempt < lastAttempt && authRetry.claim(error, options === undefined);
       if (retryWithAuth)
         statusContext = {
           ...statusContext,
-          maxAttempts: statusMaxAttempts(
-            Number(signatureRepairAttempted) + authRetry.extraAttempts,
-          ),
+          // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+          maxAttempts: lastAttempt,
         };
-      const canRetry = retryWithAuth || retryWithRepairedHistory || canRetryWithFailurePolicy;
+      // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      const canRetry =
+        attempt < lastAttempt &&
+        (retryWithAuth || retryWithRepairedHistory || canRetryWithFailurePolicy);
 
       if (options) {
         recordGenerateTextDebug({
@@ -463,51 +531,25 @@ export async function runGenerateText(input: {
           statusContext,
         });
         throw toAdapterError(error, failure, statusContext, attempt, {
-          errorPhase: requestInvocationCompleted ? "response" : "prepare",
+          // FORK(codex-collaboration): workflow driver 不得在预算耗尽后重开一条无限链。
+          recoveryBudgetExhausted: recoveryBudget.attempts >= recoveryBudget.maxAttempts,
+          errorPhase: isLocalModelRequestFailure(error)
+            ? "prepare"
+            : requestInvocationCompleted
+              ? "response"
+              : "prepare",
         });
       }
 
-      if (retryWithAuth) {
-        await publishRetryScheduledStatus(
-          input,
-          statusContext,
-          attempt,
-          0,
-          { ...failure, retryReason: ModelRetryReason.AuthRefresh },
-          requestHeaders,
-          responseHeaders,
-        );
-        continue;
-      }
-
-      if (retryWithRepairedHistory) {
-        input.logger?.warn("Retrying model request after thinking signature rejection", {
-          attempt,
-          event: "model.reasoning_signature_repair.retry",
-          maxAttempts: statusContext.maxAttempts,
-          nextAttempt: attempt + 1,
-          requestId: statusContext.requestId,
-          status: "waiting",
-        });
-        await publishRetryScheduledStatus(
-          input,
-          statusContext,
-          attempt,
-          0,
-          {
-            ...failure,
-            retryReason: ModelRetryReason.ReasoningSignatureRepair,
-          },
-          requestHeaders,
-          responseHeaders,
-          admission,
-        );
-        continue;
-      }
+      // FORK(codex-collaboration): 鉴权/签名修复同样遵循指数退避，不能另开零延迟尝试链。
+      if (retryWithAuth) failure.retryReason = ModelRetryReason.AuthRefresh;
+      else if (retryWithRepairedHistory)
+        failure.retryReason = ModelRetryReason.ReasoningSignatureRepair;
 
       const delayMs =
         offPeak?.kind === "queued"
-          ? offPeak.delayMs
+          ? // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+            Math.min(offPeak.delayMs, 30_000, input.retry.maxDelayMs)
           : calculateRetryDelay(input.retry, retryBudgetAttempt, failure.retryAfterMs);
       logRetryDelayDecision({
         attempt,
@@ -564,10 +606,7 @@ export async function runGenerateText(input: {
         throw toAdapterError(sleepError, sleepFailure, statusContext, attempt, {
           errorPhase: "connect",
         });
-      }
-      if (offPeak?.kind === "queued") {
-        // 排队等待不消耗重试预算：回退计数让 for 自增后原地重试，无限探测。
-        attempt -= 1;
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
       }
     } finally {
       admission.release();
@@ -614,12 +653,7 @@ function waitForGenerateTextOrAbort<T>(
       );
     };
 
-    if (abortSignal.aborted) {
-      onAbort();
-      return;
-    }
-
-    abortSignal.addEventListener("abort", onAbort, { once: true });
+    // FORK(codex-collaboration): 同步 setup 期间可能已取消，仍需观察 SDK promise 的迟到 rejection。
     pending.then(
       (value) => {
         cleanup();
@@ -630,6 +664,15 @@ function waitForGenerateTextOrAbort<T>(
         reject(error);
       },
     );
+
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+
+    if (abortSignal.aborted) {
+      onAbort();
+      return;
+    }
+
+    abortSignal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

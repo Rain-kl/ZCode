@@ -217,8 +217,6 @@ export type {
   McpConnectionSnapshot,
   McpPort,
   McpServerConfig,
-  SubagentPort,
-  SubagentTaskSnapshot,
   ToolArtifactStorePort,
   ToolCallId,
   WorkflowPort,
@@ -317,7 +315,6 @@ export {
   buildExploreAgentPrompt,
   buildExploreSystemPrompt,
   createSubagentContextBuilder,
-  createExploreSubagentPort,
 } from "../subagent/index.js";
-export type { AgentProfile, ExploreSubagentRuntimeRequest } from "../subagent/index.js";
+export type { AgentProfile } from "../subagent/index.js";
 export { registerMcpTools } from "../mcp/index.js";

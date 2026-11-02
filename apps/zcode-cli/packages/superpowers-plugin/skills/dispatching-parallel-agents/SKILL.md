@@ -65,13 +65,18 @@ Each agent gets:
 
 ### 3. Dispatch in Parallel
 
-```typescript
-// In Claude Code / AI environment
-Task("Fix agent-tool-abort.test.ts failures")
-Task("Fix batch-completion-behavior.test.ts failures")
-Task("Fix tool-approval-race-conditions.test.ts failures")
-// All three run concurrently
+```text
+spawn_agent(task_name: "abort_tests", fork_turns: "none", message: "Fix agent-tool-abort.test.ts failures. [Full constraints and context]")
+spawn_agent(task_name: "batch_tests", fork_turns: "none", message: "Fix batch-completion-behavior.test.ts failures. [Full constraints and context]")
+spawn_agent(task_name: "approval_tests", fork_turns: "none", message: "Fix tool-approval-race-conditions.test.ts failures. [Full constraints and context]")
 ```
+
+Respect the available shared concurrency slots; all agents share the working
+directory. Use `wait_agent` for activity, then read the delivered messages.
+Completion releases execution capacity automatically and retains agent history.
+Use `followup_task` with the returned task name to continue an existing agent;
+`send_message` alone does not start idle work. Use `interrupt_agent` only to
+stop a selected run, and `list_agents` to inspect loaded collaborators.
 
 ### 4. Review and Integrate
 

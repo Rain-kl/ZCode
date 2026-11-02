@@ -1,6 +1,7 @@
 # 桌面端发布流水线
 
-范围：`.github/workflows/release.yml` 与 `scripts/ci/release-version.mjs`。覆盖 macOS（arm64）与 Windows（x64）两个平台的安装包构建与 GitHub Release 发布。
+范围：`.github/workflows/release.yml`、`scripts/ci/release-version.mjs` 与 `scripts/ci/source-server-release.mjs`。
+覆盖 macOS（arm64）与 Windows（x64）桌面包，以及 Linux/macOS（x64、arm64）配套 Server 的构建与 GitHub Release 发布。
 
 ## 通道与触发
 
@@ -30,11 +31,11 @@
 - **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
 - 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
 
-| 渠道               | `verify` | `build-macos` / `build-windows` | `publish`                                |
-| ------------------ | -------- | ------------------------------- | ---------------------------------------- |
-| dev（推送 canary） | success  | 运行（要求 verify 成功）      | 运行（只要求三个直接依赖 `success`）     |
-| tag 且门禁通过     | success  | 运行                            | 运行                                     |
-| tag 且门禁失败     | failure  | 跳过（条件不满足）              | 跳过（构建非 `success`）→ 不创建 Release |
+| 渠道               | `verify` | `build-macos` / `build-windows` | `publish`                                    |
+| ------------------ | -------- | ------------------------------- | -------------------------------------------- |
+| dev（推送 canary） | success  | 运行（要求 verify 成功）        | 运行（要求 resolve、桌面与 Server 构建成功） |
+| tag 且门禁通过     | success  | 运行                            | 运行                                         |
+| tag 且门禁失败     | failure  | 跳过（条件不满足）              | 跳过（构建非 `success`）→ 不创建 Release     |
 
 - 新增作业时照抄这条规则：**只要它 `needs` 的链上可能有 skipped 作业，就必须写显式条件**（用 `!cancelled()` 而非 `always()`，后者在被取消时也会继续跑）。
 - `verify` 里在单测前会按依赖链构建 CLI 包（`pnpm -r --filter "@zcode/core..."`）：`apps/zcode-cli/packages/core/test` 的测试 import 上游 tool 入口，而这些包的 `exports` 指向 `dist`，verify 只 install 不 build 会 `ERR_MODULE_NOT_FOUND` 让整组失败。
@@ -51,7 +52,7 @@
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
 2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
-3. **半套产物不发布**：`publish` 的显式条件要求两个平台构建都 `success`，任一平台失败则整体不创建 Release；tag 渠道下 `verify` 失败会先让两个构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
+3. **半套产物不发布**：`publish` 的显式条件要求桌面与配套 Server 构建都 `success`，任一构建失败则整体不创建 Release；`verify` 失败会先让构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
 5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，包只更新到 `canary-build`；指针上的资产每次只保留本次集成的一套（先上传本次资产、再删掉不属于本次的文件），因此 Releases 里始终只有一份 dev 包。
    - **指针发布 `canary-build` 只保留本次集成的资产**：资产名带版本号（`ZCode-<version>-<platform>-<arch>`），`gh release upload --clobber` 只覆盖同名文件，所以 publish 在「先上传本次资产、再删掉不属于本次的文件」。不清理时实测堆到 18 个资产 / 3 个版本（`dev.yml` / `dev-mac.yml` / `SHA256SUMS.txt` 名字固定，靠 `--clobber` 覆盖）。
@@ -62,9 +63,53 @@
 - **嵌套运行时未预签名**：`Contents/Resources/glm`、`tools` 与 CUA Helper 在原流水线中由独立 job 完成 Developer ID 签名与 staple，本流水线不涉及。因此仅打开签名开关只覆盖主 app，不构成可公证的完整签名链。
 - **发布架构范围**：macOS 仅 arm64，Windows 仅 x64（未发布 win32-arm64、mac x64）。
 - **第三方清单**：`third-party/inventory.json` 记录的 `package.json` 哈希与当前文件不一致（需执行 `node scripts/licenses.mjs notices` 重新生成），因此 `licenses.mjs check --strict` 在流水线中仅作提示（`continue-on-error: true`），不阻塞发布；打包链路本身不校验清单新鲜度。
-- **清理流水线不得触碰 dev 通道**：`.github/workflows/cleanup-prerelease-tags.yml`（每日 03:00 + 手动）只清理 `v*` 系列的预发布与悬空项。它的悬空判定是「发布 tag 不在 `git tag --list 'v*'` 结果里」，而 dev 通道的 tag 按构造永远不在其中——所以必须靠 `is_dev_channel_tag`（`canary-build` 与 `dev-*`）先跳过，否则会把预览通道的指针发布和 dev 下载页一起删掉。
+- **清理流水线不得触碰有效下载入口**：`.github/workflows/cleanup-prerelease-tags.yml`（每日 03:00 + 手动）的悬空判定依赖 `git tag --list 'v*'`。必须保留 `canary-build` 指针与 `server-v*` 配套运行时发布；遗留 `dev-*` 发布不再保留。
 - **已跳过作业的流水线「成功」具有误导性**：`publish` 被跳过时整个 run 仍显示 success（被跳过的作业不算失败）。发布是否真的发生，要看 run 里 `publish` 的结论，不能只看 run 的总体状态。
 
 ## 2026-10-24 同步验证
 
 上游同步推送到 main/canary 时，canary 的 verify 必须执行，覆盖类型、lint、架构、移除守卫及两种单测入口；构建与发布继续依赖 verify 成功。不得以 skipped 的 verify 作为本次同步验证成功的依据。稳定 tag 触发与历史发布 tag 保持原有规则。
+
+## 2026-11-02 配套 Source Server 发布
+
+背景：`3.17.162-dev.084c4811` 桌面包仍向上游 CDN 请求同版本的
+`source-server-release.json`，两个默认源均返回 404/NoSuchKey。现有 workflow 只上传桌面包，
+不包含 Server 清单与归档；SSH 探测成功后因此无法安装。这是发布资源缺失，不是 SSH 鉴权失败。
+
+- `resolve` 仍是唯一版本所有者。独立 `build-source-server` 作业消费同一 version/commit，复用
+  `pnpm prepare:remote-assets`，构建 linux-x64、linux-arm64、darwin-x64、darwin-arm64 完整归档。
+  归档已含 Node、Server、Agent、插件和工具，首次安装与整包升级不依赖额外 CDN 组件。
+- CI 验证清单版本、四目标集合、文件名、字节数、SHA-256，以及归档内 manifest 的版本/目标；
+  缺失、损坏或版本混用必须阻止发布。发布 job 下载桌面和 Server 到不同目录，防止混入指针清理范围。
+- GitHub Server Release tag 为 `server-v<完整版本>`，始终 prerelease、`latest=false`；
+  不使用 `canary-build` 或 latest 别名。canary 的完整版本含 sha8，后续 canary 发布不覆盖旧版本。
+  这是配套运行时的版本保留，不恢复历史 `dev-<sha>` 桌面发布。
+- 新 Server Release 先创建 draft、上传归档，最后上传清单并公开；桌面 Release 在 Server 可用后才发布。
+  已公开版本重跑构建作业时先下载并校验原包，避免 tar 时间戳导致重建字节不同。
+  已公开且内容相同的 Server Release 重跑只校验、不覆盖；同版本内容变化明确失败，禁止替换旧客户端的依赖。
+  Server Release 独立保留，cleanup 不得将 `server-v*` 判为 dangling 删除。
+- Desktop 默认通过本仓库 GitHub 对应 Server Release 拉取清单与归档；GitHub release 基址不可再拼版本目录。
+  显式下载源覆盖与测试产品环境继续保留，未打包开发态继续使用本地产物和内容寻址策略。
+- 下载失败在原始 cause 中携带具体 URL、HTTP 状态或解析/网络错误；用户可见信息沿用连接日志的
+  URL 脱敏策略，但仍保留 HTTP 状态和具体失败原因，不仅显示笼统的 descriptor 错误。
+- 本次不改 SSH、远端安装器、协议、owner/lease 或业务队列，不部署或重启用户远程设备。
+
+```mermaid
+sequenceDiagram
+    participant R as resolve (version owner)
+    participant B as build-source-server
+    participant P as publish
+    participant G as GitHub server-vVERSION
+    participant D as Desktop
+    R->>B: version + commit
+    B->>B: build four targets and verify descriptor/archives
+    B->>P: verified Server artifact
+    P->>G: draft + archives + descriptor, then publish
+    P->>P: publish desktop / update canary-build
+    D->>G: exact-version descriptor and archive
+    D->>D: verify version + SHA-256 + size before install
+```
+
+验收：stable/dev 都要求 Server 构建成功；任一目标缺失则桌面不发布；连续两次 canary 发布后旧客户端
+仍能使用旧的 Server URL；重跑相同内容无副作用、同版本不同内容失败；cleanup 保留 Server 发布；
+清单 404、无效 JSON 和版本不符时错误保留请求上下文。真实 GitHub 发布与远程 SSH 安装未执行前不得宣称验收通过。

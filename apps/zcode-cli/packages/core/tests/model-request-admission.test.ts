@@ -32,7 +32,11 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
     const seen: unknown[] = [];
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-admission-present"),
-      { agentName: "zcode-general-purpose", modelStreaming: "off", workingDirectory: "/tmp/runtime-admission" },
+      {
+        agentName: "zcode-general-purpose",
+        modelStreaming: "off",
+        workingDirectory: "/tmp/runtime-admission",
+      },
       {
         eventStore: createTestSessionEventStore(),
         modelRequestAdmission: admission,
@@ -52,7 +56,11 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
     const seen: Array<boolean> = [];
     const runtime = createTestAgentRuntime(
       createSessionId("runtime-admission-absent"),
-      { agentName: "zcode-general-purpose", modelStreaming: "off", workingDirectory: "/tmp/runtime-admission" },
+      {
+        agentName: "zcode-general-purpose",
+        modelStreaming: "off",
+        workingDirectory: "/tmp/runtime-admission",
+      },
       {
         eventStore: createTestSessionEventStore(),
         modelFactory: createTestModelFactory({
@@ -80,7 +88,7 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
         modelFactory: createTestModelFactory({
           async generateText(request, observation) {
             const toolNames = (request.tools ?? []).map((tool) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCalls += 1;
               if (parentCalls === 1) {
                 return {
@@ -90,8 +98,13 @@ describe("AgentRuntime model requests carry modelRequestAdmission", () => {
                   toolCalls: [
                     {
                       id: "call_child",
-                      name: "Agent",
-                      input: { description: "child", prompt: "say hi", subagent_type: "Explore" },
+                      name: "spawn_agent",
+                      input: {
+                        task_name: "call_child",
+                        fork_turns: "none",
+                        message: "say hi",
+                        agent_type: "Explore",
+                      },
                     },
                   ],
                   usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },

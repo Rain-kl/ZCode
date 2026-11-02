@@ -15,6 +15,12 @@ export function resolveRemoteCdnBaseUrls(options: RemoteCdnBaseOptions): string[
 export function buildReleaseBaseCandidates(remoteCdnBaseUrls: string[], version: string): string[] {
   const candidates = remoteCdnBaseUrls.flatMap((remoteCdnBaseUrl) => {
     const normalizedBase = remoteCdnBaseUrl.replace(/\/+$/, "");
+    // FORK(github-update): GitHub 资产平铺在 tag 下，套用 CDN 版本子目录会产生 404；见 FEATURES.md 的 github-update 条目。
+    if (
+      /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/[^/?#]+$/u.test(normalizedBase)
+    ) {
+      return [normalizedBase];
+    }
     // 当调用方已经传入带版本的 CDN 基址时，继续盲目拼 `${base}/${version}`
     // 会先走一次必然失败的双版本路径（例如 .../0.2.10/0.2.10），产生无意义 404 噪音。
     // 这里识别“已固定到当前版本”的场景，直接使用原基址即可。

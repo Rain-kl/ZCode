@@ -2,20 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   HookEventName,
   READ_SESSION_CONTEXT_TOOL_NAME,
-  RESPOND_TO_COORDINATOR_TOOL_NAME,
-  SEND_MESSAGE_TOOL_NAME,
   SessionEventType,
   createSessionId,
   modelMessageContentToText,
   type ModelMessageContent,
-  type CoordinatorResponsePort,
-  type SubagentPort,
-  type SubagentSendMessageRequest,
 } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createInMemoryHookRunner } from "../src/hooks/index.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
-import { respondToCoordinatorToolEntry } from "../src/tool/handlers/respond-to-coordinator.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
 describe("AgentRuntime lifecycle hooks", () => {
@@ -385,302 +379,14 @@ describe("AgentRuntime lifecycle hooks", () => {
     expect(capturedRequests[0]).toContain("<session-message");
     expect(capturedRequests[0]).toContain("mail-1");
     expect(capturedRequests[0]).toContain("please check the failing test");
-    expect(runtime.getToolRegistry().has("send_message")).toBe(false);
-    const sendMessageTool = runtime.getToolRegistry().get(SEND_MESSAGE_TOOL_NAME);
+    expect(runtime.getToolRegistry().has("send_message")).toBe(true);
+    const sendMessageTool = runtime.getToolRegistry().get("send_message");
     if (!sendMessageTool) throw new Error("Expected send_message tool to be registered");
     const sendMessageInputProperties = (sendMessageTool.inputSchema as any).properties;
-    expect(sendMessageInputProperties).toHaveProperty("to");
-    expect(sendMessageInputProperties).toHaveProperty("summary");
+    expect(sendMessageInputProperties).toHaveProperty("target");
     expect(sendMessageInputProperties).toHaveProperty("message");
     expect(sendMessageInputProperties).not.toHaveProperty("sessionId");
     expect(sendMessageInputProperties).not.toHaveProperty("content");
-  });
-
-  it("executes SendMessage to a local_agent through the subagent port", async () => {
-    const sessionId = createSessionId("runtime-send-message-local-agent");
-    const eventStore = createTestSessionEventStore();
-    const sentMessages: SubagentSendMessageRequest[] = [];
-    const capturedRequests: string[] = [];
-    let modelCallCount = 0;
-    const subagentPort: SubagentPort = {
-      async launch() {
-        throw new Error("Agent tool should not launch in this test");
-      },
-      async run() {
-        throw new Error("Agent tool should not run in this test");
-      },
-      async sendMessage(input) {
-        sentMessages.push(input);
-        return {
-          status: "success",
-          messageId: "msg-local-agent-1",
-          delivery: "steered",
-          agentId: input.to,
-          taskId: input.to,
-          message: `Message msg-local-agent-1 (${input.summary}) sent to ${input.to}.`,
-        };
-      },
-    };
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      {},
-      {
-        eventStore,
-        subagentPort,
-        modelFactory: createTestModelFactory({
-          async generateText(request: { messages: Array<{ content: ModelMessageContent }> }) {
-            modelCallCount++;
-            capturedRequests.push(
-              request.messages
-                .map((message) => modelMessageContentToText(message.content))
-                .join("\n"),
-            );
-            if (modelCallCount === 1) {
-              return {
-                finishReason: "tool-calls",
-                model: "test",
-                providerMetadata: undefined,
-                text: "",
-                toolCalls: [
-                  {
-                    id: "send-local-agent-call-1",
-                    input: {
-                      to: "agent_local_1",
-                      summary: "继续检查权限",
-                      message: "请继续检查权限链路，并只报告结论。",
-                    },
-                    name: SEND_MESSAGE_TOOL_NAME,
-                  },
-                ],
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-            return modelTextResult("sent to local agent");
-          },
-        } as never),
-      },
-    );
-
-    const result = await runtime.executeTurn("send the local agent follow-up");
-
-    expect(result.response).toBe("sent to local agent");
-    expect(modelCallCount).toBe(2);
-    expect(sentMessages).toEqual([
-      expect.objectContaining({
-        message: "请继续检查权限链路，并只报告结论。",
-        summary: "继续检查权限",
-        to: "agent_local_1",
-      }),
-    ]);
-    expect(capturedRequests[1]).toContain(
-      "Message msg-local-agent-1 (继续检查权限) sent to agent_local_1.",
-    );
-  });
-
-  it("executes RespondToCoordinator from a plan-mode child runtime", async () => {
-    const sessionId = createSessionId("runtime-respond-to-coordinator-plan");
-    const requests: Parameters<CoordinatorResponsePort["respond"]>[0][] = [];
-    let modelCallCount = 0;
-    const runtime = createTestAgentRuntime(
-      sessionId,
-      { mode: "plan", taskType: "subagent_child" },
-      {
-        coordinatorResponsePort: {
-          respond(request) {
-            requests.push(request);
-            return {
-              status: "success",
-              responseId: "response_plan_1",
-              message: "Response response_plan_1 was queued for the coordinator.",
-            };
-          },
-        },
-        eventStore: createTestSessionEventStore(),
-        modelFactory: createTestModelFactory({
-          async generateText() {
-            modelCallCount++;
-            if (modelCallCount === 1) {
-              return {
-                finishReason: "tool-calls",
-                model: "test",
-                providerMetadata: undefined,
-                text: "",
-                toolCalls: [
-                  {
-                    id: "respond-plan-call-1",
-                    input: {
-                      summary: "权限链路进度",
-                      message: "已完成入口检查，继续验证异常路径。",
-                    },
-                    name: RESPOND_TO_COORDINATOR_TOOL_NAME,
-                  },
-                ],
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-            return modelTextResult("continued child work");
-          },
-        } as never),
-      },
-    );
-
-    const result = await runtime.executeTurn("respond and continue");
-
-    expect(result.response).toBe("continued child work");
-    expect(requests).toEqual([
-      expect.objectContaining({
-        childToolCallId: "respond-plan-call-1",
-        message: "已完成入口检查，继续验证异常路径。",
-        summary: "权限链路进度",
-      }),
-    ]);
-    expect(requests[0]).not.toHaveProperty("childSessionId");
-    expect(requests[0]?.trace).toMatchObject({ sessionId });
-  });
-
-  it("keeps RespondToCoordinator behind the enabled child runtime boundary", () => {
-    const coordinatorResponsePort: CoordinatorResponsePort = {
-      respond() {
-        return {
-          status: "success",
-          responseId: "response_boundary",
-          message: "queued",
-        };
-      },
-    };
-    const mainRuntime = createTestAgentRuntime(
-      createSessionId("runtime-respond-main-boundary"),
-      {},
-      {
-        coordinatorResponsePort,
-        eventStore: createTestSessionEventStore(),
-      },
-    );
-    const disallowedChildRuntime = createTestAgentRuntime(
-      createSessionId("runtime-respond-disallowed-child"),
-      {
-        taskType: "subagent_child",
-        toolDisallowlist: [RESPOND_TO_COORDINATOR_TOOL_NAME],
-      },
-      {
-        coordinatorResponsePort,
-        eventStore: createTestSessionEventStore(),
-      },
-    );
-    const childWithoutPort = createTestAgentRuntime(
-      createSessionId("runtime-respond-child-without-port"),
-      { taskType: "subagent_child" },
-      { eventStore: createTestSessionEventStore() },
-    );
-
-    expect(mainRuntime.getToolRegistry().has(RESPOND_TO_COORDINATOR_TOOL_NAME)).toBe(false);
-    expect(disallowedChildRuntime.getToolRegistry().has(RESPOND_TO_COORDINATOR_TOOL_NAME)).toBe(
-      false,
-    );
-    expect(childWithoutPort.getToolRegistry().has(RESPOND_TO_COORDINATOR_TOOL_NAME)).toBe(false);
-  });
-
-  it("keeps child work actionable after RespondToCoordinator enqueue failure", async () => {
-    const capturedRequests: string[] = [];
-    const enqueueError = "injected enqueue failure ".repeat(300);
-    let modelCallCount = 0;
-    const runtime = createTestAgentRuntime(
-      createSessionId("runtime-respond-to-coordinator-failed"),
-      { taskType: "subagent_child" },
-      {
-        coordinatorResponsePort: {
-          respond() {
-            return {
-              status: "failed",
-              responseId: "response_failed",
-              message: "Response failed to queue.",
-              error: enqueueError,
-            };
-          },
-        },
-        eventStore: createTestSessionEventStore(),
-        modelFactory: createTestModelFactory({
-          async generateText(request: { messages: Array<{ content: ModelMessageContent }> }) {
-            modelCallCount++;
-            capturedRequests.push(
-              request.messages
-                .map((message) => modelMessageContentToText(message.content))
-                .join("\n"),
-            );
-            if (modelCallCount === 1) {
-              return {
-                finishReason: "tool-calls",
-                model: "test",
-                providerMetadata: undefined,
-                text: "",
-                toolCalls: [
-                  {
-                    id: "respond-failed-call-1",
-                    input: { summary: "progress", message: "still working" },
-                    name: RESPOND_TO_COORDINATOR_TOOL_NAME,
-                  },
-                ],
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-            return modelTextResult("continued after failed response");
-          },
-        } as never),
-      },
-    );
-
-    const result = await runtime.executeTurn("report progress");
-
-    expect(result.response).toBe("continued after failed response");
-    expect(capturedRequests[1]).toContain("injected enqueue failure");
-    expect(capturedRequests[1]).toContain("Continue the current task");
-    expect(capturedRequests[1]).toContain("Tool output truncated by resultBudget");
-  });
-
-  it("returns a configuration error when RespondToCoordinator is forced without a port", async () => {
-    let modelCallCount = 0;
-    const capturedRequests: string[] = [];
-    const runtime = createTestAgentRuntime(
-      createSessionId("runtime-respond-to-coordinator-missing-port"),
-      { taskType: "subagent_child" },
-      {
-        eventStore: createTestSessionEventStore(),
-        modelFactory: createTestModelFactory({
-          async generateText(request: { messages: Array<{ content: ModelMessageContent }> }) {
-            modelCallCount++;
-            capturedRequests.push(
-              request.messages
-                .map((message) => modelMessageContentToText(message.content))
-                .join("\n"),
-            );
-            if (modelCallCount === 1) {
-              return {
-                finishReason: "tool-calls",
-                model: "test",
-                providerMetadata: undefined,
-                text: "",
-                toolCalls: [
-                  {
-                    id: "respond-missing-port-call-1",
-                    input: { summary: "progress", message: "still working" },
-                    name: RESPOND_TO_COORDINATOR_TOOL_NAME,
-                  },
-                ],
-                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
-              };
-            }
-            return modelTextResult("handled configuration error");
-          },
-        } as never),
-      },
-    );
-    runtime.getToolRegistry().register(respondToCoordinatorToolEntry);
-
-    await runtime.executeTurn("force response tool");
-
-    expect(capturedRequests[1]).toContain(
-      "Coordinator response port is not configured for RespondToCoordinator",
-    );
   });
 
   it("queues post-tool session mailbox context as active-turn user input", async () => {
@@ -734,12 +440,8 @@ describe("AgentRuntime lifecycle hooks", () => {
                 toolCalls: [
                   {
                     id: "send-message-call-1",
-                    input: {
-                      to: "agent_missing_for_mailbox_test",
-                      summary: "触发 post tool mailbox drain",
-                      message: "水到渠成，请你接 成 字开头的成语。",
-                    },
-                    name: SEND_MESSAGE_TOOL_NAME,
+                    name: "list_agents",
+                    input: {},
                   },
                 ],
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },

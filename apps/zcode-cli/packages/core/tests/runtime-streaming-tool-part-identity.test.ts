@@ -140,7 +140,11 @@ function createFixture(
             };
             if (options.delayEarlySchedule) await scheduleStarted.promise;
             else if (options.earlyWriteFailure !== false) await earlyFailure.promise;
-            if (options.streamFailure) throw new Error("Model request timed out.");
+            if (options.streamFailure)
+              // FORK(codex-collaboration): 模型桩遵循 adapter 的结构化失败合同。
+              throw Object.assign(new Error("Model request timed out."), {
+                context: { retryable: true, source: "provider" },
+              });
             yield { type: "finish", finishReason: "tool-calls", usage: {} };
             return;
           }

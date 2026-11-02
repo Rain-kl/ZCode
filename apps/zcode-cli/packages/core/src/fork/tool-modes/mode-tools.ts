@@ -29,8 +29,13 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
   "EnterPlanMode",
   "ExitPlanMode",
   "AskUserQuestion",
-  "Agent",
-  "SendMessage",
+  // FORK(codex-collaboration): 用户要求统一六工具，旧名字不得从工具档重新进入。
+  "spawn_agent",
+  "send_message",
+  "followup_task",
+  "interrupt_agent",
+  "list_agents",
+  "wait_agent",
   "ReadSessionContext",
   "TaskOutput",
   "TaskStop",
@@ -54,15 +59,13 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
 
 /**
  * 标准：再加脚本运行时与内部通信面。
- * Task / submit_result / escalate / RespondToCoordinator 只在对应端口在场时注册；
+ * 协作六工具 / submit_result / escalate 只在对应端口在场时注册；
  * 归类在这里是为了让「注册表里的每个工具都有归属」这条不变式成立。
  */
 export const FORK_TOOL_MODE_STANDARD_EXTRA_TOOL_NAMES = [
   "js",
-  "Task",
   "submit_result",
   "escalate",
-  "RespondToCoordinator",
   "ReplyToChannel",
   "ToolSearch",
   "DeferredToolCall",

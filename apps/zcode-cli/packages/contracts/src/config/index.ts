@@ -4,6 +4,8 @@ import type { CollaborationMode } from "../interfaces/session.port.js";
 import type { McpServerConfig } from "../interfaces/mcp.port.js";
 import type { HooksRuntimeConfig, HooksRuntimeConfigPatch } from "../hooks/index.js";
 import type { PluginConfig, PluginOptionValues } from "../plugins/index.js";
+// FORK(codex-collaboration): 委派策略与容量从同一配置合同归一化。
+import type { CollaborationConfig } from "../fork/codex-collaboration/tools/contract.js";
 
 // ============================================================
 // Config Key Types
@@ -67,6 +69,8 @@ export const ConfigKey = {
 
   // Tool Concurrency
   ToolConcurrencyMax: "toolConcurrency.maxConcurrency",
+  // FORK(codex-collaboration): 容量和委派模式沿既有配置来源链读取。
+  Subagents: "subagents",
 
   // Model anomaly guards
   ModelAnomalyGuard: "modelAnomalyGuard",
@@ -85,70 +89,73 @@ export type ConfigKey = (typeof ConfigKey)[keyof typeof ConfigKey];
 // Config Value Types
 // ============================================================
 
-export type ConfigValue<K extends ConfigKey> = K extends "modelStream.idleTimeoutMs"
-  ? number
-  : K extends "permission.mode"
-    ? CollaborationMode
-    : K extends "permission.allowedTools" | "permission.disallowedTools"
-      ? string[]
-      : K extends "permission.autoApproveHighRisk" | "permission.allowMediumRiskInAuto"
-        ? boolean
-        : K extends
-              | "storage.dir"
-              | "storage.sessionDbPath"
-              | "network.httpProxy"
-              | "network.noProxy"
-              | "network.caCertFile"
-          ? string | undefined
-          : K extends "network.timeout"
-            ? number
-            : K extends
-                  | "features.compact"
-                  | "features.rewind"
-                  | "features.subagent"
-                  | "features.memory"
-                  | "features.skill"
-                  | "features.mcp"
-                  | "skills.enabled"
-                  | "skills.includeInstructions"
-              ? boolean
-              : K extends "memory.use"
+// FORK(codex-collaboration): 新配置保留有限类型，不退化 unknown。
+export type ConfigValue<K extends ConfigKey> = K extends "subagents"
+  ? CollaborationConfig
+  : K extends "modelStream.idleTimeoutMs"
+    ? number
+    : K extends "permission.mode"
+      ? CollaborationMode
+      : K extends "permission.allowedTools" | "permission.disallowedTools"
+        ? string[]
+        : K extends "permission.autoApproveHighRisk" | "permission.allowMediumRiskInAuto"
+          ? boolean
+          : K extends
+                | "storage.dir"
+                | "storage.sessionDbPath"
+                | "network.httpProxy"
+                | "network.noProxy"
+                | "network.caCertFile"
+            ? string | undefined
+            : K extends "network.timeout"
+              ? number
+              : K extends
+                    | "features.compact"
+                    | "features.rewind"
+                    | "features.subagent"
+                    | "features.memory"
+                    | "features.skill"
+                    | "features.mcp"
+                    | "skills.enabled"
+                    | "skills.includeInstructions"
                 ? boolean
-                : K extends "skills.metadataBudget"
-                  ? number
-                  : K extends "skills.roots"
-                    ? string[]
-                    : K extends "skill" | "command"
-                      ? Record<string, SkillCommandOverride>
-                      : K extends "mcp.servers"
-                        ? Record<string, McpServerConfig>
-                        : K extends "plugins.enabled"
-                          ? boolean
-                          : K extends "plugins.dirs"
-                            ? string[]
-                            : K extends "plugins.enabledPlugins"
-                              ? Record<string, boolean>
-                              : K extends "plugins.extraKnownMarketplaces"
-                                ? PluginConfig["extraKnownMarketplaces"]
-                                : K extends "plugins.options"
-                                  ? Record<string, PluginOptionValues>
-                                  : K extends "plugins.suppressedBuiltins"
-                                    ? string[]
-                                    : K extends "logging.level"
-                                      ? "debug" | "info" | "warn" | "error"
-                                      : K extends "logging.format"
-                                        ? "text" | "json"
-                                        : K extends "toolConcurrency.maxConcurrency"
-                                          ? number
-                                          : K extends "modelAnomalyGuard"
-                                            ? ModelAnomalyGuardConfig
-                                            : K extends "hooks"
-                                              ? HooksRuntimeConfig
-                                              : K extends "ui.locale"
-                                                ? UiLocale
-                                                : K extends "ui.theme"
-                                                  ? UiThemePreference
-                                                  : unknown;
+                : K extends "memory.use"
+                  ? boolean
+                  : K extends "skills.metadataBudget"
+                    ? number
+                    : K extends "skills.roots"
+                      ? string[]
+                      : K extends "skill" | "command"
+                        ? Record<string, SkillCommandOverride>
+                        : K extends "mcp.servers"
+                          ? Record<string, McpServerConfig>
+                          : K extends "plugins.enabled"
+                            ? boolean
+                            : K extends "plugins.dirs"
+                              ? string[]
+                              : K extends "plugins.enabledPlugins"
+                                ? Record<string, boolean>
+                                : K extends "plugins.extraKnownMarketplaces"
+                                  ? PluginConfig["extraKnownMarketplaces"]
+                                  : K extends "plugins.options"
+                                    ? Record<string, PluginOptionValues>
+                                    : K extends "plugins.suppressedBuiltins"
+                                      ? string[]
+                                      : K extends "logging.level"
+                                        ? "debug" | "info" | "warn" | "error"
+                                        : K extends "logging.format"
+                                          ? "text" | "json"
+                                          : K extends "toolConcurrency.maxConcurrency"
+                                            ? number
+                                            : K extends "modelAnomalyGuard"
+                                              ? ModelAnomalyGuardConfig
+                                              : K extends "hooks"
+                                                ? HooksRuntimeConfig
+                                                : K extends "ui.locale"
+                                                  ? UiLocale
+                                                  : K extends "ui.theme"
+                                                    ? UiThemePreference
+                                                    : unknown;
 
 // ============================================================
 // Config Scope
@@ -200,6 +207,8 @@ export interface SkillCommandOverride {
 // ============================================================
 
 export interface RuntimeConfig {
+  // FORK(codex-collaboration): 不从其他 UI 开关推断主动委派授权。
+  subagents: CollaborationConfig;
   modelStream: ModelStreamConfig;
   permission: {
     mode: CollaborationMode;
@@ -258,6 +267,8 @@ export interface RuntimeConfig {
 }
 
 export interface RuntimeConfigPatch {
+  // FORK(codex-collaboration): 配置层覆盖按字段合并，不引入环境变量。
+  subagents?: Partial<CollaborationConfig>;
   modelStream?: Partial<ModelStreamConfig>;
   permission?: Partial<RuntimeConfig["permission"]>;
   storage?: Partial<RuntimeConfig["storage"]>;
@@ -316,6 +327,8 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   memory: {
     use: true,
   },
+  // FORK(codex-collaboration): 默认包含根的四名额，子代理一层，显式授权委派。
+  subagents: { delegationMode: "explicit", maxTotalAgents: 4, maxDepth: 1, maxLoadedChildren: 3 },
   mcp: {
     servers: {},
   },

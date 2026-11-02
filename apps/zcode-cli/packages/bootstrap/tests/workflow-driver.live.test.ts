@@ -25,7 +25,11 @@ import { AgentRuntime } from "@zcode/core";
 import { InMemoryJournalStore, inputHash } from "@zcode/dynamic-workflow";
 import { createModelAdapter } from "../src/index.js";
 import { workflowActorToolPolicy } from "../src/app/workflow-actor-tools.js";
-import { fakeFileSystemPort, runDriverScript, type PlannedResponse } from "./workflow-driver.helpers.js";
+import {
+  fakeFileSystemPort,
+  runDriverScript,
+  type PlannedResponse,
+} from "./workflow-driver.helpers.js";
 import type { ActorRuntimeFactory } from "../src/app/workflow-driver.js";
 
 /**
@@ -56,10 +60,19 @@ function resolveV2ModelConfig(): ResolvedLiveModel | undefined {
   const p = providers[providerId];
   const apiKey: string | undefined = p?.options?.apiKey;
   if (!apiKey) return undefined; // 无内联 key（如 oauth-only family）：跳过，本 live 测试只覆盖 apiKey provider。
-  const modelId: string | undefined = process.env.ZCODE_WORKFLOW_LIVE_MODEL ?? Object.keys(p.models ?? {})[0];
+  const modelId: string | undefined =
+    process.env.ZCODE_WORKFLOW_LIVE_MODEL ?? Object.keys(p.models ?? {})[0];
   if (!modelId) return undefined;
   return {
-    modelConfig: { main: { kind: p.kind, provider: providerId, model: modelId, apiKey, baseURL: p?.options?.baseURL } },
+    modelConfig: {
+      main: {
+        kind: p.kind,
+        provider: providerId,
+        model: modelId,
+        apiKey,
+        baseURL: p?.options?.baseURL,
+      },
+    },
     modelRef: `${providerId}/${modelId}`,
   };
 }
@@ -82,7 +95,12 @@ function pickActiveProviderId(providers: Record<string, any>): string | undefine
     }
   }
   for (const [id, p] of Object.entries(providers)) {
-    if (p?.enabled !== false && typeof p?.options?.apiKey === "string" && p.options.apiKey.length > 0) return id;
+    if (
+      p?.enabled !== false &&
+      typeof p?.options?.apiKey === "string" &&
+      p.options.apiKey.length > 0
+    )
+      return id;
   }
   return undefined;
 }
@@ -102,7 +120,10 @@ function withTranscript<T>(adapter: T): T {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const base = adapter as any;
   const write = (entry: Record<string, unknown>) =>
-    appendFileSync(path, `${JSON.stringify({ seq: ++seq, at: new Date().toISOString(), ...entry })}\n`);
+    appendFileSync(
+      path,
+      `${JSON.stringify({ seq: ++seq, at: new Date().toISOString(), ...entry })}\n`,
+    );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const slim = (req: any) => ({
     model: req?.model,
@@ -117,7 +138,12 @@ function withTranscript<T>(adapter: T): T {
     write({
       kind: "generateText",
       request: slim(req),
-      response: { finishReason: res?.finishReason, text: res?.text, toolCalls: res?.toolCalls, usage: res?.usage },
+      response: {
+        finishReason: res?.finishReason,
+        text: res?.text,
+        toolCalls: res?.toolCalls,
+        usage: res?.usage,
+      },
     });
     return res;
   };
@@ -156,10 +182,11 @@ function liveRuntimeFactory(resolved: ResolvedLiveModel): ActorRuntimeFactory {
     createTestAgentRuntime(
       sessionId,
       {
-        systemPrompt: persona.system ?? "You are a workflow actor. Follow the instructions precisely.",
+        systemPrompt:
+          persona.system ?? "You are a workflow actor. Follow the instructions precisely.",
         mode: "yolo",
         taskType: "workflow_child",
-        subagents: { enabled: false },
+        subagents: {},
         modelRef,
         // actor 的工具面：全集减去会悬挂/越权的交互工具。
         ...workflowActorToolPolicy(),
@@ -176,67 +203,59 @@ function liveRuntimeFactory(resolved: ResolvedLiveModel): ActorRuntimeFactory {
 const noScripts: Record<string, PlannedResponse[]> = {};
 
 describe.skipIf(!LIVE)("workflow driver — LIVE (env-gated)", () => {
-  it(
-    "a real model submits a schema-conforming result and the run completes",
-    async () => {
-      const script = [
-        "interface Summary { title: string; bullet_points: string[]; }",
-        'const worker = agent("worker", "You summarize short texts into a title and bullet points.");',
-        'const s = await worker.ask<Summary>("Summarize: The cat sat on the mat, then chased a mouse.");',
-        "return s;",
-      ].join("\n");
+  it("a real model submits a schema-conforming result and the run completes", async () => {
+    const script = [
+      "interface Summary { title: string; bullet_points: string[]; }",
+      'const worker = agent("worker", "You summarize short texts into a title and bullet points.");',
+      'const s = await worker.ask<Summary>("Summarize: The cat sat on the mat, then chased a mouse.");',
+      "return s;",
+    ].join("\n");
 
-      const { settlement, journal } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 120_000,
-      });
+    const { settlement, journal } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 120_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      const node = journal.getNode("run", "ask#1", 1);
-      expect(node?.status).toBe("completed");
-      const result = node?.result as { title?: unknown; bullet_points?: unknown } | undefined;
-      expect(typeof result?.title).toBe("string");
-      expect(Array.isArray(result?.bullet_points)).toBe(true);
-    },
-    130_000,
-  );
+    expect(settlement.status).toBe("completed");
+    const node = journal.getNode("run", "ask#1", 1);
+    expect(node?.status).toBe("completed");
+    const result = node?.result as { title?: unknown; bullet_points?: unknown } | undefined;
+    expect(typeof result?.title).toBe("string");
+    expect(Array.isArray(result?.bullet_points)).toBe(true);
+  }, 130_000);
 
-  it(
-    "resumes over a live-model journal with zero dispatches",
-    async () => {
-      const script = [
-        "interface Answer { value: number; }",
-        'const a = await agent("mathy", "You do arithmetic.").ask<Answer>("What is 21 + 21? Return the number.");',
-        "return a;",
-      ].join("\n");
+  it("resumes over a live-model journal with zero dispatches", async () => {
+    const script = [
+      "interface Answer { value: number; }",
+      'const a = await agent("mathy", "You do arithmetic.").ask<Answer>("What is 21 + 21? Return the number.");',
+      "return a;",
+    ].join("\n");
 
-      const journal = new InMemoryJournalStore();
-      const first = await runDriverScript(script, {
-        journal,
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 120_000,
-      });
-      expect(first.settlement.status).toBe("completed");
+    const journal = new InMemoryJournalStore();
+    const first = await runDriverScript(script, {
+      journal,
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 120_000,
+    });
+    expect(first.settlement.status).toBe("completed");
 
-      // Resume：复用 journal，工厂设为「被调用即抛错」以硬断言零派发。
-      let dispatched = false;
-      const throwingFactory: ActorRuntimeFactory = (input) => {
-        dispatched = true;
-        return liveRuntimeFactory(RESOLVED!)(input);
-      };
-      const resumed = await runDriverScript(script, {
-        journal,
-        actorScripts: noScripts,
-        runtimeFactory: throwingFactory,
-        timeoutMs: 30_000,
-      });
-      expect(resumed.settlement).toEqual(first.settlement);
-      expect(dispatched).toBe(false);
-    },
-    140_000,
-  );
+    // Resume：复用 journal，工厂设为「被调用即抛错」以硬断言零派发。
+    let dispatched = false;
+    const throwingFactory: ActorRuntimeFactory = (input) => {
+      dispatched = true;
+      return liveRuntimeFactory(RESOLVED!)(input);
+    };
+    const resumed = await runDriverScript(script, {
+      journal,
+      actorScripts: noScripts,
+      runtimeFactory: throwingFactory,
+      timeoutMs: 30_000,
+    });
+    expect(resumed.settlement).toEqual(first.settlement);
+    expect(dispatched).toBe(false);
+  }, 140_000);
 });
 
 /**
@@ -246,66 +265,62 @@ describe.skipIf(!LIVE)("workflow driver — LIVE (env-gated)", () => {
  * 需要押模型时只押小学算术、明显情感这类几乎不会错的行为。
  */
 describe.skipIf(!LIVE)("workflow driver — LIVE workflow patterns (env-gated)", () => {
-  it(
-    "seq: threads one ask's typed output into the next actor's prompt",
-    async () => {
-      const script = [
-        "interface Extracted { numbers: number[]; }",
-        "interface Parity { even: boolean; }",
-        'const extractor = agent("extractor", "You extract integers from text.");',
-        'const e = await extractor.ask<Extracted>("Extract all the integers: there are 3 cats, 5 dogs and 14 birds.");',
-        "const sum = e.numbers.reduce((a, b) => a + b, 0);",
-        'const checker = agent("checker", { system: "You answer arithmetic questions." });',
-        "const p = await checker.ask<Parity>(`Is the number ${sum} even?`);",
-        "return { sum, even: p.even };",
-      ].join("\n");
+  it("seq: threads one ask's typed output into the next actor's prompt", async () => {
+    const script = [
+      "interface Extracted { numbers: number[]; }",
+      "interface Parity { even: boolean; }",
+      'const extractor = agent("extractor", "You extract integers from text.");',
+      'const e = await extractor.ask<Extracted>("Extract all the integers: there are 3 cats, 5 dogs and 14 birds.");',
+      "const sum = e.numbers.reduce((a, b) => a + b, 0);",
+      'const checker = agent("checker", { system: "You answer arithmetic questions." });',
+      "const p = await checker.ask<Parity>(`Is the number ${sum} even?`);",
+      "return { sum, even: p.even };",
+    ].join("\n");
 
-      const { settlement, journal } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 150_000,
-      });
+    const { settlement, journal } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 150_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
-      // 自洽：sum 由 ask#1 的 journal 产物重算，parity 是它的确定函数。
-      const extracted = journal.getNode("run", "ask#1", 1)?.result as { numbers: number[] };
-      expect(Array.isArray(extracted.numbers)).toBe(true);
-      const sum = extracted.numbers.reduce((a, b) => a + b, 0);
-      const artifact = settlement.artifact as { sum: number; even: boolean };
-      expect(artifact.sum).toBe(sum);
-      expect(artifact.even).toBe(sum % 2 === 0);
-      // 线程化证明：ask#2 的 inputHash 等于「嵌入了 ask#1 产物」的 prompt 的哈希。
-      expect(journal.getNode("run", "ask#2", 1)?.inputHash).toBe(inputHash(`Is the number ${sum} even?`));
-    },
-    170_000,
-  );
+    // 自洽：sum 由 ask#1 的 journal 产物重算，parity 是它的确定函数。
+    const extracted = journal.getNode("run", "ask#1", 1)?.result as { numbers: number[] };
+    expect(Array.isArray(extracted.numbers)).toBe(true);
+    const sum = extracted.numbers.reduce((a, b) => a + b, 0);
+    const artifact = settlement.artifact as { sum: number; even: boolean };
+    expect(artifact.sum).toBe(sum);
+    expect(artifact.even).toBe(sum % 2 === 0);
+    // 线程化证明：ask#2 的 inputHash 等于「嵌入了 ask#1 产物」的 prompt 的哈希。
+    expect(journal.getNode("run", "ask#2", 1)?.inputHash).toBe(
+      inputHash(`Is the number ${sum} even?`),
+    );
+  }, 170_000);
 
-  it(
-    "parallel: fans out over Promise.all onto fresh actors, then reduces via an aggregator ask",
-    async () => {
-      const script = [
-        "interface Value { value: number; }",
-        "interface Total { total: number; }",
-        'const problems = ["2 + 3", "10 + 4", "7 + 6"];',
-        "const values = await Promise.all(",
-        '  problems.map((p) => agent("solver").ask<Value>(`Compute ${p} and return the value.`)),',
-        ");",
-        "const nums = values.map((v) => v.value);",
-        'const agg = await agent("aggregator", { system: "You add numbers." })',
-        "  .ask<Total>(`Add these numbers: ${nums.join(\", \")}. Return the total.`);",
-        "return { nums, total: agg.total };",
-      ].join("\n");
+  it("parallel: fans out over Promise.all onto fresh actors, then reduces via an aggregator ask", async () => {
+    const script = [
+      "interface Value { value: number; }",
+      "interface Total { total: number; }",
+      'const problems = ["2 + 3", "10 + 4", "7 + 6"];',
+      "const values = await Promise.all(",
+      '  problems.map((p) => agent("solver").ask<Value>(`Compute ${p} and return the value.`)),',
+      ");",
+      "const nums = values.map((v) => v.value);",
+      'const agg = await agent("aggregator", { system: "You add numbers." })',
+      '  .ask<Total>(`Add these numbers: ${nums.join(", ")}. Return the total.`);',
+      "return { nums, total: agg.total };",
+    ].join("\n");
 
-      const { settlement, journal, events } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 180_000,
-      });
+    const { settlement, journal, events } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 180_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
     // fan-out：ask#1 三个实例（各自新 actor）+ aggregator，共 4 个 ask 节点、4 个 actor。
     const askNodes = journal
@@ -315,122 +330,110 @@ describe.skipIf(!LIVE)("workflow driver — LIVE workflow patterns (env-gated)",
     expect(askNodes.every((n) => n.status === "completed")).toBe(true);
     expect(events.filter((e) => e.type === "actor-created")).toHaveLength(4);
 
-      const artifact = settlement.artifact as { nums: number[]; total: number };
-      expect(artifact.nums).toEqual([5, 14, 13]);
-      expect(artifact.total).toBe(32);
-      // 自洽（与绝对值互为冗余）：total 等于三个 fan-out journal 产物之和。
-      const fanned = askNodes
-        .filter((n) => n.siteId === "ask#1")
-        .map((n) => (n.result as { value: number }).value);
-      expect(fanned).toHaveLength(3);
-      expect(fanned.reduce((a, b) => a + b, 0)).toBe(artifact.total);
-    },
-    200_000,
-  );
+    const artifact = settlement.artifact as { nums: number[]; total: number };
+    expect(artifact.nums).toEqual([5, 14, 13]);
+    expect(artifact.total).toBe(32);
+    // 自洽（与绝对值互为冗余）：total 等于三个 fan-out journal 产物之和。
+    const fanned = askNodes
+      .filter((n) => n.siteId === "ask#1")
+      .map((n) => (n.result as { value: number }).value);
+    expect(fanned).toHaveLength(3);
+    expect(fanned.reduce((a, b) => a + b, 0)).toBe(artifact.total);
+  }, 200_000);
 
-  it(
-    "control: branches on a typed enum verdict; only the taken branch's ask is journaled",
-    async () => {
-      const script = [
-        'interface Verdict { sentiment: "positive" | "negative"; }',
-        'const judge = agent("judge", { system: "You classify sentiment." });',
-        'const v = await judge.ask<Verdict>("Classify the sentiment: I absolutely love this product, it works perfectly.");',
-        'if (v.sentiment === "positive") {',
-        '  const cheer = await agent("fan").ask("Reply with one short cheerful sentence.");',
-        "  return { sentiment: v.sentiment, reply: cheer };",
-        "}",
-        'const sigh = await agent("consoler").ask("Reply with one short consoling sentence.");',
-        "return { sentiment: v.sentiment, reply: sigh };",
-      ].join("\n");
+  it("control: branches on a typed enum verdict; only the taken branch's ask is journaled", async () => {
+    const script = [
+      'interface Verdict { sentiment: "positive" | "negative"; }',
+      'const judge = agent("judge", { system: "You classify sentiment." });',
+      'const v = await judge.ask<Verdict>("Classify the sentiment: I absolutely love this product, it works perfectly.");',
+      'if (v.sentiment === "positive") {',
+      '  const cheer = await agent("fan").ask("Reply with one short cheerful sentence.");',
+      "  return { sentiment: v.sentiment, reply: cheer };",
+      "}",
+      'const sigh = await agent("consoler").ask("Reply with one short consoling sentence.");',
+      "return { sentiment: v.sentiment, reply: sigh };",
+    ].join("\n");
 
-      const { settlement, journal } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 150_000,
-      });
+    const { settlement, journal } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 150_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
-      // enum schema 一致性：真实提交落在字面量并集内。
-      const verdictNode = journal.getNode("run", "ask#1", 1);
-      const verdict = (verdictNode?.result as { sentiment: string } | undefined)?.sentiment;
-      expect(["positive", "negative"]).toContain(verdict);
-      // 分支唯一性：恰好执行了 verdict 对应的那一支（不押 verdict 本身）。
-      expect(journal.getNode("run", "ask#2", 1) !== undefined).toBe(verdict === "positive");
-      expect(journal.getNode("run", "ask#3", 1) !== undefined).toBe(verdict === "negative");
-      // 分支 ask 是 untyped：从真实 turn 的 final text 结算出非空字符串。
-      const artifact = settlement.artifact as { sentiment: string; reply: string };
-      expect(artifact.sentiment).toBe(verdict);
-      expect(typeof artifact.reply).toBe("string");
-      expect(artifact.reply.length).toBeGreaterThan(0);
-    },
-    170_000,
-  );
+    // enum schema 一致性：真实提交落在字面量并集内。
+    const verdictNode = journal.getNode("run", "ask#1", 1);
+    const verdict = (verdictNode?.result as { sentiment: string } | undefined)?.sentiment;
+    expect(["positive", "negative"]).toContain(verdict);
+    // 分支唯一性：恰好执行了 verdict 对应的那一支（不押 verdict 本身）。
+    expect(journal.getNode("run", "ask#2", 1) !== undefined).toBe(verdict === "positive");
+    expect(journal.getNode("run", "ask#3", 1) !== undefined).toBe(verdict === "negative");
+    // 分支 ask 是 untyped：从真实 turn 的 final text 结算出非空字符串。
+    const artifact = settlement.artifact as { sentiment: string; reply: string };
+    expect(artifact.sentiment).toBe(verdict);
+    expect(typeof artifact.reply).toBe("string");
+    expect(artifact.reply.length).toBeGreaterThan(0);
+  }, 170_000);
 
-  it(
-    "actor context: a second ask on the same actor recalls facts from the first (FIFO, one runtime)",
-    async () => {
-      // 码字只出现在 ask#1 的 prompt；ask#2 能答出它的唯一途径是持久 child runtime 的会话历史。
-      const script = [
-        "interface Ack { ok: boolean; }",
-        "interface Recall { codeword: string; }",
-        'const keeper = agent("keeper", "You remember facts from this conversation and answer recall questions.");',
-        'await keeper.ask<Ack>("Remember the codeword PLUM-42. Reply with ok=true.");',
-        'const r = await keeper.ask<Recall>("What codeword were you asked to remember earlier in this conversation? Return exactly that codeword.");',
-        "return r;",
-      ].join("\n");
+  it("actor context: a second ask on the same actor recalls facts from the first (FIFO, one runtime)", async () => {
+    // 码字只出现在 ask#1 的 prompt；ask#2 能答出它的唯一途径是持久 child runtime 的会话历史。
+    const script = [
+      "interface Ack { ok: boolean; }",
+      "interface Recall { codeword: string; }",
+      'const keeper = agent("keeper", "You remember facts from this conversation and answer recall questions.");',
+      'await keeper.ask<Ack>("Remember the codeword PLUM-42. Reply with ok=true.");',
+      'const r = await keeper.ask<Recall>("What codeword were you asked to remember earlier in this conversation? Return exactly that codeword.");',
+      "return r;",
+    ].join("\n");
 
-      const { settlement, journal, events } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 150_000,
-      });
+    const { settlement, journal, events } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 150_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
-      expect((settlement.artifact as { codeword: string }).codeword).toContain("PLUM-42");
-      // 同一 actor 站点上的串行两问：单 actor、actorSeq 0 → 1。
-      expect(events.filter((e) => e.type === "actor-created")).toHaveLength(1);
-      const first = journal.getNode("run", "ask#1", 1);
-      const second = journal.getNode("run", "ask#2", 1);
-      expect(first?.actorSiteId).toBe("actor#1");
-      expect(second?.actorSiteId).toBe("actor#1");
-      expect(first?.actorSeq).toBe(0);
-      expect(second?.actorSeq).toBe(1);
-    },
-    170_000,
-  );
+    expect((settlement.artifact as { codeword: string }).codeword).toContain("PLUM-42");
+    // 同一 actor 站点上的串行两问：单 actor、actorSeq 0 → 1。
+    expect(events.filter((e) => e.type === "actor-created")).toHaveLength(1);
+    const first = journal.getNode("run", "ask#1", 1);
+    const second = journal.getNode("run", "ask#2", 1);
+    expect(first?.actorSiteId).toBe("actor#1");
+    expect(second?.actorSiteId).toBe("actor#1");
+    expect(first?.actorSeq).toBe(0);
+    expect(second?.actorSeq).toBe(1);
+  }, 170_000);
 
-  it(
-    "loop: a feedback-driven loop converges — each round threads script feedback into the next ask",
-    async () => {
-      // 秘密数写死在脚本里（7）；反馈（too low/too high）由脚本代码生成并嵌入下一轮 prompt。
-      // 有反馈的猜数对任何可用模型 ≤6 轮必收敛（二分 4 轮），收敛性可押。
-      const script = [
-        "interface Guess { value: number; }",
-        'const guesser = agent("guesser", { system: "You guess integers, using the feedback on your earlier guesses." });',
-        'let feedback = "none yet";',
-        "let found = -1;",
-        "let rounds = 0;",
-        "for (let i = 0; i < 6 && found === -1; i++) {",
-        "  rounds = i + 1;",
-        "  const g = await guesser.ask<Guess>(`Guess the secret integer between 1 and 10. Feedback on your previous guess: ${feedback}.`);",
-        "  if (g.value === 7) { found = g.value; }",
-        "  else { feedback = g.value < 7 ? `${g.value} is too low` : `${g.value} is too high`; }",
-        "}",
-        "return { found, rounds };",
-      ].join("\n");
+  it("loop: a feedback-driven loop converges — each round threads script feedback into the next ask", async () => {
+    // 秘密数写死在脚本里（7）；反馈（too low/too high）由脚本代码生成并嵌入下一轮 prompt。
+    // 有反馈的猜数对任何可用模型 ≤6 轮必收敛（二分 4 轮），收敛性可押。
+    const script = [
+      "interface Guess { value: number; }",
+      'const guesser = agent("guesser", { system: "You guess integers, using the feedback on your earlier guesses." });',
+      'let feedback = "none yet";',
+      "let found = -1;",
+      "let rounds = 0;",
+      "for (let i = 0; i < 6 && found === -1; i++) {",
+      "  rounds = i + 1;",
+      "  const g = await guesser.ask<Guess>(`Guess the secret integer between 1 and 10. Feedback on your previous guess: ${feedback}.`);",
+      "  if (g.value === 7) { found = g.value; }",
+      "  else { feedback = g.value < 7 ? `${g.value} is too low` : `${g.value} is too high`; }",
+      "}",
+      "return { found, rounds };",
+    ].join("\n");
 
-      const { settlement, journal, events } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        timeoutMs: 300_000,
-      });
+    const { settlement, journal, events } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      timeoutMs: 300_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
     const artifact = settlement.artifact as { found: number; rounds: number };
     expect(artifact.found).toBe(7);
@@ -448,32 +451,28 @@ describe.skipIf(!LIVE)("workflow driver — LIVE workflow patterns (env-gated)",
     expect(journal.getNode("run", "ask#1", artifact.rounds)?.actorSeq).toBe(artifact.rounds - 1);
   }, 320_000);
 
-  it(
-    "world reads: file content read by the harness is consumed by a live typed ask",
-    async () => {
-      const script = [
-        "interface Config { port: number; }",
-        'const text = await files.read("config/server.txt");',
-        'const parser = agent("parser", { system: "You extract fields from configuration text." });',
-        "const c = await parser.ask<Config>(`In the following config, what is the port?\\n${text}`);",
-        "return c;",
-      ].join("\n");
+  it("world reads: file content read by the harness is consumed by a live typed ask", async () => {
+    const script = [
+      "interface Config { port: number; }",
+      'const text = await files.read("config/server.txt");',
+      'const parser = agent("parser", { system: "You extract fields from configuration text." });',
+      "const c = await parser.ask<Config>(`In the following config, what is the port?\\n${text}`);",
+      "return c;",
+    ].join("\n");
 
-      const content = "host = example.com\nport = 4823\ntimeout = 30\n";
-      const { settlement, journal } = await runDriverScript(script, {
-        actorScripts: noScripts,
-        runtimeFactory: liveRuntimeFactory(RESOLVED!),
-        files: { read: content },
-        timeoutMs: 130_000,
-      });
+    const content = "host = example.com\nport = 4823\ntimeout = 30\n";
+    const { settlement, journal } = await runDriverScript(script, {
+      actorScripts: noScripts,
+      runtimeFactory: liveRuntimeFactory(RESOLVED!),
+      files: { read: content },
+      timeoutMs: 130_000,
+    });
 
-      expect(settlement.status).toBe("completed");
-      if (settlement.status !== "completed") return;
+    expect(settlement.status).toBe("completed");
+    if (settlement.status !== "completed") return;
 
-      // world-read 照常落 journal；真实模型从被嵌入 prompt 的文件内容里抽出字段。
-      expect(journal.getNode("run", "world-read#1", 1)?.result).toBe(content);
-      expect((settlement.artifact as { port: number }).port).toBe(4823);
-    },
-    150_000,
-  );
+    // world-read 照常落 journal；真实模型从被嵌入 prompt 的文件内容里抽出字段。
+    expect(journal.getNode("run", "world-read#1", 1)?.result).toBe(content);
+    expect((settlement.artifact as { port: number }).port).toBe(4823);
+  }, 150_000);
 });

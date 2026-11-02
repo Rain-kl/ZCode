@@ -22,7 +22,6 @@ import {
   V4GoalCompactRejectedError,
 } from "./goal-compact.js";
 import { resolveSessionFallbackModelSelection } from "../input-admission.js";
-import { preemptActiveTurnAndWait } from "./session-flow.js";
 import { V4CommandNoopError } from "../../v4-gateway.js";
 import { commandExecutionContextOf } from "../executor.js";
 export { V4SessionIdleTimeoutError } from "./session-flow.js";
@@ -161,12 +160,9 @@ async function setFollowupMode(
 }
 
 /**
- * sendQueuedNow：reserve → Core promotion lease → stop barrier → start/promote → remove。
+ * FORK(codex-collaboration): steer 必须保留当前请求；原地转 guide 或 idle-only 提升。
+ * sendQueuedNow：reserve → guide；或 idle-only lease → start/promote → remove。
  * - 必须读取完整 QueueItem；text-only fallback 会丢 sourceCommandId/附件/client/order，禁止使用。
- * - stop 复用 session-flow 的语义：goal-pause barrier（否则 verifier 未收 abort 时
- *   queue 无法 drain）→ abort；只 abort 不 await。
- * - 等 idle 语义：锁由后台 turn 的 finally 释放（见 prompt-turn 文件头 3），
- *   abort 后立刻重发会撞 "A prompt is already running"，必须轮询等锁释放。
  * - start 之前任一步失败都 release reservation，原项原位保留；start 成功后才 remove。
  */
 async function sendQueuedNow(
@@ -217,15 +213,21 @@ async function sendQueuedNow(
       queueItem.kind === "compact"
         ? undefined
         : await mapAttachmentRefsToTurnAttachments(record.app, queueItem.attachments);
-    if (!autoDrainPromotion) acquirePromotionLease("after-current");
-    let preempted = false;
+    // FORK-BEGIN(codex-collaboration)
+    // 原因：旧 stop barrier 会截断父流和前台子代理；已接受输入必须在原 owner 内转 guide。
     if (!autoDrainPromotion) {
-      preempted = await preemptActiveTurnAndWait(host, record, {
-        abortMessage: "v4 sendQueuedNow preempts active turn",
-        goalPausedMutationReason: "send_queued_now_goal_paused",
-        preserveQueueAutoDrainOnCancel: true,
-      });
+      if (
+        queueItem.kind === "sendText" &&
+        !attachments?.length &&
+        !queueItem.highspeed &&
+        (await record.app.guideQueueItem(payload.queueItemId, reservationId, traceOptions))
+      ) {
+        return undefined;
+      }
+      // 非 inline 项只允许空闲提升；busy 时明确拒绝并释放 reservation，原项继续排队。
+      acquirePromotionLease("idle-only");
     }
+    // FORK-END(codex-collaboration)
     if (
       !(await record.app.markQueueItemPromoting(payload.queueItemId, reservationId, traceOptions))
     ) {
@@ -315,8 +317,7 @@ async function sendQueuedNow(
       const started = await startPromptTurn(host, record, {
         content: queueItem.text,
         inputId: queueItem.sourceCommandId,
-        // 手动提升若实际抢占旧执行，同样是 human steer；自动 drain 不产生此标记。
-        ...(preempted && !attachments?.length ? { inputPresentation: "user_steer" as const } : {}),
+        // FORK(codex-collaboration): 此路径只启动空闲独立轮；运行中 guide 已由 Core 接纳。
         intent,
         requireIdle: true,
         toolDisallowlist: queueItem.toolDisallowlist,

@@ -13,7 +13,7 @@ import {
 
 describe("single-field profile refresh through parent tools", () => {
   it.each(["reasoning", "prompt", "tools"] as const)(
-    "updates only %s for completed resume and new spawn without changing model",
+    "keeps accepted %s on followup and applies updates only to new spawn",
     async (field) => {
       const scenario = setup();
       await scenario.turn([spawn("ORIGINAL_INPUT")]);
@@ -34,17 +34,17 @@ describe("single-field profile refresh through parent tools", () => {
       const updated = initial();
       if (field === "reasoning") updated.modelSelection!.options!.reasoningLevel = "high";
       if (field === "prompt") updated.systemPrompt = "PROFILE_CHANGED";
-      if (field === "tools") updated.tools = ["Grep"];
+      if (field === "tools") updated.tools = ["Bash"];
       scenario.update(updated);
       await scenario.turn([send(original.agentId, "RESUME_INPUT")]);
       await scenario.waitCompleted(original.agentId, 2);
       const resumed = scenario.children.at(-1)!;
-      assertProfile(resumed, updated);
+      assertProfile(resumed, initial());
       expect(resumed.sessionId).toBe(original.childSessionId);
       expect(JSON.stringify(resumed.request.messages)).toContain("ORIGINAL_INPUT");
       expect(JSON.stringify(resumed.request.messages)).toContain("RESUME_INPUT");
       if (field === "prompt")
-        expect(JSON.stringify(resumed.request.messages)).not.toContain("PROFILE_ORIGINAL");
+        expect(JSON.stringify(resumed.request.messages)).toContain("PROFILE_ORIGINAL");
       expect(
         (await scenario.store.messages({ sessionID: original.childSessionId })).slice(
           0,
@@ -57,15 +57,8 @@ describe("single-field profile refresh through parent tools", () => {
           type: "runtime/model_selection",
         })
       ).at(-1);
-      expect(selection?.data).toEqual(updated.modelSelection);
-      expect((await timeline()).length - previousTimeline.length).toBe(
-        field === "reasoning" ? 1 : 0,
-      );
-      if (field === "reasoning")
-        expect((await timeline()).at(-1)).toMatchObject({
-          fromModel: { modelId: "fixed", options: { reasoningLevel: "low" } },
-          toModel: { modelId: "fixed", options: { reasoningLevel: "high" } },
-        });
+      expect(selection?.data).toEqual(initial().modelSelection);
+      expect((await timeline()).length - previousTimeline.length).toBe(0);
       await scenario.turn([spawn("NEW_SPAWN")]);
       assertProfile(scenario.children.at(-1)!, updated);
       expect(scenario.children.at(-1)!.sessionId).not.toBe(original.childSessionId);
@@ -75,7 +68,7 @@ describe("single-field profile refresh through parent tools", () => {
     },
   );
 
-  it("keeps running child messages on its launch profile across parent turns, then refreshes terminal resume", async () => {
+  it("keeps running child messages on its launch profile across parent turns, and retains that profile on terminal followup", async () => {
     const blocked = Promise.withResolvers<void>();
     const began = Promise.withResolvers<void>();
     let runningId: SessionId | undefined,
@@ -102,13 +95,13 @@ describe("single-field profile refresh through parent tools", () => {
       return done();
     });
     try {
-      await scenario.turn([spawn("RUNNING_ORIGINAL", true)]);
+      await scenario.turn([spawn("RUNNING_ORIGINAL")]);
       await began.promise;
       const original = (await scenario.spawned())[0]!;
       const updated: AgentProfile = {
         ...initial(),
         systemPrompt: "PROFILE_NEXT_PARENT",
-        tools: ["Grep"],
+        tools: ["Bash"],
         modelSelection: {
           providerId: "custom",
           modelId: "replacement",
@@ -135,7 +128,7 @@ describe("single-field profile refresh through parent tools", () => {
       await scenario.turn([send(original.agentId, "TERMINAL_MESSAGE")]);
       await scenario.waitCompleted(original.agentId, 2);
       const resumed = scenario.children.at(-1)!;
-      assertProfile(resumed, updated);
+      assertProfile(resumed, initial());
       expect(resumed.sessionId).toBe(original.childSessionId);
       expect(JSON.stringify(resumed.request.messages)).toContain("RUNNING_ORIGINAL");
       expect(JSON.stringify(resumed.request.messages)).toContain("TERMINAL_MESSAGE");

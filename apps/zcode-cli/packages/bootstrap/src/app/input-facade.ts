@@ -29,6 +29,8 @@ type InputFacade = Pick<
   | "removeQueueItem"
   | "reserveQueueItem"
   | "markQueueItemPromoting"
+  // FORK(codex-collaboration): facade 只转发给 Core 的同一输入所有者。
+  | "guideQueueItem"
   | "releaseQueueItemReservation"
   | "clearQueueItems"
   | "completeExternalQueueDrain"
@@ -324,6 +326,13 @@ export function createInputFacade(deps: CreateInputFacadeDeps): InputFacade {
       }),
     markQueueItemPromoting: async (pendingInputId, reservationId, options) =>
       deps.runtime.markPendingInputPromoting({
+        pendingInputId,
+        reservationId,
+        traceContext: options?.traceContext ?? deps.traceContext,
+      }),
+    // FORK(codex-collaboration): 不经 sendInput 复制队列项，保留原身份与 reservation。
+    guideQueueItem: async (pendingInputId, reservationId, options) =>
+      deps.runtime.guidePendingInputById({
         pendingInputId,
         reservationId,
         traceContext: options?.traceContext ?? deps.traceContext,

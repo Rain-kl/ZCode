@@ -5,9 +5,10 @@ Use this template when dispatching a code reviewer subagent.
 **Purpose:** Review completed work against requirements and code quality standards before it cascades into more work.
 
 ```
-Task tool (general-purpose):
-  description: "Review code changes"
-  prompt: |
+spawn_agent:
+  task_name: "code_review"
+  fork_turns: "none"
+  message: |
     You are a Senior Code Reviewer with expertise in software architecture,
     design patterns, and best practices. Your job is to review completed work
     against its plan or requirements and identify issues before they cascade.

@@ -1,4 +1,6 @@
 import { isAbsolute } from "node:path";
+// FORK(codex-collaboration): Memory 循环采用公共六工具集合执行隔离。
+import { COLLABORATION_TOOL_NAMES } from "@zcode/contracts";
 
 import type {
   ModelInputMessage,
@@ -133,7 +135,8 @@ export function evaluateMemoryAgentToolPolicy(
   if (!contract) return denyUnavailableMemoryAgentTool(input.toolCall.name);
 
   if (
-    input.toolCall.name === "Agent" ||
+    // FORK(codex-collaboration): Memory 子循环不能取得协作树控制权，禁止完整新六工具集合。
+    COLLABORATION_TOOL_NAMES.some((name) => name === input.toolCall.name) ||
     input.toolCall.name.startsWith("mcp__") ||
     contract.sideEffectScope === "network"
   )

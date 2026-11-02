@@ -523,7 +523,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
           systemPrompt: input.persona.system ?? "You are a workflow actor.",
           mode: "yolo",
           taskType: "workflow_child",
-          subagents: { enabled: false },
+          subagents: {},
           ...workflowActorToolPolicy(input.persona),
           // 模型面照生产工厂（create-app.ts）展开：pin 与本 run 的 subagentModel 都进策略，
           // runtime 实际拿到的 selection 才是 journalActorResolvedModel 落库的那一条。少了这一层，
@@ -7568,7 +7568,7 @@ describe("dynamic workflow run service — 升级问答的端到端闭环", () =
       {
         systemPrompt: "You created this workflow.",
         mode: "yolo",
-        subagents: { enabled: false },
+        subagents: {},
         workingDirectory: TEST_CWD,
       },
       {

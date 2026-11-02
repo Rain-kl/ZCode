@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   HookEventName,
   SessionEventType,
@@ -268,79 +268,25 @@ describe("ToolExecutor hook additional context", () => {
     ]);
   });
 
-  it("matches Task hook matcher aliases without rewriting the Agent hook input", async () => {
-    const fixture = createExecutorFixture("tool-hook-task-agent-alias");
-    fixture.registry.register(createTestToolEntry("Agent", async () => "agent-output"));
-    let observedToolName: string | undefined;
-    const hookRunner = createInMemoryHookRunner({
-      hooks: [
-        {
-          event: HookEventName.PreToolUse,
-          matcher: "Task",
-          callback: async (input) => {
-            observedToolName = "toolName" in input ? input.toolName : undefined;
-            return {
-              hookSpecificOutput: {
-                additionalContext: "task matcher matched agent",
-                hookEventName: input.hookEventName,
-              },
-            };
-          },
-        },
-      ],
-    });
-    const executor = fixture.createExecutor(hookRunner);
-
-    const result = await executor.execute(
-      {
-        id: createToolCallId("agent-task-matcher"),
-        input: {},
-        name: "Agent",
-      },
-      { traceContext: fixture.traceContext },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.modelContent).toContain("task matcher matched agent");
-    expect(observedToolName).toBe("Agent");
-  });
-
-  it("matches Agent hook matcher aliases without rewriting the Task hook input", async () => {
-    const fixture = createExecutorFixture("tool-hook-agent-task-alias");
-    fixture.registry.register(createTestToolEntry("Task", async () => "task-output"));
-    let observedToolName: string | undefined;
-    const hookRunner = createInMemoryHookRunner({
-      hooks: [
-        {
-          event: HookEventName.PreToolUse,
-          matcher: "Agent",
-          callback: async (input) => {
-            observedToolName = "toolName" in input ? input.toolName : undefined;
-            return {
-              hookSpecificOutput: {
-                additionalContext: "agent matcher matched task",
-                hookEventName: input.hookEventName,
-              },
-            };
-          },
-        },
-      ],
-    });
-    const executor = fixture.createExecutor(hookRunner);
-
-    const result = await executor.execute(
-      {
-        id: createToolCallId("task-agent-matcher"),
-        input: {},
-        name: "Task",
-      },
-      { traceContext: fixture.traceContext },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.modelContent).toContain("agent matcher matched task");
-    expect(observedToolName).toBe("Task");
-  });
+  it.each(["Agent", "Task"])(
+    "does not treat retired %s hook matchers as collaboration aliases",
+    async (matcher) => {
+      const fixture = createExecutorFixture("tool-hook-no-legacy-alias");
+      fixture.registry.register(createTestToolEntry("spawn_agent", async () => "accepted"));
+      const callback = vi.fn(async () => undefined);
+      const hooks = createInMemoryHookRunner({
+        hooks: [{ event: HookEventName.PreToolUse, matcher, callback }],
+      });
+      const result = await fixture
+        .createExecutor(hooks)
+        .execute(
+          { id: createToolCallId("no-legacy-hook"), name: "spawn_agent", input: {} },
+          { traceContext: fixture.traceContext },
+        );
+      expect(result.success).toBe(true);
+      expect(callback).not.toHaveBeenCalled();
+    },
+  );
 });
 
 function createExecutorFixture(sessionName: string) {

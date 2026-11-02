@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createModelRecoveryBudget } from "../src/index.js";
 import { ModelRetryBudget, modelNetworkStatusEventJsonSchema } from "../src/model/index.js";
 import {
   getCurrentModelInvocationContext,
@@ -43,3 +44,28 @@ describe("ModelRetryBudget", () => {
     expect(getCurrentModelInvocationContext()).toBeUndefined();
   });
 });
+
+// FORK-BEGIN(codex-collaboration)
+it("shares a single bounded physical request counter across invocations", () => {
+  const budget = createModelRecoveryBudget(100);
+  expect(budget.maxAttempts).toBe(21);
+  expect(Array.from({ length: 21 }, () => budget.claimAttempt())).toEqual(
+    Array.from({ length: 21 }, (_, index) => index + 1),
+  );
+  expect(budget.claimAttempt()).toBeUndefined();
+  expect(budget.attempts).toBe(21);
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it("allows adapter configuration to tighten the shared chain limit", () => {
+  const budget = createModelRecoveryBudget();
+  expect(budget).toHaveProperty("constrainMaxAttempts");
+  budget.claimAttempt();
+  budget.constrainMaxAttempts(2);
+  budget.constrainMaxAttempts(100);
+  expect(budget.maxAttempts).toBe(2);
+  expect(budget.claimAttempt()).toBe(2);
+  expect(budget.claimAttempt()).toBeUndefined();
+});
+// FORK-END(codex-collaboration)

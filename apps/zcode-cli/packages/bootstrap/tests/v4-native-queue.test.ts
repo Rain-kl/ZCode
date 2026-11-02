@@ -1,6 +1,6 @@
 // L2：v4 原生 queue 命令组（deleteQueueItem / editQueueItem / reorderQueueItem /
 // setAutoDrain / setFollowupMode / sendQueuedNow）——验证命令直驱 core app 层 API，
-// sendQueuedNow 的「reserve → stop barrier → start/promote → remove」编排语义保真。
+// FORK(codex-collaboration): sendQueuedNow 保留原输入身份，转 guide 或 idle-only 提升。
 // fake 风格参照 tests/v4-native-commands.test.ts（fake host/app，不经旧协议代码）。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionEventType, type SessionEvent } from "@zcode/contracts";
@@ -10,7 +10,7 @@ import {
   V4QueueItemTextUnavailableError,
   V4QueueItemReservedError,
   V4QueueItemNotEditableError,
-  V4SessionIdleTimeoutError,
+  V4QueuePromotionLeaseUnavailableError,
 } from "../src/zcode-protocol-v4/commands/handlers/queue.js";
 import { V4CommandNoopError } from "../src/zcode-protocol-v4/index.js";
 import { shouldAutoDrainV4QueueHead } from "../src/zcode-protocol-v4/queue-auto-drain.js";
@@ -51,6 +51,8 @@ function makeApp(overrides: Record<string, unknown> = {}) {
     updateTargetStatus: vi.fn().mockResolvedValue(null),
     reserveQueueItem: vi.fn().mockResolvedValue(true),
     markQueueItemPromoting: vi.fn().mockResolvedValue(true),
+    // FORK(codex-collaboration): 普通队列项在 Core 内转 guide，不能靠停止当前轮提升。
+    guideQueueItem: vi.fn().mockResolvedValue(false),
     releaseQueueItemReservation: vi.fn().mockResolvedValue(true),
     removeQueueItem: vi.fn().mockResolvedValue(true),
     editQueueItem: vi.fn().mockResolvedValue(true),
@@ -77,6 +79,31 @@ function makeApp(overrides: Record<string, unknown> = {}) {
     ...appOverrides,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+describe("排队消息 steer 安全边界", () => {
+  it("同一 reservation 原地转 guide，保留原项等待真正 drain", async () => {
+    const controller = new AbortController();
+    const guideQueueItem = vi.fn().mockResolvedValue(true);
+    const app = makeApp({ guideQueueItem });
+    const record = makeRecord({ app, activeAbortController: controller });
+    controller.signal.addEventListener("abort", () => {
+      record.activeAbortController = undefined;
+    });
+    await new V4CommandExecutor(
+      makeHost(record, {
+        getQueueItem: () => queueItem({ attachments: [] }),
+      }),
+    ).execute(envelope("sendQueuedNow", { queueItemId: "q-1" }));
+    expect(guideQueueItem).toHaveBeenCalledWith("q-1", "cmd-q1", expect.any(Object));
+    expect(controller.signal.aborted).toBe(false);
+    expect(app.runtime.stopActiveForegroundExecution).not.toHaveBeenCalled();
+    expect(app.sendInput).not.toHaveBeenCalled();
+    expect(app.removeQueueItem).not.toHaveBeenCalled();
+    expect(app.releaseQueueItemReservation).toHaveBeenCalledOnce();
+  });
+});
+// FORK-END(codex-collaboration)
 
 /**
  * 加速轮的协议原形：Selection 指向隐藏的加速卡内建 Provider（端点/能力来自 Provider Config），
@@ -731,56 +758,15 @@ describe("v4 原生 sendQueuedNow", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  it("运行中会话：stop（只 abort 不 await）→ 轮询等 finally 释放锁 → 重发", async () => {
-    const calls: string[] = [];
-    const app = makeApp({
-      sendInput: vi.fn().mockImplementation(async (_input, options) => {
-        calls.push("resend");
-        options?.onTurnStartedObserved?.({
-          id: "event-queue-resend-turn-started",
-          type: SessionEventType.TurnStarted,
-          payload: { messageId: "msg-event-queue-resend-turn-started" },
-        });
-        return {};
-      }),
-    });
-    const controller = new AbortController();
-    // 模拟后台 turn 的 finally：收到 abort 后延迟 60ms（>1 个轮询间隔）才释放锁。
-    controller.signal.addEventListener("abort", () => {
-      calls.push("abort");
-      setTimeout(() => {
-        calls.push("release");
-        record.activeAbortController = undefined;
-      }, 60);
-    });
-    const record = makeRecord({ app, activeAbortController: controller });
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-1" }),
-    );
-    // 关键顺序：abort → 锁释放 → 才重发（否则撞 "A prompt is already running"）。
-    expect(calls).toEqual(["abort", "release", "resend"]);
-    expect(app.sendInput).toHaveBeenCalledWith(
-      expect.objectContaining({ text: "排队原文" }),
-      expect.objectContaining({ inputId: "source-command-q1" }),
-    );
-  });
-
+  // FORK-BEGIN(codex-collaboration)
   it.each([
-    { stopKind: "stopped", withAttachment: false, autoDrain: false, expected: "user_steer" },
-    { stopKind: "idle", withAttachment: false, autoDrain: false, expected: undefined },
-    { stopKind: "stopped", withAttachment: true, autoDrain: false, expected: undefined },
-    { stopKind: "stopped", withAttachment: false, autoDrain: true, expected: undefined },
+    { withAttachment: false, autoDrain: false },
+    { withAttachment: true, autoDrain: false },
+    { withAttachment: false, autoDrain: true },
   ])(
-    "队列立即发送 human 提示：$stopKind / attachment=$withAttachment / auto=$autoDrain",
-    async ({ stopKind, withAttachment, autoDrain, expected }) => {
-      const stopActiveForegroundExecution = vi
-        .fn()
-        .mockReturnValue(
-          stopKind === "stopped"
-            ? { kind: "stopped", foregroundExecutionId: "foreground-1" }
-            : { kind: "idle" },
-        );
-      const app = makeApp({ runtime: { stopActiveForegroundExecution } });
+    "空闲提升保持独立轮语义 attachment=$withAttachment / auto=$autoDrain",
+    async ({ withAttachment, autoDrain }) => {
+      const app = makeApp();
       const item = queueItem(withAttachment ? {} : { attachments: [] });
       await new V4CommandExecutor(
         makeHost(makeRecord({ app }), { getQueueItem: () => item }),
@@ -790,9 +776,8 @@ describe("v4 原生 sendQueuedNow", () => {
         autoDrain ? { autoDrainPromotion: true } : undefined,
       );
       expect(app.sendInput).toHaveBeenCalledTimes(1);
-      const [input, options] = app.sendInput.mock.calls[0]!;
-      expect(input.text).toBe(item.text);
-      expect(options.inputPresentation).toBe(expected);
+      const [, options] = app.sendInput.mock.calls[0]!;
+      expect(options.inputPresentation).toBeUndefined();
       expect(options).toMatchObject({
         inputId: item.sourceCommandId,
         requireIdle: true,
@@ -802,7 +787,7 @@ describe("v4 原生 sendQueuedNow", () => {
           requestedDelivery: "queue",
         },
       });
-      expect(stopActiveForegroundExecution).toHaveBeenCalledTimes(autoDrain ? 0 : 1);
+      expect(app.runtime.stopActiveForegroundExecution).not.toHaveBeenCalled();
       expect(app.removeQueueItem).toHaveBeenCalledWith(
         "q-1",
         expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
@@ -810,260 +795,87 @@ describe("v4 原生 sendQueuedNow", () => {
     },
   );
 
-  it("M07a：运行中立即发送把内部抢占标记为保留 queue auto-drain", async () => {
-    const calls: string[] = [];
-    let record!: V4SessionRecordView;
-    const stopActiveForegroundExecution = vi.fn().mockImplementation(() => {
-      calls.push("runtime-stop");
-      setTimeout(() => {
-        calls.push("release");
-        record.activeAbortController = undefined;
-      }, 20);
-      return { kind: "stopped", foregroundExecutionId: "foreground-1" };
-    });
-    const app = makeApp({
-      runtime: { stopActiveForegroundExecution },
-      sendInput: vi.fn().mockImplementation(async (_input, options) => {
-        calls.push("resend");
-        options?.onTurnStartedObserved?.({
-          id: "event-queue-preserve-turn-started",
-          type: SessionEventType.TurnStarted,
-          payload: { messageId: "msg-event-queue-preserve-turn-started" },
-        });
-        return {};
-      }),
-    });
-    const controller = new AbortController();
-    record = makeRecord({ app, activeAbortController: controller });
-
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-1" }),
-    );
-
-    expect(stopActiveForegroundExecution).toHaveBeenCalledWith({
-      preserveQueueAutoDrainOnCancel: true,
-      reason: "v4 sendQueuedNow preempts active turn",
-    });
-    expect(controller.signal.aborted).toBe(false);
-    expect(calls).toEqual(["runtime-stop", "release", "resend"]);
-  });
-
-  it("BG42：notification 只占用 Core foreground 时仍先 stop 再提升 queue item", async () => {
-    const calls: string[] = [];
-    let activeForegroundExecutionId: string | undefined = "notification-foreground-1";
-    const stopActiveForegroundExecution = vi.fn().mockImplementation(() => {
-      calls.push("runtime-stop");
-      setTimeout(() => {
-        calls.push("runtime-release");
-        activeForegroundExecutionId = undefined;
-      }, 60);
-      return { kind: "stopped", foregroundExecutionId: "notification-foreground-1" };
-    });
-    const app = makeApp({
-      runtime: {
-        getActiveForegroundExecutionId: vi.fn(() => activeForegroundExecutionId),
-        stopActiveForegroundExecution,
-      },
-      sendInput: vi.fn().mockImplementation(async (_input, options) => {
-        // Bug 原因：model-only notification turn 只登记在 Core foreground authority，
-        // Bootstrap 没有 activeAbortController。真实 input facade 在旧 foreground 未停止时
-        // 会把同一 queue item 当 steer 接收，因而不会提交 TurnStarted authority。
-        if (activeForegroundExecutionId !== undefined) {
-          calls.push("steer-old-notification");
-          return {};
-        }
-        calls.push("resend");
-        options?.onTurnStartedObserved?.({
-          id: "event-notification-send-now-turn-started",
-          type: SessionEventType.TurnStarted,
-          payload: { messageId: "msg-event-notification-send-now-turn-started" },
-        });
-        return {};
-      }),
-    });
-    const record = makeRecord({ app });
-
-    await new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-1" }),
-    );
-
-    expect(record.activeAbortController).toBeUndefined();
-    expect(stopActiveForegroundExecution).toHaveBeenCalledWith({
-      preserveQueueAutoDrainOnCancel: true,
-      reason: "v4 sendQueuedNow preempts active turn",
-    });
-    expect(calls).toEqual(["runtime-stop", "runtime-release", "resend"]);
-    expect(app.removeQueueItem).toHaveBeenCalledWith(
-      "q-1",
-      expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
-    );
-  });
-
-  it("BG42：Core foreground stop 后未释放时超时，原 queue item 保持可重试", async () => {
-    vi.useFakeTimers();
-    const stopActiveForegroundExecution = vi.fn().mockReturnValue({
-      kind: "stopped",
-      foregroundExecutionId: "notification-foreground-stuck",
-    });
-    const app = makeApp({
-      runtime: {
-        getActiveForegroundExecutionId: vi.fn(() => "notification-foreground-stuck"),
-        stopActiveForegroundExecution,
-      },
-    });
-    const record = makeRecord({ app });
-    const pending = new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-1" }),
-    );
-    const assertion = expect(pending).rejects.toBeInstanceOf(V4SessionIdleTimeoutError);
-
-    await vi.advanceTimersByTimeAsync(5_100);
-    await assertion;
-
-    expect(app.sendInput).not.toHaveBeenCalled();
-    expect(app.removeQueueItem).not.toHaveBeenCalled();
-    expect(app.releaseQueueItemReservation).toHaveBeenCalledWith(
-      "q-1",
-      "cmd-q1",
-      expect.any(Object),
-    );
-  });
-
-  it("BG44：notification A 释放后的 promotion 空窗不得让 notification B 抢入", async () => {
-    const calls: string[] = [];
-    let activeForegroundExecutionId: string | undefined = "notification-a";
-    let foregroundPromotionLeaseId: string | undefined;
-    let foregroundPromotionInputId: string | undefined;
-    const acquireForegroundPromotionLease = vi
-      .fn()
-      .mockImplementation(({ leaseId, promotedInputId }) => {
-        if (foregroundPromotionLeaseId && foregroundPromotionLeaseId !== leaseId) {
-          return { kind: "conflict", leaseId: foregroundPromotionLeaseId };
-        }
-        foregroundPromotionLeaseId = leaseId;
-        foregroundPromotionInputId = promotedInputId;
-        calls.push("acquire-promotion-lease");
-        return { kind: "acquired", leaseId };
+  it.each(["attachment", "compact", "goal", "notification", "highspeed"])(
+    "busy 且无法 inline (%s)：不停止、不重发，原项可重试",
+    async (kind) => {
+      const item = queueItem({
+        ...(kind === "compact" ? { kind: "compact", text: "/compact" } : {}),
+        ...(kind === "goal" ? { kind: "sendGoalCommand", text: "/goal objective" } : {}),
+        ...(kind === "notification" || kind === "highspeed" ? { attachments: [] } : {}),
+        ...(kind === "highspeed"
+          ? { highspeed: { cardId: "card", taskId: "task", expiresAt: Date.now() + 60000 } }
+          : {}),
       });
-    const releaseForegroundPromotionLease = vi.fn().mockImplementation((leaseId) => {
-      if (foregroundPromotionLeaseId === leaseId) foregroundPromotionLeaseId = undefined;
-      foregroundPromotionInputId = undefined;
-    });
-    const stopActiveForegroundExecution = vi.fn().mockImplementation(() => {
-      calls.push("stop-notification-a");
-      activeForegroundExecutionId = undefined;
-      return { kind: "stopped", foregroundExecutionId: "notification-a" };
-    });
-    const sendInput = vi.fn().mockImplementation(async (_input, options) => {
-      if (options?.inputId === foregroundPromotionInputId) {
-        foregroundPromotionLeaseId = undefined;
-        foregroundPromotionInputId = undefined;
-      }
-      if (activeForegroundExecutionId !== undefined) {
-        calls.push("promoted-prompt-rejected");
-        throw new Error("A runtime foreground command is already active");
-      }
-      calls.push("promoted-prompt-started");
-      options?.onTurnStartedObserved?.({
-        id: "event-bg44-promoted-turn-started",
-        type: SessionEventType.TurnStarted,
-        payload: { messageId: "msg-event-bg44-promoted-turn-started" },
+      const app = makeApp({
+        runtime: {
+          acquireForegroundPromotionLease: vi.fn().mockReturnValue({ kind: "busy" }),
+          getActiveForegroundExecutionId: vi.fn(() => "active-foreground"),
+        },
       });
-      return {};
+      const controller = new AbortController();
+      const record = makeRecord({ app, activeAbortController: controller });
+      await expect(
+        new V4CommandExecutor(makeHost(record, { getQueueItem: () => item })).execute(
+          envelope("sendQueuedNow", { queueItemId: "q-1" }),
+        ),
+      ).rejects.toBeInstanceOf(V4QueuePromotionLeaseUnavailableError);
+      expect(controller.signal.aborted).toBe(false);
+      expect(app.runtime.stopActiveForegroundExecution).not.toHaveBeenCalled();
+      expect(app.readTarget).not.toHaveBeenCalled();
+      expect(app.updateTargetStatus).not.toHaveBeenCalled();
+      expect(app.sendInput).not.toHaveBeenCalled();
+      expect(app.removeQueueItem).not.toHaveBeenCalled();
+      expect(app.releaseQueueItemReservation).toHaveBeenCalledWith(
+        "q-1",
+        "cmd-q1",
+        expect.any(Object),
+      );
+    },
+  );
+
+  it("转 guide 不改变 active goal 或 queue auto-drain", async () => {
+    const app = makeApp({ guideQueueItem: vi.fn().mockResolvedValue(true) });
+    const host = makeHost(makeRecord({ app }), {
+      getQueueItem: () => queueItem({ attachments: [] }),
     });
+    await new V4CommandExecutor(host).execute(envelope("sendQueuedNow", { queueItemId: "q-1" }));
+    expect(app.runtime.acquireForegroundPromotionLease).not.toHaveBeenCalled();
+    expect(app.runtime.stopActiveForegroundExecution).not.toHaveBeenCalled();
+    expect(app.readTarget).not.toHaveBeenCalled();
+    expect(app.updateTargetStatus).not.toHaveBeenCalled();
+    expect(app.setQueueAutoDrain).not.toHaveBeenCalled();
+    expect(host.legacyMutations).not.toContain("send_queued_now_goal_paused");
+  });
+
+  it("BG44：idle lease 覆盖提升交接，notification 不能趁空窗进入", async () => {
+    let lease: string | undefined;
+    const calls: string[] = [];
     const app = makeApp({
       runtime: {
-        acquireForegroundPromotionLease,
-        getActiveForegroundExecutionId: vi.fn(() => activeForegroundExecutionId),
-        releaseForegroundPromotionLease,
-        stopActiveForegroundExecution,
+        acquireForegroundPromotionLease: vi.fn(({ leaseId, mode }) => {
+          expect(mode).toBe("idle-only");
+          lease = leaseId;
+          return { kind: "acquired", leaseId };
+        }),
+        releaseForegroundPromotionLease: vi.fn(() => {
+          lease = undefined;
+        }),
       },
-      markQueueItemPromoting: vi.fn().mockImplementation(async () => {
-        calls.push("queue-item-promoting");
-        // 复现 runtime command drain 在 stop/wait 与 startPromptTurn 之间取得调度权。
-        queueMicrotask(() => {
-          if (
-            activeForegroundExecutionId === undefined &&
-            foregroundPromotionLeaseId === undefined
-          ) {
-            activeForegroundExecutionId = "notification-b";
-            calls.push("notification-b-started");
-          }
-        });
+      markQueueItemPromoting: vi.fn(async () => {
+        await Promise.resolve();
+        calls.push(lease ? "notification-blocked" : "notification-started");
         return true;
       }),
-      sendInput,
     });
-
     await new V4CommandExecutor(makeHost(makeRecord({ app }))).execute(
       envelope("sendQueuedNow", { queueItemId: "q-1" }),
     );
-
-    expect(calls).toEqual([
-      "acquire-promotion-lease",
-      "stop-notification-a",
-      "queue-item-promoting",
-      "promoted-prompt-started",
-    ]);
-    expect(acquireForegroundPromotionLease).toHaveBeenCalledWith({
-      leaseId: "queue-promotion:cmd-q1",
-      mode: "after-current",
-      promotedInputId: "source-command-q1",
-    });
+    expect(calls).toEqual(["notification-blocked"]);
+    expect(app.runtime.stopActiveForegroundExecution).not.toHaveBeenCalled();
+    expect(app.sendInput).toHaveBeenCalledOnce();
     expect(app.removeQueueItem).toHaveBeenCalledOnce();
   });
-
-  it("运行中 + active goal：先 pause goal 再 abort（barrier 顺序）+ legacy 广播", async () => {
-    const calls: string[] = [];
-    const app = makeApp({
-      readTarget: vi.fn().mockResolvedValue({ targetID: "g1", status: "active" }),
-      updateTargetStatus: vi.fn().mockImplementation(async () => {
-        calls.push("pause");
-        return { targetID: "g1", status: "paused" };
-      }),
-    });
-    const controller = new AbortController();
-    controller.signal.addEventListener("abort", () => {
-      calls.push("abort");
-      record.activeAbortController = undefined;
-    });
-    const record = makeRecord({ app, activeAbortController: controller });
-    const host = makeHost(record);
-    await new V4CommandExecutor(host).execute(envelope("sendQueuedNow", { queueItemId: "q-1" }));
-    expect(calls).toEqual(["pause", "abort"]);
-    expect(host.legacyMutations).toContain("send_queued_now_goal_paused");
-  });
-
-  it("5s 超时：锁始终不释放 → V4SessionIdleTimeoutError，且不重发", async () => {
-    vi.useFakeTimers();
-    const stopActiveForegroundExecution = vi.fn().mockReturnValue({
-      kind: "stopped",
-      foregroundExecutionId: "foreground-timeout",
-    });
-    const app = makeApp({
-      runtime: { stopActiveForegroundExecution },
-    });
-    const controller = new AbortController();
-    // 不挂 abort 监听：模拟 turn 卡死，finally 永不释放锁。
-    const record = makeRecord({ app, activeAbortController: controller });
-    const pending = new V4CommandExecutor(makeHost(record)).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-1" }),
-    );
-    const assertion = expect(pending).rejects.toBeInstanceOf(V4SessionIdleTimeoutError);
-    await vi.advanceTimersByTimeAsync(5_100);
-    await assertion;
-    expect(app.sendInput).not.toHaveBeenCalled();
-    expect(app.removeQueueItem).not.toHaveBeenCalled();
-    expect(app.releaseQueueItemReservation).toHaveBeenCalledWith(
-      "q-1",
-      "cmd-q1",
-      expect.any(Object),
-    );
-    expect(stopActiveForegroundExecution).toHaveBeenCalledWith({
-      preserveQueueAutoDrainOnCancel: true,
-      reason: "v4 sendQueuedNow preempts active turn",
-    });
-  });
+  // FORK-END(codex-collaboration)
 
   it("原文查不到（已 drain/删除或 id 无效）：拒绝且绝不盲删", async () => {
     const app = makeApp();

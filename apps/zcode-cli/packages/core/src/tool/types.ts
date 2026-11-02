@@ -6,9 +6,10 @@ import type { McpToolUiDescriptor } from "@zcode/shared/mcp-apps";
 
 import type {
   CollaborationMode,
+  CollaborationToolPort,
+  CollaborationIdentityMetadata,
   AutomationPort,
   BrowserControlPort,
-  CoordinatorResponsePort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
   EmbeddedSearchBackend,
@@ -39,8 +40,7 @@ import type {
   SessionStorePort,
   SkillPort,
   SkillTelemetryMetadata,
-  SubagentPort,
-  SubagentRunOptions,
+  ChildModelExecutionOverride,
   ToolArtifactStorePort,
   ToolCancellationPolicy,
   ToolContractDeclaration,
@@ -138,6 +138,9 @@ export interface BackgroundTaskControlPort {
 }
 
 export interface ToolExecutionContext {
+  recordCollaborationIdentity?: (identity: CollaborationIdentityMetadata) => void;
+  // FORK(codex-collaboration): 调用者身份绑定在运行时端口，不能接受模型伪造 caller。
+  collaborationPort?: CollaborationToolPort;
   toolSearch?: ToolSearchExecutionContext;
   toolCallId: string;
   /**
@@ -166,10 +169,8 @@ export interface ToolExecutionContext {
   pdfDocumentPort?: PdfDocumentPort;
   model?: Model;
   /** Core Server 对前台 child 的 Selection override。 */
-  subagentModelOverride?: SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: ChildModelExecutionOverride;
   skillPort?: SkillPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果并等待引擎裁决的端口；仅在 workflow actor 会话注入。 */
   workflowSubmitPort?: WorkflowSubmitPort;
   /** 工作流 actor 升级阻塞问题并等待主代理作答的端口；仅在 workflow actor 会话注入。 */
@@ -369,6 +370,8 @@ export interface ToolEntry extends ToolContractDeclaration {
     context: ToolInputResolutionContext,
   ) => ToolInputAdjustmentResult;
   formatModelContent?: (output: unknown) => ModelMessageContent;
+  // FORK(codex-collaboration): Codex 消息成功必须空文本，不能被通用空输出占位改写。
+  preserveEmptyModelContent?: boolean;
   formatPersistedModelContent?: (
     input: ToolPersistedModelContentInput,
   ) => ModelMessageContent | undefined;
@@ -450,6 +453,7 @@ export interface ToolExecutionModelContext {
 // -----------------------------------------------
 
 export interface ToolExecutionResult {
+  collaboration?: CollaborationIdentityMetadata;
   toolCallId: string;
   toolName: string;
   success: boolean;

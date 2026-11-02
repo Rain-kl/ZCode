@@ -22,7 +22,12 @@ vi.mock("@arms/rum-electron", () => ({
   },
 }));
 
+const localPolicy = vi.hoisted(() => ({ enabled: false }));
+
 vi.mock("@zcode/shared", () => ({
+  get FORK_LOCAL_MODE() {
+    return localPolicy.enabled;
+  },
   mapZCodeEnvToArmsRumEnv: vi.fn(() => "local"),
 }));
 
@@ -1197,3 +1202,28 @@ describe("desktopStabilityTelemetry", () => {
     });
   });
 });
+
+// FORK-BEGIN(local-mode)
+describe("local-mode startup SDK config", () => {
+  for (const enabled of [true, false]) {
+    it(`local-mode=${enabled} uses the same ARMS initialization policy`, async () => {
+      localPolicy.enabled = enabled;
+      const arms = await import("@arms/rum-electron");
+      const { configureDesktopStabilityTelemetry } =
+        await import("../src/main/desktopStabilityTelemetry.js");
+      vi.mocked(arms.default.setConfig).mockClear();
+      try {
+        configureDesktopStabilityTelemetry({
+          deviceMid: "local-device",
+          platform: "darwin",
+          appVersion: "test",
+          armsEnv: "local",
+        });
+        expect(arms.default.setConfig).toHaveBeenCalledTimes(enabled ? 0 : 1);
+      } finally {
+        localPolicy.enabled = false;
+      }
+    });
+  }
+});
+// FORK-END(local-mode)

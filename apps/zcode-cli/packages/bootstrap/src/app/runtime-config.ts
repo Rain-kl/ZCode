@@ -41,7 +41,6 @@ export function resolveAppRuntimeConfig(input: {
   pluginHooks?: Partial<Record<HookEventName, HookMatcherConfig[]>>;
   pluginMcpServers?: Record<string, McpServerConfig>;
   pluginRuntimeFeatures?: AgentRuntimeConfig["runtimeFeatures"];
-  subagentOutputRootDir: string;
   subagentProfiles?: readonly AgentProfile[];
   storageRoot?: string;
   workingDirectory: string;
@@ -55,7 +54,6 @@ export function resolveAppRuntimeConfig(input: {
     builtInMcpServers,
     pluginMcpServers,
     pluginRuntimeFeatures,
-    subagentOutputRootDir,
     subagentProfiles = [],
     workingDirectory,
     workspaceIdentity,
@@ -167,9 +165,9 @@ export function resolveAppRuntimeConfig(input: {
       input.pluginHooks,
     ),
     subagents: {
+      // FORK(codex-collaboration): 先合并文件配置，再由显式 runtime patch 覆盖。
+      ...configResult.config.subagents,
       ...options.runtimeConfig?.subagents,
-      enabled: options.runtimeConfig?.subagents?.enabled ?? configResult.config.features.subagent,
-      outputRootDir: options.runtimeConfig?.subagents?.outputRootDir ?? subagentOutputRootDir,
       builtInModelSelectionOverrides: {
         ...(input.builtInSubagentModelSelectionOverrides ?? {}),
         ...runtimeBuiltInModelSelectionOverrides,

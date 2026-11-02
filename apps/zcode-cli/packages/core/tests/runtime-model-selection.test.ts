@@ -426,20 +426,22 @@ describe("AgentRuntime model selection event", () => {
                 toolCalls: [
                   {
                     id: "call_explore",
-                    name: "Agent",
+                    name: "spawn_agent",
                     input: {
-                      description: "Explore source",
-                      prompt: "Explore the source.",
-                      subagent_type: "Explore",
+                      task_name: "call_explore",
+                      fork_turns: "none",
+                      message: "Explore the source.",
+                      agent_type: "Explore",
                     },
                   },
                   {
                     id: "call_code_search",
-                    name: "Agent",
+                    name: "spawn_agent",
                     input: {
-                      description: "Search source",
-                      prompt: "Search the source.",
-                      subagent_type: "Code Search",
+                      task_name: "call_code_search",
+                      fork_turns: "none",
+                      message: "Search the source.",
+                      agent_type: "Code Search",
                     },
                   },
                 ],
@@ -454,11 +456,12 @@ describe("AgentRuntime model selection event", () => {
                 toolCalls: [
                   {
                     id: "call_code_search_ordinary",
-                    name: "Agent",
+                    name: "spawn_agent",
                     input: {
-                      description: "Search source with profile settings",
-                      prompt: "Search the source with the configured profile.",
-                      subagent_type: "Code Search",
+                      task_name: "call_code_search_ordinary",
+                      fork_turns: "none",
+                      message: "Search the source with the configured profile.",
+                      agent_type: "Code Search",
                     },
                   },
                 ],
@@ -495,35 +498,15 @@ describe("AgentRuntime model selection event", () => {
     });
     await runtime.executeTurn("ordinary prompt");
 
-    expect(childExecutions).toHaveLength(3);
-    expect(childExecutions.slice(0, 2).map((execution) => execution.model)).toEqual([
-      expect.objectContaining({
-        providerId: "account:zai-offpeak-idle-plan",
-        modelId: "GLM-5.2",
-      }),
-      expect.objectContaining({
-        providerId: "account:zai-offpeak-idle-plan",
-        modelId: "GLM-5.2",
-      }),
-    ]);
-    expect(
-      childExecutions
-        .slice(0, 2)
-        .map(
-          (execution) =>
-            (execution.model as { options?: { reasoningLevel?: string } }).options?.reasoningLevel,
-        ),
-    ).toEqual(["high", "high"]);
-    expect(childExecutions.slice(0, 2).map((execution) => execution.maxOutputTokens)).toEqual([
-      16_000, 16_000,
-    ]);
-    expect(childExecutions[2]?.model).toEqual(
+    // Host 禁止后台执行时，新六工具不能恢复前台 runner 或绕过一次性身份约束。
+    await vi.waitFor(() => expect(childExecutions).toHaveLength(1));
+    expect(childExecutions[0]?.model).toEqual(
       expect.objectContaining({
         providerId: "custom-provider",
         modelId: "custom-code-model",
       }),
     );
-    expect(childExecutions[2]?.model).toEqual(
+    expect(childExecutions[0]?.model).toEqual(
       expect.objectContaining({ options: expect.objectContaining({ reasoningLevel: "high" }) }),
     );
     expect(mainRequests).toHaveLength(4);
@@ -1376,6 +1359,8 @@ describe("AgentRuntime model selection event", () => {
         modelFactory: createTestModelFactory({
           async generateText(_request, observation) {
             const providerId = String(observation.model.providerId);
+            // FORK(codex-collaboration): 假 adapter 与真实请求一样领取全链物理预算。
+            observation.invocationContext?.modelRecoveryBudget?.claimAttempt();
             providers.push(providerId);
             throw Object.assign(new Error("Provider returned a server error."), {
               code: "model_request_failed",
@@ -1414,7 +1399,10 @@ describe("AgentRuntime model selection event", () => {
     ).rejects.toThrow();
 
     // 加速模型失败一次即退回；退回后的会话模型再失败按真实错误整轮失败，不再二次降级。
-    expect(providers).toEqual([highspeedProviderId, "user-provider"]);
+    expect(providers).toEqual([
+      highspeedProviderId,
+      ...Array.from({ length: 20 }, () => "user-provider"),
+    ]);
     const events = await eventStore.getEvents(sessionId);
     const fallbackEvents = events.filter(
       (event) => event.type === SessionEventType.TurnExecutionModelFallback,

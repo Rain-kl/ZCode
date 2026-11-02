@@ -355,7 +355,12 @@ describe("AiSdkModelAdapter", () => {
         return {
           fullStream: stream([
             { type: "start" },
-            { type: "finish", finishReason: "other", totalUsage: usage(0, 0) },
+            {
+              type: "finish",
+              finishReason: "other",
+              rawFinishReason: "provider_custom_finish",
+              totalUsage: usage(0, 0),
+            },
           ]),
         } as never;
       },
@@ -390,7 +395,12 @@ describe("AiSdkModelAdapter", () => {
         return {
           fullStream: stream([
             { type: "start" },
-            { type: "finish", finishReason: "other", totalUsage: usage(0, 0) },
+            {
+              type: "finish",
+              finishReason: "other",
+              rawFinishReason: "provider_custom_finish",
+              totalUsage: usage(0, 0),
+            },
           ]),
         } as never;
       },
@@ -1248,6 +1258,7 @@ describe("AiSdkModelAdapter", () => {
       debugDir,
       env: { ZCODE_RUNTIME_ENV: "development" },
       registry: registry(),
+      retry: { maxAttempts: 1 },
       runtime,
     });
 
@@ -1327,6 +1338,7 @@ describe("AiSdkModelAdapter", () => {
       debugDir,
       env: { ZCODE_RUNTIME_ENV: "development" },
       registry: registry(),
+      retry: { maxAttempts: 1 },
       runtime,
     });
 
@@ -1452,6 +1464,7 @@ describe("AiSdkModelAdapter", () => {
       debugDir,
       env: { ZCODE_RUNTIME_ENV: "production" },
       registry: registry(),
+      retry: { maxAttempts: 1 },
       runtime,
     });
     const runFailedRequest = async (messages: Array<{ role: string; content: string }>) => {
@@ -2116,7 +2129,7 @@ describe("AiSdkModelAdapter", () => {
       debugDir,
       env: { ZCODE_RUNTIME_ENV: "production" },
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
       runtime,
     });
 
@@ -2209,7 +2222,7 @@ describe("AiSdkModelAdapter", () => {
       retryReasons: ["server_error", "reasoning_signature_repair"],
       signedAttempts: [true, true, false],
     },
-  ])("keeps generate retry budgets independent for $name", async (testCase) => {
+  ])("keeps generate retry attempts in one bounded budget for $name", async (testCase) => {
     const statusEvents: ModelNetworkStatusEvent[] = [];
     const captured: AiSdkGenerateTextOptions[] = [];
     const messages = signatureReplayMessages();
@@ -2244,7 +2257,7 @@ describe("AiSdkModelAdapter", () => {
     };
     const adapter = new AiSdkModelAdapter({
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 3, maxDelayMs: 0 },
       runtime,
     });
 
@@ -2286,7 +2299,7 @@ describe("AiSdkModelAdapter", () => {
     };
     const adapter = new AiSdkModelAdapter({
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
       runtime,
     });
 
@@ -2309,7 +2322,7 @@ describe("AiSdkModelAdapter", () => {
     ).toEqual(["reasoning_signature_repair"]);
   });
 
-  it("does not retry a thinking signature rejection when removing rejected blocks changes nothing", async () => {
+  it("uses ordinary bounded recovery when removing rejected blocks changes nothing", async () => {
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
       async generateText() {
@@ -2336,17 +2349,17 @@ describe("AiSdkModelAdapter", () => {
         messages: signatureReplayMessages(false),
       }),
     ).rejects.toMatchObject({ code: ModelErrorCode.InvalidModelRequest });
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(2);
   });
 
-  it("uses ten retries by default and logs retry budget", async () => {
+  it("uses twenty retries by default and logs retry budget", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     const logs: CapturedLog[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
       async generateText() {
         attempts += 1;
-        if (attempts <= 10) {
+        if (attempts <= 20) {
           throw apiError("server busy", {
             isRetryable: true,
             responseHeaders: { "retry-after": "0" },
@@ -2386,21 +2399,21 @@ describe("AiSdkModelAdapter", () => {
 
     const retryEvents = events.filter((event) => event.type === "model_retry_scheduled");
     expect(result.text).toBe("eventually ok");
-    expect(attempts).toBe(11);
-    expect(retryEvents).toHaveLength(10);
+    expect(attempts).toBe(21);
+    expect(retryEvents).toHaveLength(20);
     expect(events[0]).toMatchObject({
       attempt: 1,
-      maxAttempts: 11,
+      maxAttempts: 21,
     });
     expect(retryEvents[retryEvents.length - 1]).toMatchObject({
-      attempt: 10,
+      attempt: 20,
       delayMs: 0,
-      maxAttempts: 11,
-      nextAttempt: 11,
+      maxAttempts: 21,
+      nextAttempt: 21,
     });
     expect(events[events.length - 1]).toMatchObject({
-      attempt: 11,
-      maxAttempts: 11,
+      attempt: 21,
+      maxAttempts: 21,
       type: "model_request_completed",
     });
     const retryLog = logs.find((entry) => entry.context?.event === "model.retry.scheduled");
@@ -2408,8 +2421,8 @@ describe("AiSdkModelAdapter", () => {
       level: "warn",
       message: "Model request retry scheduled",
       context: {
-        maxAttempts: 11,
-        maxRetries: 10,
+        maxAttempts: 21,
+        maxRetries: 20,
         status: "waiting",
       },
     });
@@ -2431,13 +2444,13 @@ describe("AiSdkModelAdapter", () => {
     });
   });
 
-  it("uses ten retries by default for HTTP 200 provider 1302 rate limits", async () => {
+  it("uses twenty retries by default for HTTP 200 provider 1302 rate limits", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
       async generateText() {
         attempts += 1;
-        if (attempts <= 10) {
+        if (attempts <= 20) {
           throw new ProviderBusinessError({
             providerCode: "1302",
             providerId: "account:bigmodel-individual-coding-plan",
@@ -2490,8 +2503,8 @@ describe("AiSdkModelAdapter", () => {
 
     const retryEvents = events.filter((event) => event.type === "model_retry_scheduled");
     expect(result.text).toBe("ok after rate limit retry");
-    expect(attempts).toBe(11);
-    expect(retryEvents).toHaveLength(10);
+    expect(attempts).toBe(21);
+    expect(retryEvents).toHaveLength(20);
     expect(events[1]).toMatchObject({
       reason: "rate_limited",
       retryable: true,
@@ -2500,26 +2513,26 @@ describe("AiSdkModelAdapter", () => {
     expect(retryEvents[0]).toMatchObject({
       attempt: 1,
       delayMs: 0,
-      maxAttempts: 11,
+      maxAttempts: 21,
       nextAttempt: 2,
       reason: "rate_limited",
     });
     expect(retryEvents[retryEvents.length - 1]).toMatchObject({
-      attempt: 10,
+      attempt: 20,
       delayMs: 0,
-      maxAttempts: 11,
-      nextAttempt: 11,
+      maxAttempts: 21,
+      nextAttempt: 21,
       reason: "rate_limited",
     });
   });
 
-  it("uses ten retries by default for HTTP 200 provider internal network failures", async () => {
+  it("uses twenty retries by default for HTTP 200 provider internal network failures", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
       async generateText() {
         attempts += 1;
-        if (attempts <= 10) {
+        if (attempts <= 20) {
           throw new ProviderBusinessError({
             providerId: "account:bigmodel-individual-coding-plan",
             providerKind: "anthropic",
@@ -2571,8 +2584,8 @@ describe("AiSdkModelAdapter", () => {
 
     const retryEvents = events.filter((event) => event.type === "model_retry_scheduled");
     expect(result.text).toBe("ok after internal network retry");
-    expect(attempts).toBe(11);
-    expect(retryEvents).toHaveLength(10);
+    expect(attempts).toBe(21);
+    expect(retryEvents).toHaveLength(20);
     expect(events[1]).toMatchObject({
       message: "Internal Network Failure",
       reason: "network_error",
@@ -2580,10 +2593,10 @@ describe("AiSdkModelAdapter", () => {
       statusCode: undefined,
     });
     expect(retryEvents[retryEvents.length - 1]).toMatchObject({
-      attempt: 10,
+      attempt: 20,
       delayMs: 0,
-      maxAttempts: 11,
-      nextAttempt: 11,
+      maxAttempts: 21,
+      nextAttempt: 21,
       reason: "network_error",
     });
   });
@@ -2706,7 +2719,7 @@ describe("AiSdkModelAdapter", () => {
     const runtime: AiSdkModelRuntime = {
       async generateText() {
         attempts += 1;
-        if (attempts <= 10) {
+        if (attempts <= 20) {
           throw apiError("server busy", {
             isRetryable: true,
             responseHeaders: { "retry-after": "0" },
@@ -2749,11 +2762,11 @@ describe("AiSdkModelAdapter", () => {
     });
 
     expect(result.text).toBe("after default retry");
-    expect(attempts).toBe(11);
-    expect(events[0]).toMatchObject({ maxAttempts: 11 });
+    expect(attempts).toBe(21);
+    expect(events[0]).toMatchObject({ maxAttempts: 21 });
   });
 
-  it("uses default exponential retry delays up to the one-minute cap", async () => {
+  it("uses default exponential retry delays up to the thirty-second cap", async () => {
     vi.useFakeTimers();
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(1);
     try {
@@ -2805,7 +2818,7 @@ describe("AiSdkModelAdapter", () => {
         expect(retryEvents()).toHaveLength(count);
       };
 
-      const expectedDelayMs = [2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000];
+      const expectedDelayMs = [2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000, 30_000];
 
       for (const [index, delayMs] of expectedDelayMs.entries()) {
         await waitForRetryEvents(index + 1);
@@ -2824,7 +2837,7 @@ describe("AiSdkModelAdapter", () => {
     }
   });
 
-  it("prefers retry-after-ms over retry-after without applying the normal maxDelay cap", async () => {
+  it("prefers retry-after-ms over retry-after within the configured maxDelay cap", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
@@ -2867,7 +2880,7 @@ describe("AiSdkModelAdapter", () => {
     });
 
     expect(events[2]).toMatchObject({
-      delayMs: 13,
+      delayMs: 0,
       nextAttempt: 2,
       reason: "rate_limited",
       statusCode: 429,
@@ -2875,7 +2888,7 @@ describe("AiSdkModelAdapter", () => {
     });
   });
 
-  it("publishes non-retryable failure reasons and wraps provider errors", async () => {
+  it("publishes bounded failure reasons and wraps provider errors", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
@@ -2919,20 +2932,19 @@ describe("AiSdkModelAdapter", () => {
       name: "AiSdkModelAdapterError",
     } satisfies Partial<AiSdkModelAdapterError>);
 
-    expect(events.map((event) => event.type)).toEqual([
-      "model_request_started",
-      "model_request_failed",
-    ]);
+    expect(events.filter((event) => event.type === "model_request_started")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_request_failed")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(2);
     expect(events[1]).toMatchObject({
       message: "Provider authentication failed.",
       reason: "auth_failed",
-      retryable: false,
+      retryable: true,
       statusCode: 401,
     });
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(3);
   });
 
-  it("does not automatically retry Start Plan concurrency failures", async () => {
+  it("bounds recovery of Start Plan concurrency failures", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     let attempts = 0;
     const runtime: AiSdkModelRuntime = {
@@ -2979,20 +2991,19 @@ describe("AiSdkModelAdapter", () => {
       name: "AiSdkModelAdapterError",
     } satisfies Partial<AiSdkModelAdapterError>);
 
-    expect(attempts).toBe(1);
-    expect(events.map((event) => event.type)).toEqual([
-      "model_request_started",
-      "model_request_failed",
-    ]);
+    expect(attempts).toBe(3);
+    expect(events.filter((event) => event.type === "model_request_started")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_request_failed")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(2);
     expect(events[1]).toMatchObject({
       message: "当前系统繁忙，请稍后再试或升级账户。",
       reason: "rate_limited",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
 
-  it("does not automatically retry streamed OpenAI-compatible exhausted quotas", async () => {
+  it("bounds recovery of streamed OpenAI-compatible exhausted quotas", async () => {
     const events: ModelNetworkStatusEvent[] = [];
     const message = "Your token-plan 5-hour quota has been exhausted. The quota will reset later.";
     let attempts = 0;
@@ -3062,18 +3073,17 @@ describe("AiSdkModelAdapter", () => {
       message,
       name: "AiSdkModelAdapterError",
     } satisfies Partial<AiSdkModelAdapterError>);
-    expect(attempts).toBe(1);
-    expect(events.map((event) => event.type)).toEqual([
-      "model_request_started",
-      "model_request_failed",
-    ]);
+    expect(attempts).toBe(11);
+    expect(events.filter((event) => event.type === "model_request_started")).toHaveLength(11);
+    expect(events.filter((event) => event.type === "model_request_failed")).toHaveLength(11);
+    expect(events.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(10);
     expect(events[1]).toMatchObject({
       message,
       providerErrorCode: "insufficient_quota",
       providerErrorMessage: message,
       providerRequestId: "provider_req_insufficient_quota",
       reason: "rate_limited",
-      retryable: false,
+      retryable: true,
       statusCode: 429,
     });
   });
@@ -3329,14 +3339,13 @@ describe("AiSdkModelAdapter", () => {
       name: "AiSdkModelAdapterError",
     } satisfies Partial<AiSdkModelAdapterError>);
 
-    expect(events.map((event) => event.type)).toEqual([
-      "model_request_started",
-      "model_request_failed",
-    ]);
+    expect(events.filter((event) => event.type === "model_request_started")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_request_failed")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(2);
     expect(events[1]).toMatchObject({
       message: "当前订阅套餐暂未开放GLM-5V-Turbo权限",
       reason: "unknown",
-      retryable: false,
+      retryable: true,
     });
   });
 
@@ -3633,7 +3642,7 @@ describe("AiSdkModelAdapter", () => {
       debugDir,
       env: { ZCODE_RUNTIME_ENV: "production" },
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
       runtime,
     });
 
@@ -3685,18 +3694,18 @@ describe("AiSdkModelAdapter", () => {
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line) as any);
-      expect(records).toHaveLength(1);
-      expect(records[0].request.messages.map((message: any) => message.role)).toEqual([
+      expect(records).toHaveLength(2);
+      expect(records[1].request.messages.map((message: any) => message.role)).toEqual([
         "user",
         "assistant",
         "user",
         "assistant",
         "user",
       ]);
-      expect(records[0].request.messages[1].content).toEqual([
+      expect(records[1].request.messages[1].content).toEqual([
         { type: "text", text: "(no content)" },
       ]);
-      expect(records[0].request.messages[3].content).toEqual([
+      expect(records[1].request.messages[3].content).toEqual([
         { type: "reasoning", text: "unsigned" },
         { type: "text", text: "answer" },
       ]);
@@ -3719,7 +3728,7 @@ describe("AiSdkModelAdapter", () => {
       retryReasons: ["server_error", "reasoning_signature_repair"],
       signedAttempts: [true, true, false],
     },
-  ])("keeps stream retry budgets independent for $name", async (testCase) => {
+  ])("keeps stream retry attempts in one bounded budget for $name", async (testCase) => {
     const statusEvents: ModelNetworkStatusEvent[] = [];
     const captured: AiSdkStreamTextOptions[] = [];
     const messages = signatureReplayMessages();
@@ -3758,7 +3767,7 @@ describe("AiSdkModelAdapter", () => {
     };
     const adapter = new AiSdkModelAdapter({
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 3, maxDelayMs: 0 },
       runtime,
     });
 
@@ -3812,7 +3821,7 @@ describe("AiSdkModelAdapter", () => {
     };
     const adapter = new AiSdkModelAdapter({
       registry: providerRegistry("anthropic"),
-      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 1, maxDelayMs: 0 },
+      retry: { baseDelayMs: 0, jitter: false, maxAttempts: 2, maxDelayMs: 0 },
       runtime,
     });
 
@@ -4411,6 +4420,7 @@ describe("AiSdkModelAdapter", () => {
     const adapter = new AiSdkModelAdapter({
       logger: capturingLogger(logs),
       registry: registry(),
+      retry: { maxAttempts: 1 },
       runtime,
     });
 
@@ -4756,7 +4766,11 @@ describe("AiSdkModelAdapter", () => {
         },
       ]),
     );
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      runtime,
+      retry: { maxAttempts: 1 },
+    });
 
     await expect(async () => {
       for await (const _event of executeAdapterStreamText(adapter, {
@@ -5352,7 +5366,7 @@ describe("AiSdkModelAdapter", () => {
       }
     })().catch((error: unknown) => error);
 
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(2);
     expect(terminalError).toBeInstanceOf(AiSdkModelAdapterError);
     expect(terminalError).toMatchObject({
       context: { streamFailurePhase: "request_setup" },
@@ -5372,7 +5386,11 @@ describe("AiSdkModelAdapter", () => {
         throw setupError;
       },
     };
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      runtime,
+      retry: { maxAttempts: 1 },
+    });
 
     const terminalError = await (async () => {
       for await (const _event of executeAdapterStreamText(adapter, {
@@ -5406,7 +5424,11 @@ describe("AiSdkModelAdapter", () => {
         } as never;
       },
     };
-    const adapter = new AiSdkModelAdapter({ registry: registry(), runtime });
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      runtime,
+      retry: { maxAttempts: 1 },
+    });
 
     const terminalError = await (async () => {
       for await (const _event of executeAdapterStreamText(adapter, {
@@ -6227,17 +6249,25 @@ describe("AiSdkModelAdapter", () => {
         },
       ]),
     );
-    const adapter = new AiSdkModelAdapter({ runtime, registry: registry() });
+    const adapter = new AiSdkModelAdapter({
+      runtime,
+      registry: registry(),
+      retry: { maxAttempts: 1 },
+    });
 
     const events: ModelStreamEvent[] = [];
-    for await (const event of executeAdapterStreamText(adapter, {
-      providerId: "test" as never,
-      modelId: "model-a" as never,
-      messages: [{ role: "user", content: "Summarize without tools" }],
-      preserveProviderStreamBoundaries: true,
-    })) {
-      events.push(event);
-    }
+    await expect(
+      (async () => {
+        for await (const event of executeAdapterStreamText(adapter, {
+          providerId: "test" as never,
+          modelId: "model-a" as never,
+          messages: [{ role: "user", content: "Summarize without tools" }],
+          preserveProviderStreamBoundaries: true,
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toMatchObject({ context: { retryable: true } });
 
     expect(events.map((event) => event.type)).toEqual([
       "start",
@@ -6368,17 +6398,21 @@ describe("AiSdkModelAdapter", () => {
     });
 
     const events: ModelStreamEvent[] = [];
-    for await (const event of executeAdapterStreamText(adapter, {
-      providerId: "test" as never,
-      modelId: "model-a" as never,
-      messages: [{ role: "user", content: "Summarize without tools" }],
-      preserveProviderStreamBoundaries: true,
-    })) {
-      events.push(event);
-    }
+    await expect(
+      (async () => {
+        for await (const event of executeAdapterStreamText(adapter, {
+          providerId: "test" as never,
+          modelId: "model-a" as never,
+          messages: [{ role: "user", content: "Summarize without tools" }],
+          preserveProviderStreamBoundaries: true,
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toMatchObject({ context: { retryable: true } });
 
     expect(attempts).toBe(1);
-    expect(returnIterator).not.toHaveBeenCalled();
+    expect(returnIterator).toHaveBeenCalledTimes(1);
     expect(events).toEqual([
       { type: "start" },
       {
@@ -6463,14 +6497,18 @@ describe("AiSdkModelAdapter", () => {
     });
 
     const events: ModelStreamEvent[] = [];
-    for await (const event of executeAdapterStreamText(adapter, {
-      providerId: "test" as never,
-      modelId: "model-a" as never,
-      messages: [{ role: "user", content: "Summarize without tools" }],
-      preserveProviderStreamBoundaries: true,
-    })) {
-      events.push(event);
-    }
+    await expect(
+      (async () => {
+        for await (const event of executeAdapterStreamText(adapter, {
+          providerId: "test" as never,
+          modelId: "model-a" as never,
+          messages: [{ role: "user", content: "Summarize without tools" }],
+          preserveProviderStreamBoundaries: true,
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toMatchObject({ context: { retryable: true } });
 
     expect(events).toEqual([
       { type: "start" },
@@ -6547,22 +6585,26 @@ describe("AiSdkModelAdapter", () => {
         },
       ]),
     );
-    const adapter = new AiSdkModelAdapter({ runtime, registry: registry() });
+    const adapter = new AiSdkModelAdapter({
+      runtime,
+      registry: registry(),
+      retry: { maxAttempts: 1 },
+    });
 
     const events: ModelStreamEvent[] = [];
-    for await (const event of executeAdapterStreamText(adapter, {
-      providerId: "test" as never,
-      modelId: "model-a" as never,
-      messages: [{ role: "user", content: "Read README" }],
-    })) {
-      events.push(event);
-    }
+    await expect(
+      (async () => {
+        for await (const event of executeAdapterStreamText(adapter, {
+          providerId: "test" as never,
+          modelId: "model-a" as never,
+          messages: [{ role: "user", content: "Read README" }],
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toMatchObject({ context: { retryable: true } });
 
-    expect(events.map((event) => event.type)).toEqual([
-      "start",
-      "tool_input_start",
-      "tool_input_delta",
-    ]);
+    expect(events).toEqual([]);
     expect(events.some((event) => event.type === "tool_call")).toBe(false);
   });
 
@@ -7405,3 +7447,318 @@ function rejectAfterTestTimeout(delayMs: number): Promise<never> {
     setTimeout(() => reject(new Error("Timed out waiting for stream abort.")), delayMs);
   });
 }
+
+// FORK-BEGIN(codex-collaboration)
+describe("physical API recovery budget", () => {
+  it.each(["generate", "error-chunk", "iterator-rejection", "no-terminal"] as const)(
+    "bounds real runtime requests for %s failures",
+    async (kind) => {
+      let requests = 0;
+      const runtime: AiSdkModelRuntime = {
+        async generateText() {
+          requests += 1;
+          throw new Error("unrecognized API diagnostic");
+        },
+        streamText() {
+          requests += 1;
+          return {
+            fullStream: (async function* () {
+              if (kind === "error-chunk")
+                yield { type: "error", error: new Error("unrecognized API diagnostic") };
+              else if (kind === "iterator-rejection") {
+                const error = new Error("internal provider abort");
+                error.name = "AbortError";
+                throw error;
+              } else yield { type: "start" };
+            })(),
+          } as never;
+        },
+      };
+      const adapter = new AiSdkModelAdapter({
+        registry: registry(),
+        retry: { baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+        runtime,
+      });
+      const request = {
+        providerId: "test" as never,
+        modelId: "model-a" as never,
+        messages: [{ role: "user" as const, content: "Ping" }],
+      };
+      const run = async () => {
+        if (kind === "generate") return executeAdapterGenerateText(adapter, request);
+        for await (const _event of executeAdapterStreamText(adapter, request)) {
+          /* consume physical stream */
+        }
+      };
+      await expect(run()).rejects.toMatchObject({ context: { retryable: true } });
+      expect(requests).toBe(21);
+    },
+  );
+
+  it("shares consumed attempts across new adapter calls", async () => {
+    const { createModelRecoveryBudget } = await import("@zcode/contracts");
+    const budget = createModelRecoveryBudget(3);
+    let requests = 0;
+    const runtime: AiSdkModelRuntime = {
+      async generateText() {
+        throw new Error("unused");
+      },
+      streamText() {
+        requests += 1;
+        return {
+          fullStream: (async function* () {
+            yield { type: "text-delta", id: "text", text: "partial" };
+            throw new Error("unrecognized API diagnostic");
+          })(),
+        } as never;
+      },
+    };
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+      runtime,
+    });
+    const request = {
+      modelRecoveryBudget: budget,
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user" as const, content: "Ping" }],
+    };
+    for (let step = 0; step < 4; step += 1) {
+      await expect(
+        (async () => {
+          for await (const _event of executeAdapterStreamText(adapter, request)) {
+          }
+        })(),
+      ).rejects.toBeInstanceOf(Error);
+    }
+    expect(requests).toBe(3);
+    expect(budget.attempts).toBe(3);
+  });
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it("owns a late SDK rejection when the caller aborts during generate setup", async () => {
+  const caller = new AbortController();
+  const pending = Promise.withResolvers<never>();
+  const observed = vi.spyOn(pending.promise, "then");
+  const adapter = new AiSdkModelAdapter({
+    registry: registry(),
+    runtime: {
+      generateText() {
+        caller.abort(new Error("caller stopped"));
+        return pending.promise;
+      },
+      streamText() {
+        throw new Error("unused");
+      },
+    },
+  });
+  try {
+    await expect(
+      executeAdapterGenerateText(adapter, {
+        providerId: "test" as never,
+        modelId: "model-a" as never,
+        messages: [{ role: "user", content: "stop" }],
+        abortSignal: caller.signal,
+      }),
+    ).rejects.toBeInstanceOf(Error);
+    expect(observed).toHaveBeenCalled();
+  } finally {
+    const settled = pending.promise.catch(() => {});
+    pending.reject(new Error("late SDK rejection"));
+    await settled;
+  }
+});
+// FORK-END(codex-collaboration)
+
+// FORK-BEGIN(codex-collaboration)
+it.each(["generate", "stream"] as const)(
+  "does not retry typed SDK local prompt validation in %s",
+  async (mode) => {
+    const { generateText, streamText } = await import("ai");
+    let requests = 0;
+    const adapter = new AiSdkModelAdapter({
+      registry: new TestProviderConfigFixture({
+        providers: {
+          test: { kind: "openai-compatible", baseURL: "http://127.0.0.1:9/v1", apiKey: "fixture" },
+        },
+      }),
+      retry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+      runtime: {
+        generateText(options) {
+          requests += 1;
+          return generateText(options);
+        },
+        streamText(options) {
+          requests += 1;
+          return streamText(options);
+        },
+      },
+    });
+    const request = { providerId: "test" as never, modelId: "model-a" as never, messages: [] };
+    const run = async () => {
+      if (mode === "generate") return executeAdapterGenerateText(adapter, request);
+      for await (const _event of executeAdapterStreamText(adapter, request)) {
+      }
+    };
+    await expect(run()).rejects.toMatchObject({
+      context: { source: "runtime", errorPhase: "prepare", retryable: false },
+    });
+    expect(requests).toBe(1);
+  },
+);
+
+it("advertises each SSE attempt's idle owner deadline to the child watchdog", async () => {
+  let requests = 0;
+  const status: ModelNetworkStatusEvent[] = [];
+  const adapter = new AiSdkModelAdapter({
+    registry: registry(),
+    streamIdleTimeoutMs: 40,
+    retry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+    runtime: {
+      async generateText() {
+        throw new Error("unused");
+      },
+      streamText() {
+        requests += 1;
+        return {
+          fullStream: (async function* () {
+            if (requests === 1) throw new Error("provider unavailable");
+            yield { type: "text-delta", id: "text", text: "done" };
+            yield { type: "finish", finishReason: "stop", totalUsage: usage(1, 1) };
+          })(),
+        } as never;
+      },
+    },
+  });
+  for await (const _event of executeAdapterStreamText(adapter, {
+    providerId: "test" as never,
+    modelId: "model-a" as never,
+    messages: [{ role: "user", content: "recover" }],
+    statusSink: { publish: (event) => void status.push(event) },
+  })) {
+  }
+  expect(
+    status
+      .filter((event) => event.type === "model_request_started")
+      .map((event) => event.timeoutMs),
+  ).toEqual([40, 30_040]);
+});
+// FORK-END(codex-collaboration)
+
+it.each(["generate", "stream"] as const)(
+  "prevents workflow redrive of local control failures in %s",
+  async (mode) => {
+    const { inspectWorkflowModelFailure } =
+      await import("../src/model/workflow-model-failure-policy.js");
+    for (const code of ["EACCES", "EPERM", "FORK_UPSTREAM_REQUEST_BLOCKED"]) {
+      let requests = 0;
+      const original = Object.assign(new Error("local control rejected request"), { code });
+      const wrapped = Object.assign(new Error("boundary wrapper", { cause: original }), {
+        code: "MODEL_TRANSPORT_WRAPPER",
+      });
+      const adapter = new AiSdkModelAdapter({
+        registry: registry(),
+        retry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0, jitter: false },
+        runtime: {
+          async generateText() {
+            requests += 1;
+            throw wrapped;
+          },
+          streamText() {
+            requests += 1;
+            return {
+              fullStream: (async function* () {
+                throw wrapped;
+              })(),
+            } as never;
+          },
+        },
+      });
+      const request = {
+        providerId: "test" as never,
+        modelId: "model-a" as never,
+        messages: [{ role: "user" as const, content: "recover" }],
+      };
+      const caught = await (async () => {
+        try {
+          if (mode === "generate") await executeAdapterGenerateText(adapter, request);
+          else
+            for await (const _event of executeAdapterStreamText(adapter, request)) {
+            }
+        } catch (error) {
+          return error;
+        }
+        throw new Error("Expected rejected local control");
+      })();
+      expect(requests).toBe(1);
+      expect(caught).toMatchObject({
+        cause: wrapped,
+        context: {
+          retryable: false,
+          source: "runtime",
+          localControl:
+            code === "FORK_UPSTREAM_REQUEST_BLOCKED" ? "upstream_blocked" : "permission_denied",
+        },
+      });
+      expect(
+        inspectWorkflowModelFailure(
+          new Error("turn", { cause: new Error("runtime", { cause: caught }) }),
+        )?.policy,
+      ).toEqual({ decision: "stop", kind: "other" });
+    }
+  },
+);
+
+it.each(["generate", "stream"] as const)(
+  "stops workflow redrive after request header preparation fails in %s",
+  async (mode) => {
+    const { inspectWorkflowModelFailure } =
+      await import("../src/model/workflow-model-failure-policy.js");
+    const original = new Error("runtime header preparation failed");
+    let requests = 0;
+    const adapter = new AiSdkModelAdapter({
+      registry: registry(),
+      retry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+      runtime: {
+        async generateText() {
+          requests += 1;
+          throw new Error("SDK must not run");
+        },
+        streamText() {
+          requests += 1;
+          throw new Error("SDK must not run");
+        },
+      },
+    });
+    const request = {
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user" as const, content: "prepare" }],
+      async refreshRuntimeHeadersBeforeAttempt() {
+        throw original;
+      },
+    };
+    const caught = await (async () => {
+      try {
+        if (mode === "generate") await executeAdapterGenerateText(adapter, request);
+        else
+          for await (const _event of executeAdapterStreamText(adapter, request)) {
+          }
+      } catch (error) {
+        return error;
+      }
+      throw new Error("Expected local preparation failure");
+    })();
+    expect(requests).toBe(0);
+    expect(caught).toMatchObject({
+      context: { localControl: "prepare_failed", source: "runtime", retryable: false },
+    });
+    expect(inspectWorkflowModelFailure(new Error("turn", { cause: caught }))?.policy).toEqual({
+      decision: "stop",
+      kind: "other",
+    });
+  },
+);

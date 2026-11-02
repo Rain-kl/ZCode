@@ -203,7 +203,7 @@ function makeActorRuntime(
       systemPrompt: input.persona.system ?? "You are a workflow actor.",
       mode: "yolo",
       taskType: "workflow_child",
-      subagents: { enabled: false },
+      subagents: {},
       modelSelection: FAULT_MODEL_SELECTION,
       // 生产的 runtime 缺省流式（zcode-protocol/workspace-model-runtime.ts 的 `?? "on"`）；不开的话 turn 走
       // generateText，B7/B8 的「流中切断」在服务器侧退化成连接重置，测不到决策 25 那条边。

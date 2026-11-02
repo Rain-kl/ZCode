@@ -150,6 +150,45 @@ interface TurnSteerDiscardedPayload {
 
 ## Drain 边界
 
+### Fork：所有 steer 入口禁止抢占（2026-11-02，codex-collaboration）
+
+`sendText(requestedDelivery=startNow)` 与手动 `sendQueuedNow` 都表示在下一次安全请求边界
+插入输入，不得调用 stop/abort、截断正在传输的响应或取消该轮已经启动的子代理。
+显式 Stop、历史 edit/retry 等取消操作继续使用自己的命令，不与 steer 共用取消路径。
+
+- 唯一所有者仍为 Core runtime 的 pending input / CommandInbox；Bootstrap 只请求准入，
+  Renderer、Host 与 relay 不增加队列或定时器。
+- 普通运行轮接收纯文本 steer 后立即 ACK queued/guide；当前请求正常返回并结算工具结果后，
+  才写入用户消息并构造下一次请求。text-only 响应同样继续消费，不等待整项任务完成。
+- 手动提升已接受的普通队列项时，复用原 queueItemId/sourceCommandId、client、意图与顺序，
+  在相同 reservation 保护下原地转 guide；不能复制为第二条输入或先删除再重发。
+- 提升期间轮次恰好完成时，输入仍保留为原 ID 的 future queue，不能写入已结束的轮次。
+- 附件、compact/goal、单次加速执行材料等不能安全 inline 的项保留原队列；busy 时手动提升
+  返回明确拒绝，空闲时沿用 idle-only 的原子提升。普通新输入不能 inline 时由 Core 排队。
+- Desktop continuous 与 mobile replayable 共用相同 command、event sequence 和 admission；
+  ACK 丢失/重复命令仍由现有 commandId 去重，重连不重发已接纳的输入。
+
+```mermaid
+sequenceDiagram
+    participant UI as Desktop / Mobile
+    participant C as Core runtime（输入所有者）
+    participant M as Provider
+    participant A as 已启动子代理
+    C->>M: request N
+    UI->>C: steer / sendQueuedNow（原输入 ID）
+    C-->>UI: guide 已接纳（等待安全边界）
+    Note over C,A: 不取消当前流、工具或子代理
+    M-->>C: response N 完整返回
+    C->>C: assistant 与所有工具结果结算
+    C->>C: drain guide，记录用户消息
+    C->>M: request N+1（包含 steer）
+```
+
+参考本地 Codex `3026a8e54e0f48c4d8074cd700f35b0697abc329`：
+`codex-rs/core/src/session/turn_input.rs::steer_input` 只接纳 pending input，
+`session/turn.rs` 在 sampling 与工具结束后检查 pending input 并继续下一次请求。
+本轮不宣称完成六工具、mailbox 或子代理续跑的全部迁移。
+
 Drain 只允许发生在 tool calling loop 的安全边界：
 
 1. 初始 user input 已经进入 history 后，不能在第一次 model request 之前 drain pending input。
@@ -232,31 +271,30 @@ Canonical history 只保存原始载荷。所有新标记消息 live/hydration/c
 
 compact 已选中的最近组必须连同组内的 coordinator、peer、task notification 和已持久化 Attachment 一起恢复，不得因 synthetic/model-only/source 再次过滤。保留区间按 assistant-started groups 选取，统计数量不得用于反推区间；详细合同见 [最近保留段的持久化与冷恢复](../rewind-compact.md#最近保留段的持久化与冷恢复)。
 
-### 运行中立即发送的 human 提示（2026-09-12）
+### 运行中立即发送的 human 提示（2026-11-02 更正，codex-collaboration）
 
-用户在运行中选择立即发送，产品语义同样是 steer。虽然调度会取消旧 runtime turn 并启动新 turn，纯文本输入仍使用已有 `user_steer` 提示。是否发生抢占以 Core `stopActiveForegroundExecution` 的 `stopped` 回执为准，不读取 UI running 快照或 Bootstrap controller 推断。
+运行中立即发送属于 steer：由 Core 在下一安全请求边界消费，不停止旧 runtime turn。
+纯文本实际 drain 为 guide 时使用 `user_steer`；空闲独立新轮不伪造中途提示。
 
 ```text
 Desktop continuous / Mobile replayable
                   |
      sendText(startNow) / 手动 sendQueuedNow
                   |
-     promotion lease -> Core stop -> 等待 idle
-                          |
-             stopped + 纯文本用户输入
-                          |
-              新 turn + user_steer
-                          |
-           原文及标记持久化 -> 共享 provider 投影
-                          |
+     Core guide admission / 原队列项原地转 guide
+                  |
+     当前 response 与 tool-result batch 正常完成
+                  |
+     同 turn drain + user_steer -> 共享 provider 投影
+                  |
              合法 MCS system / wrapped user
 ```
 
-- 空闲立即发送、已经停止的执行、自动队列消费、goal / compact、edit / retry 不新增此标记。手动队列立即发送保留原 sourceCommandId、intent 及队列消费规则。
-- 提交内容含附件时沿用现有路径，包括随后可能被转为文本的文件附件；不根据恢复后的正文重新猜测来源。
-- 复用单一 `inputPresentation` 的透传、持久化、hydrate 与真实用户身份，不增加协议字段、客户端状态、独立 formatter 或新提示文案。原始 UI 气泡不显示 reminder。
-- MCS 仍受历史位置约束：完整工具结果之后可投影为 system；text-only assistant 之后或 MCS 关闭时使用 `<system-reminder>` user，不强制 system、不移动输入、不改变工具取消及结果配对规则。
-- 先用单测锁住实际抢占、空闲、带附件及自动消费边界，再实现；正式 running-send-now 用例校验实际 provider 请求中的完整 human 文案、包装、次数及原始 UI，覆盖 MCS 开关。
+- 空闲立即发送、自动队列消费、goal / compact、edit / retry 不新增此标记。手动队列 steer 保留原 sourceCommandId、intent 及队列项身份。
+- 附件与单次执行材料不能 inline 时保留独立队列，不根据恢复后的正文猜测来源，也不为安装材料取消当前轮。
+- 复用单一 `inputPresentation` 的透传、持久化、hydrate 与真实用户身份；不新增客户端队列或提示文案。原始 UI 气泡不显示 reminder。
+- MCS 仍受历史位置约束：完整工具结果之后可投影为 system；text-only assistant 之后或 MCS 关闭时使用 `<system-reminder>` user，不强制 system、不移动输入。
+- 回归覆盖流中提交但不截断、下一请求可见、同一 turn、原 ID 只消费一次、前台子代理继续，以及提升与轮次完成竞争。桌面/手机实机操作按这些场景验收，不以协议测试替代实机证据。
 
 ### 文案合同
 

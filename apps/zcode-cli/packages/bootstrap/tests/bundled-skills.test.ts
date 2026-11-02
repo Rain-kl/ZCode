@@ -102,6 +102,67 @@ const COMPLETE_PACK = Object.fromEntries(
   BUNDLED_SKILL_PACK_REQUIRED_PATHS.map((path) => [path, `# ${path}\n`]),
 );
 
+describe("bundled six-tool collaboration guidance", () => {
+  const skillsRoot = new URL("../../superpowers-plugin/skills/", import.meta.url);
+  const dispatchTemplates = [
+    "subagent-driven-development/implementer-prompt.md",
+    "subagent-driven-development/spec-reviewer-prompt.md",
+    "subagent-driven-development/code-quality-reviewer-prompt.md",
+    "requesting-code-review/SKILL.md",
+    "requesting-code-review/code-reviewer.md",
+    "writing-plans/plan-document-reviewer-prompt.md",
+    "brainstorming/spec-document-reviewer-prompt.md",
+    "dispatching-parallel-agents/SKILL.md",
+  ];
+  for (const path of dispatchTemplates) {
+    it(`${path} dispatches through spawn_agent without a removed Task tool`, async () => {
+      const content = await readFile(new URL(path, skillsRoot), "utf8");
+      expect(content).toContain("spawn_agent");
+      expect(content).not.toMatch(/Task tool|\bTask\s*\(|\bclose_agent\b/);
+    });
+  }
+  it("includes every quality review field inside the fresh agent's message", async () => {
+    const content = await readFile(
+      new URL("subagent-driven-development/code-quality-reviewer-prompt.md", skillsRoot),
+      "utf8",
+    );
+    const block = content.match(/message: \|\n((?:[ \t]+[^\n]*\n|\n)+)/)?.[1];
+    expect(block).toBeDefined();
+    for (const field of ["DESCRIPTION", "PLAN_OR_REQUIREMENTS", "BASE_SHA", "HEAD_SHA"])
+      expect(block).toMatch(new RegExp(`^    ${field}:`, "m"));
+  });
+  it("loads an explicit ZCode mapping with all six actions and no close action", async () => {
+    const entry = await readFile(new URL("using-superpowers/SKILL.md", skillsRoot), "utf8");
+    expect(entry).toContain("references/zcode-tools.md");
+    const content = await readFile(
+      new URL("using-superpowers/references/zcode-tools.md", skillsRoot),
+      "utf8",
+    );
+    for (const name of [
+      "spawn_agent",
+      "send_message",
+      "followup_task",
+      "interrupt_agent",
+      "list_agents",
+      "wait_agent",
+    ])
+      expect(content).toContain(name);
+    expect(content).toContain("does not start an idle");
+    expect(content).toContain('fork_turns: "none"');
+    expect(content).not.toMatch(/\bclose_agent\b/);
+  });
+  it("routes ordinary delegation to spawn_agent while preserving the workflow script API", async () => {
+    const content = await readFile(
+      new URL("../../bundled-skills/skills/dynamic-workflows/SKILL.md", import.meta.url),
+      "utf8",
+    );
+    expect(content).toContain("spawn_agent");
+    expect(content).not.toMatch(/`Agent`|\bAgent tool\b/);
+    expect(content).toContain("CreateWorkflow");
+    expect(content).toContain('agent("judge"');
+  });
+});
+
 describe("resolveBundledSkillRoots", () => {
   let tempRoot: string;
 

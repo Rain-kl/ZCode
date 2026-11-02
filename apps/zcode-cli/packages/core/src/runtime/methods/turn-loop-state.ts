@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): 逻辑模型步骤拥有预算，失败恢复不重置。
+import type { ModelRecoveryBudget } from "@zcode/contracts";
 import { OFF_PEAK_EXECUTION_TOOL_DENYLIST } from "@zcode/shared";
 import type {
   CompactPhase,
@@ -13,7 +15,7 @@ import type {
   TurnId,
 } from "../deps.js";
 import type { ActiveTurnSteeringState } from "../types.js";
-import type { ModelToolContract, SubagentRunOptions } from "@zcode/contracts";
+import type { ModelToolContract, ChildModelExecutionOverride } from "@zcode/contracts";
 import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../types.js";
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
@@ -110,7 +112,7 @@ export interface RegularTurnLoopState {
   /** 仅加速卡过期回退使用的启动快照；不用于闲时换票。 */
   highspeedFallbackSelection?: ModelSelection;
   /** Core Server 的前台 child Selection override；优先于 profile 与父模型继承。 */
-  subagentModelOverride?: SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: ChildModelExecutionOverride;
   modelStepCount: number;
   /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
   historyRoundCount: number;
@@ -125,6 +127,8 @@ export interface RegularTurnLoopState {
   /** 最终成功 assistant boundary；与 stableProductStartMessageId 成对出现。 */
   stableBoundaryAssistantMessageId?: MessageId;
   streamRecoveryRetryCount: number;
+  // FORK(codex-collaboration): adapter 重试、断流和 provider fallback 共用。
+  modelRecoveryBudget?: ModelRecoveryBudget;
   tokenCount: number;
   toolCallCount: number;
   /** 当前 Turn 的 provider-local history；Turn 结束后直接释放。 */

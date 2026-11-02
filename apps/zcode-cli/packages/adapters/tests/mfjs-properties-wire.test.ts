@@ -25,7 +25,7 @@ describe("MFJS 使用固定执行模型的 properties", () => {
         vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
           const request = new Request(input, init);
           bodies.push(await request.json());
-          // 只抓出站载荷，明确终止；不消耗账号额度，也不伪造成功模型结果。
+          // 只抓出站载荷；fixture 显式限制一次请求，400 本身进入有界恢复。
           return new Response(
             JSON.stringify({ error: { type: "invalid_request_error", message: "captured" } }),
             {
@@ -35,7 +35,10 @@ describe("MFJS 使用固定执行模型的 properties", () => {
           );
         });
         const properties = createTestModelProperties({}, { requiresMfjsToolSchema: enabled });
-        const model = new TestAiSdkModelAdapter({ registry }).createModel({
+        const model = new TestAiSdkModelAdapter({
+          registry,
+          retry: { maxAttempts: 1 },
+        }).createModel({
           providerId: "mfjs",
           modelId: "test-model",
           properties,

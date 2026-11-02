@@ -25,7 +25,6 @@ import type {
   McpPort,
   DynamicWorkflowRunPort,
   ModelCatalogPort,
-  SubagentPort,
   ToolArtifactStorePort,
   TraceContext,
   MessageHistory,
@@ -68,6 +67,8 @@ import type { ForkToolModePort } from "../fork/tool-modes/file-port.js";
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
   sessionId: SessionId;
+  // FORK(codex-collaboration): 根树状态由 controller 唯一持有，本字段仅绑定有限端口。
+  collaboration?: import("../fork/codex-collaboration-runtime/contract.js").RuntimeCollaborationBinding;
   turnNumber: number;
   config: AgentRuntimeConfig;
   permissionService: PermissionService;
@@ -127,7 +128,6 @@ export interface AgentRuntimeInternal
   registeredMcpToolNames?: string[];
   mcpToolsSignature?: string;
   mcpToolListRevision?: number;
-  subagentPort?: SubagentPort;
   getAgentDefinitions: NonNullable<AgentRuntimeDeps["getAgentDefinitions"]>;
   prepareAgentDefinitions: (input: {
     signal: AbortSignal;

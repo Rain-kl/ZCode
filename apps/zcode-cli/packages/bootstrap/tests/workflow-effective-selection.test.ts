@@ -11,7 +11,7 @@ import {
 
 describe("Workflow 内显式 Subagent 的有效选择", () => {
   it.each(["yolo", "guarded"] as const)(
-    "%s 的真实 Workflow child 调用 Agent 时继承公共解析端口",
+    "%s 的真实 Workflow child 调用 spawn_agent 时继承公共解析端口",
     async (mode) => {
       const root = await mkdtemp(join(tmpdir(), "zcode-workflow-selection-"));
       const store = await createSqliteSessionStore({ dbPath: ":memory:" });
@@ -67,11 +67,12 @@ describe("Workflow 内显式 Subagent 的有效选择", () => {
                 toolCalls: [
                   {
                     id: "workflow-research",
-                    name: "Agent",
+                    name: "spawn_agent",
                     input: {
-                      description: "Research",
-                      prompt: "Research",
-                      subagent_type: "researcher",
+                      task_name: "workflow_research",
+                      fork_turns: "none",
+                      message: "Research",
+                      agent_type: "researcher",
                     },
                   },
                 ],
@@ -91,8 +92,8 @@ describe("Workflow 内显式 Subagent 的有效选择", () => {
         for (const [options] of execution.mock.calls) {
           expect(options?.bashOutputTempDir).toBe(tmpdir());
         }
-        expect(resolve).toHaveBeenCalledWith(original);
-        expect(executed).toContain("new-account");
+        await vi.waitFor(() => expect(resolve).toHaveBeenCalledWith(original));
+        await vi.waitFor(() => expect(executed).toContain("new-account"));
         expect(executed).not.toContain("old-account");
         expect(original.providerId).toBe("old-account");
         expect(app.runtime.getSessionModelSelection()).toEqual(parent);

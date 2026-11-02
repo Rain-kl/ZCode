@@ -110,9 +110,7 @@ function lastUserPrompt(request: unknown): string {
     const content = message.content;
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
-      return content
-        .map((part) => (typeof part?.text === "string" ? part.text : ""))
-        .join("");
+      return content.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
     }
     return "";
   }
@@ -139,7 +137,10 @@ function scriptedModelAdapter(responses: PlannedResponse[], log: ModelCallLog): 
           ? undefined
           : { inputSchema: submit.inputSchema, strict: submit.strict },
       );
-      const planned = responses[index++] ?? { kind: "text", text: "(no further scripted response)" };
+      const planned = responses[index++] ?? {
+        kind: "text",
+        text: "(no further scripted response)",
+      };
       if (planned.kind === "hang") return new Promise(() => {});
       const usage = { inputTokens: 12, outputTokens: 8, totalTokens: 20 };
       if (planned.kind === "submit") {
@@ -149,7 +150,11 @@ function scriptedModelAdapter(responses: PlannedResponse[], log: ModelCallLog): 
           providerMetadata: undefined,
           text: "",
           toolCalls: [
-            { id: `submit-call-${index}`, name: SUBMIT_RESULT_TOOL_NAME, input: { result: planned.result } },
+            {
+              id: `submit-call-${index}`,
+              name: SUBMIT_RESULT_TOOL_NAME,
+              input: { result: planned.result },
+            },
           ],
           usage,
         };
@@ -166,17 +171,21 @@ function scriptedModelAdapter(responses: PlannedResponse[], log: ModelCallLog): 
 }
 
 /** 极简内存 fs 端口：仅实现 world-read 用到的 searchFiles / readTextFile，其余抛错（不该被触及）。 */
-export function fakeFileSystemPort(files: {
-  glob?: string[];
-  read?: string;
-}): FileSystemPort {
+export function fakeFileSystemPort(files: { glob?: string[]; read?: string }): FileSystemPort {
   const unsupported = (name: string) => () => {
     throw new Error(`fakeFileSystemPort.${name} 不应被 world-read 触及`);
   };
   return {
     async searchFiles(request: { path: string; pattern: string }) {
       const list = files.glob ?? [];
-      return { path: request.path, pattern: request.pattern, durationMs: 0, files: list, numFiles: list.length, truncated: false };
+      return {
+        path: request.path,
+        pattern: request.pattern,
+        durationMs: 0,
+        files: list,
+        numFiles: list.length,
+        truncated: false,
+      };
     },
     async readTextFile(request: { path: string }) {
       return {
@@ -307,38 +316,40 @@ export async function runDriverScript(
     runtimeFactory:
       opts.runtimeFactory ??
       (async ({ sessionId, actor, persona, submitPort, submitProfile }) => {
-      const key = refToString(actor);
-      const log: ModelCallLog = { calls: 0, toolNames: [], prompts: [], submitTools: [] };
-      modelCalls[key] = log;
-      const responses = opts.actorScripts[key] ?? [];
-      const runtime = createTestAgentRuntime(
-        sessionId,
-        {
-          systemPrompt: persona.system ?? "You are a workflow actor.",
-          mode: "yolo",
-          taskType: "workflow_child",
-          subagents: { enabled: false },
-          // actor 的工具面：全集减去会悬挂/越权的交互工具。
-          ...workflowActorToolPolicy(),
-        },
-        {
-          eventStore: createInMemorySessionEventStore(),
-          modelAdapter: scriptedModelAdapter(responses, log) as never,
-          // 照生产工厂（create-app.ts）：untyped 不注入端口（无工具）；mono 注入端口 + typed 声明。
-          ...(submitProfile.kind === "untyped" ? {} : { workflowSubmitPort: submitPort }),
-          ...(submitProfile.kind === "mono" ? { workflowSubmitSchema: { ...submitProfile.schema } } : {}),
-          fileSystemPort,
-          ...(opts.sessionStore === undefined ? {} : { sessionStore: opts.sessionStore }),
-        },
-      );
-      // 照生产（dynamic-workflow-run-launch.ts 的 persistActorSession）：会话行必须先落库，
-      // `message.session_id` 对 `session(id)` 有 FK，否则第一条消息就写不进去。
-      if (opts.sessionStore !== undefined) {
-        await runtime.ensureSessionPersistedForExternalActivity(`workflow actor ${key}`);
-      }
-      opts.onRuntimeCreated?.(runtime, key);
-      return runtime;
-    }),
+        const key = refToString(actor);
+        const log: ModelCallLog = { calls: 0, toolNames: [], prompts: [], submitTools: [] };
+        modelCalls[key] = log;
+        const responses = opts.actorScripts[key] ?? [];
+        const runtime = createTestAgentRuntime(
+          sessionId,
+          {
+            systemPrompt: persona.system ?? "You are a workflow actor.",
+            mode: "yolo",
+            taskType: "workflow_child",
+            subagents: {},
+            // actor 的工具面：全集减去会悬挂/越权的交互工具。
+            ...workflowActorToolPolicy(),
+          },
+          {
+            eventStore: createInMemorySessionEventStore(),
+            modelAdapter: scriptedModelAdapter(responses, log) as never,
+            // 照生产工厂（create-app.ts）：untyped 不注入端口（无工具）；mono 注入端口 + typed 声明。
+            ...(submitProfile.kind === "untyped" ? {} : { workflowSubmitPort: submitPort }),
+            ...(submitProfile.kind === "mono"
+              ? { workflowSubmitSchema: { ...submitProfile.schema } }
+              : {}),
+            fileSystemPort,
+            ...(opts.sessionStore === undefined ? {} : { sessionStore: opts.sessionStore }),
+          },
+        );
+        // 照生产（dynamic-workflow-run-launch.ts 的 persistActorSession）：会话行必须先落库，
+        // `message.session_id` 对 `session(id)` 有 FK，否则第一条消息就写不进去。
+        if (opts.sessionStore !== undefined) {
+          await runtime.ensureSessionPersistedForExternalActivity(`workflow actor ${key}`);
+        }
+        opts.onRuntimeCreated?.(runtime, key);
+        return runtime;
+      }),
   });
 
   const settlement = await runWorkflowScript({

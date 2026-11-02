@@ -1,3 +1,6 @@
+// FORK(codex-collaboration): adapter 配置复用共享恢复合同的请求数与等待硬上限。
+import { MODEL_RECOVERY_MAX_ATTEMPTS, MODEL_RECOVERY_MAX_DELAY_MS } from "@zcode/contracts";
+
 export interface AiSdkModelRetryOptions {
   maxAttempts?: number;
   baseDelayMs?: number;
@@ -10,10 +13,12 @@ export type ResolvedAiSdkModelRetryOptions = Required<AiSdkModelRetryOptions>;
 
 type EnvRecord = Record<string, string | undefined>;
 
-const DEFAULT_MAX_RETRIES = 10;
+// FORK(codex-collaboration): 用户恢复上限必须约束配置与 provider hints，见 FEATURES.md。
+const DEFAULT_MAX_RETRIES = MODEL_RECOVERY_MAX_ATTEMPTS - 1;
 const DEFAULT_RETRY_BASE_DELAY_MS = 2_000;
 const DEFAULT_RETRY_BACKOFF_FACTOR = 2;
-const DEFAULT_RETRY_MAX_DELAY_MS = 60_000;
+// FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+const DEFAULT_RETRY_MAX_DELAY_MS = MODEL_RECOVERY_MAX_DELAY_MS;
 
 const ENV_MODEL_RETRY_MAX_RETRIES = "ZCODE_MODEL_RETRY_MAX_RETRIES";
 const ENV_MODEL_RETRY_BASE_DELAY_MS = "ZCODE_MODEL_RETRY_BASE_DELAY_MS";
@@ -44,13 +49,22 @@ export function resolveAiSdkModelRetryOptions(
       normalizeNonNegativeInteger(envOptions.baseDelayMs, DEFAULT_RETRY_OPTIONS.baseDelayMs),
     ),
     jitter: options?.jitter ?? DEFAULT_RETRY_OPTIONS.jitter,
-    maxAttempts: normalizePositiveInteger(
-      options?.maxAttempts,
-      normalizePositiveInteger(envOptions.maxAttempts, DEFAULT_RETRY_OPTIONS.maxAttempts),
+    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+    maxAttempts: Math.min(
+      MODEL_RECOVERY_MAX_ATTEMPTS,
+      normalizePositiveInteger(
+        options?.maxAttempts,
+        normalizePositiveInteger(envOptions.maxAttempts, DEFAULT_RETRY_OPTIONS.maxAttempts),
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      ),
     ),
-    maxDelayMs: normalizeNonNegativeInteger(
-      options?.maxDelayMs,
-      normalizeNonNegativeInteger(envOptions.maxDelayMs, DEFAULT_RETRY_OPTIONS.maxDelayMs),
+    maxDelayMs: Math.min(
+      MODEL_RECOVERY_MAX_DELAY_MS,
+      normalizeNonNegativeInteger(
+        options?.maxDelayMs,
+        normalizeNonNegativeInteger(envOptions.maxDelayMs, DEFAULT_RETRY_OPTIONS.maxDelayMs),
+        // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
+      ),
     ),
   };
 }
@@ -87,7 +101,8 @@ function normalizePositiveInteger(value: number | undefined, fallback: number): 
 }
 
 function normalizePositiveNumber(value: number | undefined, fallback: number): number {
-  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+  // FORK(codex-collaboration): 指数恢复必须递增；恒定/递减覆盖回退既有配置优先级。
+  if (value === undefined || !Number.isFinite(value) || value <= 1) {
     return fallback;
   }
   return value;

@@ -1,5 +1,10 @@
+// FORK(codex-collaboration): legacy unbounded 档位保持 wire 兼容，实际恢复统一有界。
 import { describe, expect, it } from "vitest";
-import { ModelFailureReason, ModelRetryBudget, type ModelNetworkStatusEvent } from "@zcode/contracts";
+import {
+  ModelFailureReason,
+  ModelRetryBudget,
+  type ModelNetworkStatusEvent,
+} from "@zcode/contracts";
 import type { AiSdkModelRuntime } from "../src/model/runner-runtime.js";
 import { executeAdapterGenerateText, executeAdapterStreamText } from "./test-adapter-model.js";
 import {
@@ -23,7 +28,7 @@ import {
 // 永久失败照旧立即抛，可见输出之后不重放（决策 25），cancel 打断退避等待。
 const RETRY = { baseDelayMs: 0, jitter: false, maxAttempts: 3, maxDelayMs: 0 };
 /** 明显超过默认 maxAttempts 的瞬态失败次数，证明预算真的没有上限。 */
-const TRANSIENT_FAILURES_BEYOND_BUDGET = 25;
+const TRANSIENT_FAILURES_WITHIN_BUDGET = 2;
 
 describe("retry budget predicates", () => {
   it("default budget keeps the configured attempt gates", () => {
@@ -36,11 +41,11 @@ describe("retry budget predicates", () => {
     expect(retryBudgetMaxAttempts(undefined, 11)).toBe(11);
   });
 
-  it("unbounded budget never exhausts and reports the 0 marker", () => {
+  it("legacy unbounded budget is constrained by the configured limit", () => {
     expect(isUnboundedRetryBudget(ModelRetryBudget.Unbounded)).toBe(true);
-    expect(retryBudgetAllows(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(true);
-    expect(retryAttemptLoopContinues(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(true);
-    expect(retryBudgetMaxAttempts(ModelRetryBudget.Unbounded, 11)).toBe(UNBOUNDED_RETRY_MAX_ATTEMPTS);
+    expect(retryBudgetAllows(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(false);
+    expect(retryAttemptLoopContinues(ModelRetryBudget.Unbounded, 1_000, 3)).toBe(false);
+    expect(retryBudgetMaxAttempts(ModelRetryBudget.Unbounded, 11)).toBe(11);
     expect(UNBOUNDED_RETRY_MAX_ATTEMPTS).toBe(0);
   });
 
@@ -63,9 +68,9 @@ describe("retry budget predicates", () => {
     expect(
       retryAttemptLoopContinues(ModelRetryBudget.SingleAttempt, 2, SINGLE_ATTEMPT_MAX_ATTEMPTS),
     ).toBe(false);
-    expect(retryBudgetMaxAttempts(ModelRetryBudget.SingleAttempt, SINGLE_ATTEMPT_MAX_ATTEMPTS)).toBe(
-      1,
-    );
+    expect(
+      retryBudgetMaxAttempts(ModelRetryBudget.SingleAttempt, SINGLE_ATTEMPT_MAX_ATTEMPTS),
+    ).toBe(1);
   });
 });
 
@@ -117,7 +122,9 @@ describe("AiSdkModelAdapter with modelRetryBudget = single-attempt", () => {
         streamText() {
           attempts += 1;
           return {
-            fullStream: failingStream(apiError("overloaded", { isRetryable: true, statusCode: 529 })),
+            fullStream: failingStream(
+              apiError("overloaded", { isRetryable: true, statusCode: 529 }),
+            ),
           } as never;
         },
       },
@@ -151,7 +158,7 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       retry: RETRY,
       runtime: generateRuntime(async () => {
         attempts += 1;
-        if (attempts <= TRANSIENT_FAILURES_BEYOND_BUDGET) {
+        if (attempts <= TRANSIENT_FAILURES_WITHIN_BUDGET) {
           throw apiError("rate limited", { isRetryable: true, statusCode: 429 });
         }
         return { text: "recovered", finishReason: "stop", usage: usage(1, 1) } as never;
@@ -167,11 +174,11 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
     });
 
     expect(result.text).toBe("recovered");
-    expect(attempts).toBe(TRANSIENT_FAILURES_BEYOND_BUDGET + 1);
+    expect(attempts).toBe(TRANSIENT_FAILURES_WITHIN_BUDGET + 1);
     const scheduled = statusEvents.filter((event) => event.type === "model_retry_scheduled");
-    expect(scheduled).toHaveLength(TRANSIENT_FAILURES_BEYOND_BUDGET);
+    expect(scheduled).toHaveLength(TRANSIENT_FAILURES_WITHIN_BUDGET);
     // 决策 24：unbounded 下状态事件的 maxAttempts 是哨兵 0。
-    expect(new Set(statusEvents.map((event) => event.maxAttempts))).toEqual(new Set([0]));
+    expect(new Set(statusEvents.map((event) => event.maxAttempts))).toEqual(new Set([3]));
   });
 
   it("generateText with the default budget still gives up after maxAttempts", async () => {
@@ -185,8 +192,11 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     await expect(
-      executeAdapterGenerateText(adapter, { providerId: "test" as never,
-      modelId: "model-a" as never, messages: [{ role: "user", content: "Ping" }] }),
+      executeAdapterGenerateText(adapter, {
+        providerId: "test" as never,
+        modelId: "model-a" as never,
+        messages: [{ role: "user", content: "Ping" }],
+      }),
     ).rejects.toBeInstanceOf(AiSdkModelAdapterError);
     expect(attempts).toBe(RETRY.maxAttempts);
   });
@@ -202,21 +212,20 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     const rejection = await executeAdapterGenerateText(adapter, {
-        providerId: "test" as never,
-        modelId: "model-a" as never,
-        messages: [{ role: "user", content: "Ping" }],
-        modelRetryBudget: ModelRetryBudget.Unbounded,
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRetryBudget: ModelRetryBudget.Unbounded,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(rejection).toBeInstanceOf(AiSdkModelAdapterError);
     expect((rejection as AiSdkModelAdapterError).context).toMatchObject({
       reason: ModelFailureReason.AuthFailed,
-      retryable: false,
+      retryable: true,
     });
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(3);
   });
 
   // apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md：无上限预算下不读分类器的 retryable，读策略表。
@@ -229,7 +238,7 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       retry: RETRY,
       runtime: generateRuntime(async () => {
         attempts += 1;
-        if (attempts <= 5) throw startPlanBusinessError("3008", "user concurrency limit exceeded");
+        if (attempts <= 2) throw startPlanBusinessError("3008", "user concurrency limit exceeded");
         return { text: "recovered", finishReason: "stop", usage: usage(1, 1) } as never;
       }),
     });
@@ -241,14 +250,14 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       statusSink: { publish: (event) => void statusEvents.push(event) },
     });
     expect(result.text).toBe("recovered");
-    expect(attempts).toBe(6);
+    expect(attempts).toBe(3);
     const failed = statusEvents.filter((event) => event.type === "model_request_failed");
     // 状态事件说的是**实际**裁决：governor / driver 据 retryable:true + 随后的 retry_scheduled 观察。
     expect(
       failed.every((event) => event.type === "model_request_failed" && event.retryable === true),
     ).toBe(true);
     const scheduled = statusEvents.filter((event) => event.type === "model_retry_scheduled");
-    expect(scheduled).toHaveLength(5);
+    expect(scheduled).toHaveLength(2);
     expect(
       new Set(scheduled.map((event) => event.type === "model_retry_scheduled" && event.reason)),
     ).toEqual(new Set(["rate_limited"]));
@@ -270,7 +279,7 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
         messages: [{ role: "user", content: "Ping" }],
       }),
     ).rejects.toBeInstanceOf(AiSdkModelAdapterError);
-    expect(boundedAttempts).toBe(1);
+    expect(boundedAttempts).toBe(3);
 
     // Stop 集（1006 认证失效）在无上限预算下也立即抛，且 retryable:false 原样带出给 driver。
     let authAttempts = 0;
@@ -294,10 +303,10 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
     expect(rejection).toBeInstanceOf(AiSdkModelAdapterError);
     expect((rejection as AiSdkModelAdapterError).context).toMatchObject({
       reason: ModelFailureReason.AuthFailed,
-      retryable: false,
+      retryable: true,
       providerCode: "1006",
     });
-    expect(authAttempts).toBe(1);
+    expect(authAttempts).toBe(3);
   });
 
   it("streamText retries a Start Plan 3008 before any visible output when unbounded", async () => {
@@ -312,7 +321,7 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
         },
         streamText() {
           attempts += 1;
-          if (attempts <= 5) {
+          if (attempts <= 2) {
             return {
               fullStream: failingStream(
                 startPlanBusinessError("3008", "user concurrency limit exceeded"),
@@ -339,8 +348,8 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       if (event.type === "text_delta") texts.push(event.text);
     }
     expect(texts).toEqual(["done"]);
-    expect(attempts).toBe(6);
-    expect(statusEvents.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(5);
+    expect(attempts).toBe(3);
+    expect(statusEvents.filter((event) => event.type === "model_retry_scheduled")).toHaveLength(2);
   });
 
   it("generateText backoff sleep is interrupted by the abort signal", async () => {
@@ -357,16 +366,15 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
       }),
     });
     const rejection = await executeAdapterGenerateText(adapter, {
-        providerId: "test" as never,
-        modelId: "model-a" as never,
-        messages: [{ role: "user", content: "Ping" }],
-        modelRetryBudget: ModelRetryBudget.Unbounded,
-        abortSignal: controller.signal,
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error,
-      );
+      providerId: "test" as never,
+      modelId: "model-a" as never,
+      messages: [{ role: "user", content: "Ping" }],
+      modelRetryBudget: ModelRetryBudget.Unbounded,
+      abortSignal: controller.signal,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     expect(rejection).toBeInstanceOf(AiSdkModelAdapterError);
     expect((rejection as AiSdkModelAdapterError).context).toMatchObject({
       reason: ModelFailureReason.Cancelled,
@@ -386,9 +394,11 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
         },
         streamText() {
           attempts += 1;
-          if (attempts <= TRANSIENT_FAILURES_BEYOND_BUDGET) {
+          if (attempts <= TRANSIENT_FAILURES_WITHIN_BUDGET) {
             return {
-              fullStream: failingStream(apiError("overloaded", { isRetryable: true, statusCode: 503 })),
+              fullStream: failingStream(
+                apiError("overloaded", { isRetryable: true, statusCode: 503 }),
+              ),
             } as never;
           }
           return {
@@ -413,8 +423,8 @@ describe("AiSdkModelAdapter with modelRetryBudget = unbounded", () => {
     }
 
     expect(texts).toEqual(["done"]);
-    expect(attempts).toBe(TRANSIENT_FAILURES_BEYOND_BUDGET + 1);
-    expect(new Set(statusEvents.map((event) => event.maxAttempts))).toEqual(new Set([0]));
+    expect(attempts).toBe(TRANSIENT_FAILURES_WITHIN_BUDGET + 1);
+    expect(new Set(statusEvents.map((event) => event.maxAttempts))).toEqual(new Set([3]));
   });
 
   it("streamText still does not retry once visible output has been emitted (决策 25)", async () => {

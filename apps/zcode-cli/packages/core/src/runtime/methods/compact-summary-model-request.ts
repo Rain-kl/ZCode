@@ -1,5 +1,9 @@
+// FORK(codex-collaboration): compact 独立调用也必须拥有跨 transport 的单一预算。
+import { createModelRecoveryBudget } from "@zcode/contracts";
 import {
   ModelErrorCode,
+  // FORK(codex-collaboration): reactive compact 继承失败模型步骤的共享预算。
+  getCurrentModelInvocationContext,
   runWithModelInvocationContext,
   traceContextToLogContext,
 } from "../deps.js";
@@ -22,6 +26,8 @@ import {
 import type { RuntimeModelTextResult } from "../types.js";
 
 type CompactSummaryModelRequest = {
+  // FORK(codex-collaboration): 一次 compact 的 transport fallback 共用单个 owner。
+  modelRecoveryBudget?: ModelInvocationContext["modelRecoveryBudget"];
   toolSearchEnabled?: boolean;
   abortSignal?: AbortSignal;
   maxOutputTokens?: number;
@@ -78,6 +84,11 @@ export async function runCompactSummaryModelRequest(
   const streamingLogicalCallId = crypto.randomUUID();
   const streamingRequest: CompactSummaryModelRequest = {
     ...input.request,
+    // FORK(codex-collaboration): 普通 compact 自建预算，reactive compact 继承原失败链。
+    modelRecoveryBudget:
+      input.request.modelRecoveryBudget ??
+      getCurrentModelInvocationContext()?.modelRecoveryBudget ??
+      createModelRecoveryBudget(),
     modelCall: {
       ...input.request.modelCall,
       callCause: input.request.modelCall?.callCause ?? "initial",
@@ -214,7 +225,8 @@ function applyCompactProviderBoundary(
 
   switch (event.boundary) {
     case "provider_stop_reason":
-      state.providerStopReasonPresent = event.present;
+      // FORK(codex-collaboration): 原生终态证据在同一 attempt 内单调成立，后续空 delta 不能触发重放。
+      state.providerStopReasonPresent ||= event.present;
       return;
 
     case "provider_response_start":
@@ -264,11 +276,16 @@ async function handleCompactSummaryStreamFailure(
     isTurnCancellationError(error, input.request.abortSignal) ||
     isModelContextExceededError(error) ||
     isModelMediaTooLargeError(error) ||
+    // FORK(codex-collaboration): 本地控制拒绝不能因 response_body 阶段而绕到另一 transport。
+    hasCompactSummaryLocalControlFailure(error) ||
     isCompactSummarySetupFailure(error) ||
     state.committedContentBlock
   ) {
     throw error;
   }
+  // FORK(codex-collaboration): 耗尽时保留最后实际 API 的诊断，不让空预算 adapter guard 覆盖 cause。
+  const budget = input.request.modelRecoveryBudget;
+  if (budget && budget.attempts >= budget.maxAttempts) throw error;
   const normalizedError = error instanceof Error ? error : normalizeStreamError(error);
 
   // compact summary 的 stream delta 从未进入 session/UI，在 content block
@@ -322,6 +339,9 @@ function cleanRequest(request: CompactSummaryModelRequest) {
 
 function invocationContext(request: CompactSummaryModelRequest) {
   return {
+    // FORK(codex-collaboration): stream/nonstream fallback 都不能重新开启物理请求预算。
+    modelRecoveryBudget:
+      request.modelRecoveryBudget ?? getCurrentModelInvocationContext()?.modelRecoveryBudget,
     metadata: request.metadata,
     modelCall: request.modelCall,
     statusSink: request.statusSink,
@@ -330,6 +350,37 @@ function invocationContext(request: CompactSummaryModelRequest) {
     refreshRuntimeHeadersBeforeAttempt: request.refreshRuntimeHeadersBeforeAttempt,
   };
 }
+
+// FORK-BEGIN(codex-collaboration)
+function hasCompactSummaryLocalControlFailure(error: unknown): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+  // RetryError/transport/adapter 可能并列保存 cause、lastError 与 error。必须遍历完整包装图，
+  // 不能因先看到 EPIPE 的 cause 就跳过另一条分支上的本地禁止请求事实。
+  while (pending.length > 0) {
+    const record = asRecord(pending.pop());
+    if (!record || seen.has(record)) continue;
+    seen.add(record);
+    const context = asRecord(record.context);
+    if (
+      [record.localControl, context?.localControl].some(
+        (value) => typeof value === "string" && value.length > 0,
+      )
+    )
+      return true;
+    pending.push(
+      record.cause,
+      record.lastError,
+      record.error,
+      record.adapterError,
+      context?.cause,
+      context?.lastError,
+      context?.error,
+    );
+  }
+  return false;
+}
+// FORK-END(codex-collaboration)
 
 function isCompactSummarySetupFailure(error: unknown): boolean {
   const errorRecord = asRecord(error);
@@ -340,7 +391,6 @@ function isCompactSummarySetupFailure(error: unknown): boolean {
   }
 
   if (streamFailurePhase === "request_setup") {
-
     // 其他同步 setup 或明确 HTTP 拒绝属于原请求错误，不能用第二种 transport 掩盖。
     return context?.httpResponseStatus !== 404;
   }

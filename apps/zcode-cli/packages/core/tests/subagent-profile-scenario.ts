@@ -22,15 +22,20 @@ export const initial = (): AgentProfile => ({
   systemPrompt: "PROFILE_ORIGINAL",
   modelSelection: { providerId: "custom", modelId: "fixed", options: { reasoningLevel: "low" } },
 });
-export const spawn = (prompt: string, background = false) => ({
+export const spawn = (prompt: string) => ({
   id: `spawn_${prompt}`,
-  name: "Agent",
-  input: { description: prompt, prompt, subagent_type: "reviewer", run_in_background: background },
+  name: "spawn_agent",
+  input: {
+    task_name: prompt.toLowerCase(),
+    message: prompt,
+    agent_type: "reviewer",
+    fork_turns: "none",
+  },
 });
 export const send = (id: string, message: string) => ({
   id: `send_${message}`,
-  name: "SendMessage",
-  input: { to: id, message, summary: message },
+  name: "followup_task",
+  input: { target: id, message },
 });
 type Call = ReturnType<typeof spawn> | ReturnType<typeof send>;
 export interface ChildRequest {
@@ -122,8 +127,5 @@ export function assertProfile(record: ChildRequest, profile: AgentProfile) {
   expect(record.reasoning).toBe(profile.modelSelection!.options!.reasoningLevel);
   const system = record.request.messages.filter((m) => m.role === "system");
   expect(JSON.stringify(system)).toContain(profile.systemPrompt);
-  expect(record.request.tools?.map((tool) => tool.name)).toEqual([
-    ...profile.tools!,
-    "RespondToCoordinator",
-  ]);
+  expect(record.request.tools?.map((tool) => tool.name)).toEqual([...profile.tools!]);
 }
