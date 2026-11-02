@@ -22,7 +22,9 @@ const WORKFLOW_TOOL_NAME = "Workflow";
  * D52：Workflow 的脚本子会话由 script-workflow-child-runtime 按父会话常驻选择建模型，
  * 不携带闲时轮的 modelExecution，同样会落到用户 Coding Plan，闲时轮内一并拒绝。
  */
-const OFF_PEAK_WORKFLOW_HINT = "Run the child work with foreground Agent calls instead.";
+// FORK(codex-collaboration): 旧工具已删除，拒绝提示必须推荐当前可执行的处理方式；见 FEATURES.md。
+const OFF_PEAK_WORKFLOW_HINT =
+  "Handle the work in the current session, or explain this execution limit to the user.";
 
 const WORKFLOW_LAUNCH_TIMEOUT_MS = 30_000;
 const WORKFLOW_MODEL_BYTES = 24_000;

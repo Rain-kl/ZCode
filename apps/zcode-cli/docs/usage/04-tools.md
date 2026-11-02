@@ -23,7 +23,16 @@ zcode --prompt "任务说明" --cwd /absolute/path/to/task --mode yolo --disallo
 
 普通 `--prompt` 没有交互式审批客户端。需要提问或审批的工具可能失败。对无需人工干预的任务，移除上述工具可避免进入计划或提问流程；这会改变实验条件，应记录在评测配置中。`yolo` 也不保证所有声明了强制确认的工具都能运行。
 
-按任务协议决定是否禁用子任务、记忆、技能、MCP、插件和工作流。禁用子任务时可同时关闭 `features.subagent` 并移除 `Agent Task`。当前源码可用 `--workflow-mode disabled`；旧构建先检测参数支持，不要无条件添加。
+按任务协议决定是否禁用协作、记忆、技能、MCP、插件和工作流。需要完整移除协作工具时，使用：
+
+```sh
+zcode --prompt "任务说明" --cwd /absolute/path/to/task --disallowed-tools "spawn_agent send_message followup_task interrupt_agent list_agents wait_agent" --json --no-color
+```
+
+当前协作只使用上述六工具。`subagents` 配置决定委派策略和容量：`delegationMode` 默认
+`explicit`，要求用户或适用技能明确授权委派；`proactive` 允许主动委派。`explicit` 不会移除工具。
+`maxTotalAgents` 默认 4（含根），`maxDepth` 默认 1，`maxLoadedChildren` 默认 3。
+工作流可单独用 `--workflow-mode disabled` 关闭。评测应记录这些选择，避免不同能力条件下直接比较结果。
 
 `--disallowed-tools` 在工具注册层移除完整工具，适合固定实验工具面。配置中的 `permission.disallowedTools` 属于权限判定，不应当作它的等价替代；尤其不能假设所有权限配置都约束 `yolo`。
 
