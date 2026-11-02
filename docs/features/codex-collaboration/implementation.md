@@ -2,9 +2,10 @@
 
 ## 当前状态
 
-2026-11-02：Task 1（有界模型 API 恢复）已实施并通过独立 spec/quality review。
-Task 2 控制器通过双审，53 条回归；Task3a 正在实现合同、工具条目与角色，尚未切换默认 runtime。
-调度器、六工具迁移、角色提示词和 mailbox 生命周期属于后续任务，不代表本功能已全部交付。
+2026-11-03：Task 1（有界模型 API 恢复）、Task 2 控制器、Task3a 六工具合同与角色均已通过双审。
+Task3b 已切换实际 runtime，删除旧协作执行路径并接入同根调度、持久邮箱和冷恢复；
+独立规范和质量审查均批准至 `205a7ff6`，所有已确认问题均已关闭。
+Task4 客户端工具呈现与冷身份查询已开始实施，尚未验收，不代表本功能已经全部交付。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
 Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
 2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；

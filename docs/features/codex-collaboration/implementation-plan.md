@@ -14,7 +14,8 @@
 
 - contracts/src/model、core/src/runtime/methods、adapters/src/model：调用上下文、重试预算和流交接。
 - core/src/fork/codex-collaboration：受控的调度、邮箱、角色提示和工具装配模块。
-- contracts/src/interfaces/subagent.port.ts、core/src/subagent：旧执行端口适配，保留已有会话恢复。
+- core/src/fork/codex-collaboration-runtime：prepared child 执行、持久邮箱、同树恢复与宿主资源释放。
+- core/src/subagent：保留 profile、模型/权限/MCP/skills 等角色装配策略，旧执行端口与 runner 已删除。
 - core/src/tool、core/src/runtime：模型工具曝光和 root/child 装配。
 - bootstrap/src/zcode-protocol-v4、tui、packages/ui：既有事件的协作身份与状态投影。
 - architecture-policy.yaml：新增模块 managed 边界，不以例外绕过新文件治理。
@@ -86,9 +87,9 @@ spawn 接受边界、路径隔离、并发名额、generation 和冷恢复身份
 
 ## Task 3: 工具、角色与实际 runtime 装配
 
-- [ ] 写真实父子 runtime 回归：spawn 返回后 wait 时 steer，child 的模型和工具继续。
+- [x] 写真实父子 runtime 回归：spawn 返回后 wait 时 steer，child 的模型和工具继续。
   失败后的 followup 使用原 childSessionId 和 transcript；cold resume 同样成立。
-- [ ] 在 contracts 和 managed 模块声明六工具严格 schema 与 ToolEntry。
+- [x] 在 contracts 和 managed 模块声明六工具严格 schema 与 ToolEntry。
 
 ```text
 spawn_agent(task_name, message, fork_turns?, agent_type?, model?, reasoning_effort?)
@@ -106,17 +107,17 @@ ToolSearch、权限、结果限额和 hook 必须走现有链。新名字同步 
 模型返回对齐 Codex：spawn `{task_name}`，消息成功空文本，interrupt `{previous_status}`，
 list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内部身份留在事件。
 
-- [ ] 根 runtime 创建唯一控制器，子 runtime 共享按身份绑定的端口。
+- [x] 根 runtime 创建唯一控制器，子 runtime 共享按身份绑定的端口。
   spawn 接受后 signal 独立；wait 只取消订阅；interrupt 创建新轮次时更换 controller。
   父正常完成不释放 child 运行句柄；宿主关闭显式清理树。
-- [ ] 移植固定 Codex 提交的主/子角色、消息信封、fork all/none 和模型继承规则。
+- [x] 移植固定 Codex 提交的主/子角色、消息信封、fork all/none 和模型继承规则。
   补 Apache-2.0 归属；保留 profile/skills/memory/AGENTS.md 权限边界。
   ZCode 角色合同无 developer，将宿主角色片段放 system section；协作消息在唯一 provider
   投影转换为 assistant envelope，并保存可冷恢复的私有来源，不扩大全局消息角色协议。
   接受须在持久化、sink 安装和任务 admission 后；投递须 ACK 才出箱，禁用 20×10ms 轮询补偿。
-- [ ] 验证新工具会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
+- [x] 验证新工具会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
   清理旧 runner/独立 registry 子代理写入与消息执行路径，不新增旧历史兼容，不删除用户数据。
-- [ ] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
+- [x] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
   独立规范/质量审查均通过。
 
 ## Task 4: 客户端投影与端到端回归
