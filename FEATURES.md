@@ -33,6 +33,7 @@
 - **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
 - **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。默认 runtime driver 仍待 Task3b，不代表迁移完成；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
 - **Task3b（2026-11-02，待独立审查）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。实际相关388项、controller53项、Bash/fork2项通过；CLI lint与独立旧产品断言的失败边界如实记录，客户端整体交付仍待Task4。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
+- **Task3b 配置收口**：删除无行为的 `features.subagent` 公开键/类型/默认值/存储映射；直接 set/get/merge 和配置文件明确拒绝旧键，removal guard 与依赖契约测试防止同步后静默恢复。统一保留 `subagents` 参数，内部 workflow 的能力隔离不使用旧开关。
 
 ### 持久协作控制器（2026-11-02）
 

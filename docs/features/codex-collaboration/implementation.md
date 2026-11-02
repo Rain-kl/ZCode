@@ -437,3 +437,16 @@ interrupted但provider未结算仍阻止回收，root派生事件待写同样阻
 真实三项先RED后GREEN：首次settings失败零模型IO且关闭一次；cold hydrate失败关闭新handle但保留全部
 accepted history；prepare与cleanup双失败保留两原cause，shutdown重试同资源。adapter5文件38/38、
 controller3文件54/54通过；模式边界同时按既有profile策略澄清，没有扩大plan/yolo权限合同。
+
+### Task3b spec 修正：删除无效的公开配置开关
+
+旧 `features.subagent` 在六工具默认接线后仍可被 set/get/文件 schema 接受，但没有行为。现删除公开键、
+值类型、默认值和 store 映射；动态 ConfigPort 用公开 ConfigKey 集合拒绝未知 set/get/merge，先校验
+feature patch 再写入，避免混合 patch 部分成功。features 文件对象改为 strict，旧键明确报 schema 错误；
+其余文件顶层的 passthrough 策略保持原样。现有 loadFileConfig 将 parse 错误作为 loaded:false 与诊断返回，
+不会宣称加载成功。本批不改写用户配置文件，也不添加迁移或旧开关别名。
+
+实际RED为旧公开键仍存在、旧文件字段仍接受两项；重建 contracts 公共产物后，配置两个测试文件59/59
+GREEN，包含动态 set/get/merge 拒绝、合法 feature/subagents 保留及混合 patch 原子拒绝。removal guard
+新增三个当前配置入口的禁回归规则并通过（36815文件）；adapters noEmit、scoped lint、架构0违规通过。
+仓库当前没有 config set/get CLI 子命令，因此通过实际动态 ConfigPort 边界验证，未发明新的 CLI 接口。

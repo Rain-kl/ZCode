@@ -46,14 +46,14 @@ const networkSchema = z.object({
   timeout: positiveNumberSchema.optional(),
 });
 
+// FORK(codex-collaboration): 已移除的开关必须报错，避免配置被静默丢弃后误以为生效。
 const featuresSchema = z.object({
   compact: z.boolean().optional(),
   rewind: z.boolean().optional(),
-  subagent: z.boolean().optional(),
   memory: z.boolean().optional(),
   skill: z.boolean().optional(),
   mcp: z.boolean().optional(),
-});
+}).strict();
 
 const memorySchema = z.object({
   use: z.boolean().optional(),

@@ -75,6 +75,9 @@ driver 只提供同步只读 hasUnreadMessages；不增加消息所有者或轮�
 模型随后调用 wait 时丢失已发生的唤醒。
 旧 features.subagent/subagents.enabled 不再控制六工具。内部 script workflow 的隔离由有限的
 createCollaborationBinding 宿主注入明确返回 undefined 表达，不创建另一棵树，也不恢复旧模型工具。
+旧 features.subagent 从 ConfigKey、值类型、默认值、文件schema与store映射全部删除。features 是有限
+开关集合，未知键明确报错；不能把删除的subagent键当未知字段静默strip。ConfigPort的untyped set/get
+同样拒绝未知key，merge拒绝旧features字段，不能“保存成功但无行为”。不迁移或修改用户配置文件。
 
 ## 展示与关闭
 

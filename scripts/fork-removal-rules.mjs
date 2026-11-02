@@ -67,6 +67,15 @@ export const REGISTRY = [
       },
     ],
     absentPatternsInFile: [
+      ...[
+        "apps/zcode-cli/packages/contracts/src/config/index.ts",
+        "apps/zcode-cli/packages/adapters/src/config/index.ts",
+        "apps/zcode-cli/packages/adapters/src/config/schema.ts",
+      ].map((path) => ({
+        path,
+        pattern: /\bFeatureSubagent\b|features\.subagent|\bsubagent\s*:/,
+        reason: "旧公开开关已删除，不能恢复静默接受但不生效的配置路径",
+      })),
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/index.ts",
         pattern:
