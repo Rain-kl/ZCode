@@ -419,3 +419,11 @@ RED：跨 setImmediate 检查 browser 已提前关闭；紧接 followup 提前�
 MCP/server selectors展开成具体名称，不能把广泛selector带到child绕过父限制；不依赖本轮ToolSearch曝光。
 四个真实RED覆盖fork all/none及两种MCPselector，修复后runtime/profile/ToolSearch7文件62/62 GREEN。
 保留fixture的profile/memory/deny/session断言，仅将父embedded分支不可用Grep标记替换为实际可用Bash。
+
+### Task3b spec 修正：整树与未结算 IO 的驻留
+
+独立实际root→parent→grandchild证明parent已完成时，root仅看直系registry会错误报告可回收。
+新增 binding 只读hasRunningWork：root查整树、child查自身子树，直接读controller记录与原command句柄；
+interrupted但provider未结算仍阻止回收，root派生事件待写同样阻止回收。background/residency共用该查询，
+没有第二状态owner或计时器。扩展nested卸载回归，先RED false→true；确认parent卸载后仍驻留，interrupt
+后模型gate未放仍驻留，最后IO/事件全部结算才解除。实际runtime/residency/background6文件96/96 GREEN。

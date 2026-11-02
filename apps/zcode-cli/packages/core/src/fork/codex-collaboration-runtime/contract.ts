@@ -9,6 +9,8 @@ import type { AgentProfile } from "../../subagent/profile.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 export interface RuntimeCollaborationBinding {
   readonly port: CollaborationToolPort;
+  /** Read-only subtree liveness from canonical records and original command resource handles. */
+  hasRunningWork(): boolean;
   /** Provider boundary: deliver retained mail, consume durable receipts and render current capabilities. */
   beforeModel(
     tools: readonly ModelToolContract[],

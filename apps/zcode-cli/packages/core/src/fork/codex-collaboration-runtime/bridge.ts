@@ -77,6 +77,17 @@ export function createRuntimeCollaborationBinding(
     if (command) await Promise.allSettled([command]);
   }
   const published = new Map<string, string>();
+  function hasRunningWork(path: string): boolean {
+    return (
+      (path === "/root" && pendingProjections.length > 0) ||
+      (snapshot?.agents.some(
+        (agent) =>
+          (agent.path === path || agent.path.startsWith(`${path}/`)) &&
+          (agent.status === "running" || runningCommands.has(agent.agentId)),
+      ) ??
+        false)
+    );
+  }
   const savedEntry = () =>
     (savedRoot ??= readCollaborationRootEntry(rootRuntime.sessionStore, rootRuntime.sessionId));
   function role(
@@ -491,6 +502,7 @@ export function createRuntimeCollaborationBinding(
     };
     const binding: RuntimeCollaborationBinding = {
       port,
+      hasRunningWork: () => hasRunningWork(identity.path),
       async beforeModel(tools) {
         const tree = await ready();
         await awaitProjection();
@@ -534,6 +546,7 @@ export function createRuntimeCollaborationBinding(
   };
   return {
     port,
+    hasRunningWork: () => hasRunningWork("/root"),
     beforeModel: async (tools) => {
       if (!startup && !(await savedEntry())) {
         const configured = rootRuntime.config.subagents;

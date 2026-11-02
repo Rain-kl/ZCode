@@ -71,6 +71,11 @@ createCollaborationBinding 宿主注入明确返回 undefined 表达，不创建
 
 ## 展示与关闭
 
+root 的驻留阻塞查询必须读同一 controller 的整树 running 记录与 driver 尚未结算的原 command 句柄，
+不能只读直系 child registry。child 的同一查询只读自身子树。interrupt 已提交终态但 command 尚未
+结算时仍阻止自动回收；root 派生事件尚在写入时也保持驻留。这些都是既有 owner 的只读查询，不新增
+驻留计时器、状态副本或调度路径。
+
 spawn 模型输出只有 task_name。标准 executor 允许记录私有身份到结果 metadata，再由已有 settlement
 写入 completed ToolPart；adapter 不直接修改 pending part。崩溃发生在 accepted 与结果落盘之间时，
 冷读侧从 root snapshot.accepted + agents 恢复关系，不从 ACK 推断完成。

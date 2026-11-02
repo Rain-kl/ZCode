@@ -36,7 +36,11 @@ export type {
  * runtime task registry，不能从协议投影或 UI 状态猜测。
  */
 export function hasRunningBackgroundTasks(this: AgentRuntimeInternal): boolean {
-  return hasRunningBackgroundRuntimeTask(this.runtimeTaskRegistry);
+  // FORK(codex-collaboration): 直系registry不是整树寿命；孙任务及已中断未结算IO仍占用根的共享资源。
+  return (
+    this.collaboration?.hasRunningWork() === true ||
+    hasRunningBackgroundRuntimeTask(this.runtimeTaskRegistry)
+  );
 }
 
 export async function cancelBackgroundTask(

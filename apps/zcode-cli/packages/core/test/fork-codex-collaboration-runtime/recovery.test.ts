@@ -14,18 +14,16 @@ describe("actual collaboration recovery", () => {
       seen.push(observation.factoryInput.requestDependencies);
       return done;
     });
-    const spawned = await runtime
-      .getToolExecutor()
-      .execute(
-        {
-          id: "execution-spawn",
-          name: "spawn_agent",
-          input: { task_name: "worker", message: "execution-scoped child", fork_turns: "none" },
-        },
-        {
-          subagentModelOverride: { selection, requestDependencies: material, background: "allow" },
-        },
-      );
+    const spawned = await runtime.getToolExecutor().execute(
+      {
+        id: "execution-spawn",
+        name: "spawn_agent",
+        input: { task_name: "worker", message: "execution-scoped child", fork_turns: "none" },
+      },
+      {
+        subagentModelOverride: { selection, requestDependencies: material, background: "allow" },
+      },
+    );
     expect(spawned.success, spawned.error?.message).toBe(true);
     await vi.waitFor(() => expect(seen).toEqual([material]));
     await vi.waitFor(async () =>
@@ -385,6 +383,7 @@ describe("actual collaboration recovery", () => {
           '"/root/parent","agent_status":{"completed"',
         ),
       );
+      expect(runtime.hasResidencyBlockingWork()).toBe(true);
       const parent = (await store.listSessions()).find(
         (session) => session.title === "/root/parent",
       )!;
@@ -399,6 +398,13 @@ describe("actual collaboration recovery", () => {
           )
         ).success,
       ).toBe(true);
+      expect(runtime.hasResidencyBlockingWork()).toBe(true);
+      expect(
+        (await tool(runtime, "interrupt_agent", { target: "/root/parent/grandchild" })).success,
+      ).toBe(true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      // 已显示 interrupted 仍有实际 provider IO，不能因直系 parent 已完成就关闭整棵树。
+      expect(runtime.hasResidencyBlockingWork()).toBe(true);
       released.resolve();
       await vi.waitFor(async () =>
         expect(
@@ -416,6 +422,7 @@ describe("actual collaboration recovery", () => {
             (event.payload as { path?: string }).path === "/root/parent/grandchild",
         ),
       ).toEqual([]);
+      await vi.waitFor(() => expect(runtime.hasResidencyBlockingWork()).toBe(false));
       await runtime.shutdownCollaboration();
       const restored = createTestAgentRuntime(
         rootId,
