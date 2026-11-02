@@ -290,3 +290,18 @@ flush 的释放重试曾只删除 pending 标记，仍把已释放句柄留在 l
 现在正常release与flush成功重试共用completeRelease：删除pending和loaded，并发布派生投影。
 重试资源记录继续携带原discard，新增回归断言接受会话两次释放均为false、邮箱和历史保留，
 list/投影移除后followup重新prepare原childSessionId。该例先RED（list仍有child），最终48/48 GREEN。
+
+### Task 2 quality review：清理隔离与关闭失败
+
+确认两个交错：unload失败后followup复用pending句柄，随后flush将新轮次释放；flush释放driver等待期间
+并发followup同样可准入到待释放句柄。现ensureLoaded/mailbox drain先通过retryCleanup完成该身份清理，
+flush也在原enqueue通道重试，清理与admission互斥，不递归等待已占有通道的finish。
+
+另确认dispose原先在abort前save，保存失败会使所有child继续运行；单个release失败也会截断后续清理。
+现先关闭普通准入、abort所有child，再独立尝试保存和每个资源；复合异常保留各code/phase/cause，
+失败快照与清理保留给maintenance flush/dispose。保存失败的内存状态已中断；旧持久running可按既定
+冷恢复规则转interrupted。宿主仍须await清理后才关闭parent/root store，不能把异常当作资源已全部释放。
+
+纯settings校验提取为无状态helper；fake driver迁到core/test/fork-codex-collaboration并登记同一managed
+模块，避免测试文件超过800行，不新增调度owner。3个新场景先RED，另补关闭后abort reject/迟到completion的无异步错误与generation保护验证，最终3文件53/53 GREEN；
+core typecheck、模块lint、架构0违规与diff check通过。未运行冗余根全局检查，未改真实runtime或E2E。

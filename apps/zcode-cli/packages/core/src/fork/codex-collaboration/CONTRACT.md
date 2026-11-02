@@ -46,3 +46,11 @@ cancel must support idempotent retries. Acceptance failure aborts the independen
 signal even if cancel fails. A failed cancel retains its admission; flush retries
 cancel before releasing its runtime. Preparation failures retain both the mailbox
 installation error and release error, together with the actual handle for retry.
+
+Pending release handles are quarantined. New handle use first completes cleanup
+inside the same command lane; flush retries use that lane too, so a delayed
+release cannot tear down a newer admission. Host shutdown closes normal admission
+and aborts every child before attempting snapshot or runtime IO, attempts all
+resources independently, and aggregates failures. Failed snapshot/cleanup remains
+retryable through maintenance flush/dispose after ordinary commands are closed.
+The host must await cleanup before closing its parent/root storage dependencies.

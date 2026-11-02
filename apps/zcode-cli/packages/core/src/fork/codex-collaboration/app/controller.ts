@@ -2,7 +2,6 @@ import {
   CollaborationError,
   type AgentIdentity,
   type AgentRecord,
-  type AgentSettings,
   type AgentStatus,
   type CollaborationController,
   type CollaborationMessage,
@@ -22,6 +21,7 @@ import {
   validTaskName,
 } from "./snapshot.js";
 
+import { normalizeAgentSettings, nonempty } from "./agent-settings.js";
 import { ActivityWaiters } from "./activity-waiters.js";
 
 const DEFAULT_TOTAL = 4;
@@ -36,10 +36,6 @@ function positive(value: number | undefined, fallback: number, name: string): nu
   if (!Number.isSafeInteger(result) || result < 1)
     throw new CollaborationError("INVALID_INPUT", `${name} must be a positive integer`);
   return result;
-}
-function nonempty(value: string, name: string): void {
-  if (typeof value !== "string" || !value.trim())
-    throw new CollaborationError("INVALID_INPUT", `${name} must not be empty`);
 }
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -96,6 +92,7 @@ class Controller implements CollaborationController {
     { agentId: string; generation: number; result: RunResult }
   >();
   private closed = false;
+  private shutdownSavePending = false;
   private readonly total: number;
   private readonly loadedLimit: number;
   private readonly depth: number;
@@ -150,9 +147,10 @@ class Controller implements CollaborationController {
     await this.options.rootRuntime.installMailbox();
     this.loaded.set(this.options.root.agentId, { runtime: this.options.rootRuntime });
   }
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+  private enqueue<T>(operation: () => Promise<T>, maintenance = false): Promise<T> {
     const result = this.tail.then(() => {
-      if (this.closed) throw new CollaborationError("CLOSED", "Collaboration controller is closed");
+      if (this.closed && !maintenance)
+        throw new CollaborationError("CLOSED", "Collaboration controller is closed");
       return operation();
     });
     this.tail = result.then(
@@ -217,6 +215,8 @@ class Controller implements CollaborationController {
       );
   }
   private async ensureLoaded(agent: AgentRecord, resume: boolean): Promise<Loaded> {
+    // 待释放句柄先完成清理，不能在旧 release 尚未结束时被新轮次复用。
+    await this.retryCleanup(agent.agentId);
     const existing = this.loaded.get(agent.agentId);
     if (existing) return existing;
     if (this.loaded.size - 1 >= this.loadedLimit) {
@@ -304,41 +304,6 @@ class Controller implements CollaborationController {
     this.loaded.delete(agentId);
     this.publish();
   }
-  private settings(request: SpawnRequest, caller: AgentRecord): AgentSettings {
-    const input = request.settings ?? {};
-    if (
-      Object.keys(input).some(
-        (key) => !["forkTurns", "agentType", "model", "reasoningEffort"].includes(key),
-      )
-    ) {
-      throw new CollaborationError("INVALID_INPUT", "Unknown collaboration spawn setting");
-    }
-    const forkTurns = input.forkTurns ?? "all";
-    if (forkTurns !== "all" && forkTurns !== "none")
-      throw new CollaborationError("INVALID_INPUT", "forkTurns must be all or none");
-    if (forkTurns === "all" && (input.model !== undefined || input.reasoningEffort !== undefined))
-      throw new CollaborationError(
-        "INVALID_INPUT",
-        "forkTurns all inherits model/reasoning and rejects overrides",
-      );
-    for (const key of ["model", "agentType", "reasoningEffort"] as const)
-      if (input[key] !== undefined) nonempty(input[key], key);
-    return {
-      forkTurns,
-      ...(input.agentType ? { agentType: input.agentType } : {}),
-      ...(forkTurns === "all"
-        ? {
-            ...(caller.settings.model ? { model: caller.settings.model } : {}),
-            ...(caller.settings.reasoningEffort
-              ? { reasoningEffort: caller.settings.reasoningEffort }
-              : {}),
-          }
-        : {
-            ...(input.model ? { model: input.model } : {}),
-            ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
-          }),
-    };
-  }
   spawn(request: SpawnRequest, options?: { signal?: AbortSignal }): Promise<AgentIdentity> {
     return this.enqueue(async () => {
       const caller = this.record(request.callerId, request.callerId);
@@ -349,7 +314,7 @@ class Controller implements CollaborationController {
           "INVALID_INPUT",
           "taskName must contain lowercase letters, digits or underscores and cannot be root",
         );
-      const settings = this.settings(request, caller);
+      const settings = normalizeAgentSettings(request, caller);
       const fingerprint = JSON.stringify([
         request.callerId,
         request.taskName,
@@ -461,12 +426,6 @@ class Controller implements CollaborationController {
     accepted?: { callerId: string; callId: string; fingerprint: string },
   ): Promise<void> {
     this.checkCapacity();
-    if (this.admissionCleanupPending.has(agent.agentId))
-      throw new CollaborationError(
-        "RUNTIME_FAILED",
-        "Previous admission cleanup is pending; flush before retrying",
-        { agentId: agent.agentId, phase: "admission-cleanup" },
-      );
     const loaded = await this.ensureLoaded(agent, resume);
     this.checkCancelled(callerSignal);
     // 所有旧消息先按 FIFO 交付；本轮 task 本身由 admit 持久接纳，不能重复注入。
@@ -628,6 +587,7 @@ class Controller implements CollaborationController {
     });
   }
   private async drain(agentId: string, beforeId?: string): Promise<void> {
+    await this.retryCleanup(agentId);
     const loaded = this.loaded.get(agentId);
     if (!loaded) return;
     for (;;) {
@@ -735,7 +695,22 @@ class Controller implements CollaborationController {
     if (this.backgroundErrors.length) throw this.backgroundErrors.shift();
     for (const pending of Array.from(this.pendingCompletions.values()))
       await this.finish(pending.agentId, pending.generation, pending.result);
-    for (const [agentId, admission] of this.admissionCleanupPending) {
+    await this.enqueue(async () => {
+      for (const agentId of new Set([
+        ...this.admissionCleanupPending.keys(),
+        ...this.cleanupPending.keys(),
+      ]))
+        await this.retryCleanup(agentId);
+      if (this.shutdownSavePending) {
+        await this.save(this.state);
+        this.shutdownSavePending = false;
+      }
+    }, true);
+  }
+  /** Called only inside the command lane; a pending handle cannot serve new admission. */
+  private async retryCleanup(agentId: string): Promise<void> {
+    const admission = this.admissionCleanupPending.get(agentId);
+    if (admission) {
       try {
         await admission.cancel();
       } catch (cause) {
@@ -748,7 +723,8 @@ class Controller implements CollaborationController {
       }
       this.admissionCleanupPending.delete(agentId);
     }
-    for (const [agentId, pending] of this.cleanupPending) {
+    const pending = this.cleanupPending.get(agentId);
+    if (pending) {
       try {
         await this.options.runtime.release(pending.identity, pending.runtime, {
           discard: pending.discard,
@@ -766,15 +742,45 @@ class Controller implements CollaborationController {
   }
   dispose(): Promise<void> {
     return this.enqueue(async () => {
+      // 宿主关闭先封住普通准入并停止所有轮次；不能让持久化失败阻止资源回收。
+      this.closed = true;
       const next = clone(this.state);
+      const errors: unknown[] = [];
       for (const agent of next.agents) if (agent.status === "running") agent.status = "interrupted";
-      await this.save(next);
       for (const [agentId, loaded] of this.loaded)
         if (agentId !== this.options.root.agentId) loaded.abort?.abort();
-      for (const agent of next.agents) if (agent.path !== "/root") await this.release(agent, false);
+      try {
+        await this.save(next);
+        this.shutdownSavePending = false;
+      } catch (error) {
+        this.state = next;
+        this.shutdownSavePending = true;
+        errors.push(error);
+      }
+      this.pendingCompletions.clear();
+      const resources = new Set([
+        ...next.agents.filter((agent) => agent.path !== "/root").map((agent) => agent.agentId),
+        ...this.cleanupPending.keys(),
+        ...this.admissionCleanupPending.keys(),
+      ]);
+      for (const agentId of resources) {
+        try {
+          const agent = next.agents.find((candidate) => candidate.agentId === agentId);
+          if (agent) await this.release(agent, false);
+          await this.retryCleanup(agentId);
+        } catch (error) {
+          errors.push(error);
+        }
+      }
       this.waiters.close();
       this.projections.clear();
-      this.closed = true;
-    });
+      if (errors.length)
+        throw new CollaborationError(
+          "RUNTIME_FAILED",
+          "Collaboration shutdown failed; cleanup remains retryable",
+          { phase: "dispose" },
+          { cause: new AggregateError(errors, "Collaboration shutdown failures") },
+        );
+    }, true);
   }
 }

@@ -66,3 +66,10 @@ Task 3 必须实现真实 session entry adapter 与 durable message ACK，并移
 - 接受保存/取消检查失败后，独立 run signal 必须被 abort；admission.cancel 失败不能覆盖原触发错误。保留未完成 admission 清理，flush 先重试 cancel，再释放相应 runtime，禁止在未完成清理的 runtime 上启动新轮次。
 
 - flush 重试 runtime.release 成功后必须执行与正常卸载相同的 loaded 删除和投影通知；身份、accepted 记录、邮箱与会话历史保持。重试保留原 discard 选项，已接受会话只能 discard:false。后续 followup 必须重新 prepare 原 childSessionId，不能复用已经 release 的句柄。
+
+## Task 2 quality：清理与admission串行化、宿主关闭
+
+- pending release 的句柄处于隔离状态，不可作为新admission或mailbox sink使用。followup先在原命令通道重试该身份的cancel/release，再prepare原会话；清理失败继续报告原阶段错误，不能启动轮次。
+- flush的清理重试与spawn/followup/interrupt共用唯一串行admission通道。释放driver等待期间，后续命令不能进入；旧清理不得删除替换后的句柄或新generation。
+- dispose开始后立即关闭普通command admission并abort所有child signal，不依赖快照写入成功。之后分别尝试保存interrupted状态及所有资源清理；单个保存或释放失败不能阻止其他child停止与释放。
+- dispose的复合错误保留各自code、phase与cause；失败的快照和资源清理保留给显式flush/dispose重试。关闭后普通命令仍报CLOSED，但维护重试继续可达；成功重复dispose为幂等操作。parent/root store由宿主保持打开直到await资源清理结束，不能因首次dispose异常提前关闭driver依赖。
