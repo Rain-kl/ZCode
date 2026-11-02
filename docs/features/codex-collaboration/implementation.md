@@ -491,3 +491,15 @@ lastError与STATUS均固化成Turn execution failed。driver现在复用selectEx
 8文件56/56、质量原始独立probe1/1通过。新增两项同时查list、durable lastError、STATUS、父provider
 assistant邮件、原cause对象与同session followup恢复；core noEmit/scoped lint/架构通过。此修复仍待
 spec增量与quality复审，不宣称Task4完成。
+
+### Task4 支持：精确同步 runtime 状态只读入口
+
+客户端冷query不能用任意后台Bash/兄弟running或旧保存图证明目标child仍运行。新增公开同步
+AgentRuntime.getCollaborationAgentStatus(agentId)，返回公开类型CollaborationAgentRuntimeStatus或
+undefined；源只读已初始化controller快照中的精确child，root/未知/未初始化均undefined，不调用ready、
+不读store、不启动模型。interrupt已提交但原IO未drain仍返回interrupted，与驻留资源查询用途不同。
+
+先更新合同，实际RED为方法缺失；修后status/runtime/recovery3文件25/25。status两项实际覆盖冷保存
+running但无init时0IO、live/terminal/interrupt、错误child与仍运行兄弟的精确区分、无额外模型请求。
+core typecheck/build与scoped lint通过；架构当时仅client并行施工的bootstrap/app/subagent-observation.ts
+未登记新文件1项失败，runtime所有自有源无违规，未改或暂存client的policy。此有限入口单独交spec/quality。

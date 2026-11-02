@@ -208,4 +208,7 @@ export {
   relationFromSnapshot,
   COLLABORATION_SESSION_ENTRY,
 } from "./fork/codex-collaboration-runtime/module.js";
-export type { CollaborationRootEntry } from "./fork/codex-collaboration-runtime/module.js";
+export type {
+  CollaborationRootEntry,
+  CollaborationAgentRuntimeStatus,
+} from "./fork/codex-collaboration-runtime/module.js";

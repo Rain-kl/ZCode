@@ -86,6 +86,13 @@ root 的驻留阻塞查询必须读同一 controller 的整树 running 记录与
 结算时仍阻止自动回收；root 派生事件尚在写入时也保持驻留。这些都是既有 owner 的只读查询，不新增
 驻留计时器、状态副本或调度路径。
 
+客户端冷读需要按精确agentId核对实时事实，不能拿任意Bash/兄弟的聚合running证明该child存活。
+公开AgentRuntime.getCollaborationAgentStatus(agentId): CollaborationAgentRuntimeStatus | undefined是同步
+只读入口：仅查询已初始化controller当前快照中的child；root/未知身份/未初始化均undefined。
+不触发ready、不读取持久entry、不启动模型或恢复树；保存running但尚未初始化的冷root仍undefined。
+interrupt提交后即返回interrupted，即使原IO未结算；真实completed/errored按同一canonical状态返回。
+该入口不暴露历史、资源句柄或第二状态owner，与整树资源驻留查询用途不同。
+
 spawn 模型输出只有 task_name。标准 executor 允许记录私有身份到结果 metadata，再由已有 settlement
 写入 completed ToolPart；adapter 不直接修改 pending part。崩溃发生在 accepted 与结果落盘之间时，
 冷读侧从 root snapshot.accepted + agents 恢复关系，不从 ACK 推断完成。

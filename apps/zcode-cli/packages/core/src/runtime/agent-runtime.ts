@@ -418,6 +418,12 @@ export class AgentRuntime {
   async shutdownCollaboration(): Promise<void> {
     await this.collaboration?.shutdown();
   }
+  // FORK(codex-collaboration): 客户端按精确身份核对实时状态，不能用聚合 Bash/兄弟任务冒充 child 存活。
+  getCollaborationAgentStatus(
+    agentId: string,
+  ): import("../fork/codex-collaboration-runtime/contract.js").CollaborationAgentRuntimeStatus | undefined {
+    return this.collaboration?.getAgentStatus(agentId);
+  }
 }
 
 export interface AgentRuntime {

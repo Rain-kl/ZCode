@@ -99,6 +99,12 @@ export function createRuntimeCollaborationBinding(
   }
   const savedEntry = () =>
     (savedRoot ??= readCollaborationRootEntry(rootRuntime.sessionStore, rootRuntime.sessionId));
+  function getAgentStatus(agentId: string) {
+    // 冷文件里的 running 不是实时存活证据；只读已建立 controller 的当前快照，不触发 ready。
+    if (!controller) return undefined;
+    return snapshot.agents.find((agent) => agent.agentId === agentId && agent.path !== "/root")
+      ?.status;
+  }
   function role(
     runtime: AgentRuntimeInternal,
     path: string,
@@ -550,6 +556,7 @@ export function createRuntimeCollaborationBinding(
     };
     const binding: RuntimeCollaborationBinding = {
       port,
+      getAgentStatus,
       hasRunningWork: () => hasRunningWork(identity.path),
       async beforeModel(tools) {
         const tree = await ready();
@@ -597,6 +604,7 @@ export function createRuntimeCollaborationBinding(
   };
   return {
     port,
+    getAgentStatus,
     hasRunningWork: () => hasRunningWork("/root"),
     beforeModel: async (tools) => {
       if (!startup && !(await savedEntry())) {
