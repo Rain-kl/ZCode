@@ -23,3 +23,7 @@ fixture 使用构建后的包依赖，运行前需要构建 bootstrap 的依赖�
 终态或 lifecycle 兜底退出码 0 导致假成功。新增断言曾捕获施工中 bootstrap SRC 调用新方法、Core
 dist 尚未重建的不一致；重新构建 contracts/Core 后 3/3，通过双审。清理错误聚合正文保留各原因，
 EOF 与强杀后 close 各 5 秒预算，置于 15 秒 hook 内。最终 runtime 完成后仍统一重建并复验。
+
+增加真实 send_message 自投递往返：第一响应为工具调用，第二 HTTP 请求同 call ID 的 tool result
+必须严格为空文本，消息正文只能在 assistant MESSAGE 信封，不能在 user 内容。4/4 通过并完成双审。
+证据限 OpenAI Chat Completions；模型接口里的空结果断言不能替代最终 provider wire 断言。

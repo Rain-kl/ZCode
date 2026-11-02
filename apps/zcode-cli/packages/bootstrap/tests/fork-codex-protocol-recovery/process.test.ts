@@ -64,19 +64,28 @@ function succeed(response: ServerResponse, text: string): void {
   );
 }
 
-async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
+async function harness(kind: "before-token" | "visible-stream" | "exhausted" | "message-tool") {
   const workspace = await mkdtemp(join(tmpdir(), "zcode-protocol-recovery-"));
   cleanups.push(() => rm(workspace, { recursive: true, force: true }));
   let requests = 0;
   let healthy = false;
   let heldResponse: ServerResponse | undefined;
+  const bodies: string[] = [];
   const server = createServer(async (request, response) => {
     // 只统计 provider 实际收到并读取完毕的 HTTP 请求，不依据重试日志计数。
-    for await (const _chunk of request) {
-      /* consume body */
-    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    bodies.push(Buffer.concat(chunks).toString("utf8"));
     requests += 1;
-    if (!healthy && (kind === "exhausted" || (kind === "before-token" && requests === 1))) {
+    if (kind === "message-tool" && requests === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(
+        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "wire-message-call", type: "function", function: { name: "send_message", arguments: JSON.stringify({ target: "/root", message: "WIRE_MAILBOX_PAYLOAD" }) } }] }, finish_reason: null }] })}\n\n`,
+      );
+      response.end(
+        `data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`,
+      );
+    } else if (!healthy && (kind === "exhausted" || (kind === "before-token" && requests === 1))) {
       response.writeHead(500, { "Content-Type": "application/json" });
       response.end(
         JSON.stringify({
@@ -264,6 +273,7 @@ async function harness(kind: "before-token" | "visible-stream" | "exhausted") {
     controls,
     until,
     requests: () => requests,
+    bodies,
     makeHealthy: () => {
       healthy = true;
     },
@@ -331,3 +341,47 @@ it.each(["before-token", "visible-stream", "exhausted"] as const)(
   },
   60_000,
 );
+
+it("serializes an empty collaboration result and an assistant mailbox envelope on the real HTTP wire", async () => {
+  const run = await harness("message-tool");
+  const start = run.frames.length;
+  await run.send("Complete one real collaboration message roundtrip.");
+  expect((await run.waitTerminal(start)).phase).toBe("completedSuccess");
+  expect(run.requests()).toBe(2);
+  const body = z
+    .object({
+      messages: z.array(
+        z
+          .object({
+            role: z.string(),
+            content: z.unknown().optional(),
+            tool_call_id: z.string().optional(),
+          })
+          .passthrough(),
+      ),
+    })
+    .passthrough()
+    .parse(JSON.parse(run.bodies[1]));
+  const results = body.messages.filter(
+    (message) => message.role === "tool" && message.tool_call_id === "wire-message-call",
+  );
+  expect(results).toHaveLength(1);
+  expect(results[0].content).toBe("");
+  expect(
+    body.messages.some(
+      (message) =>
+        message.role === "assistant" &&
+        message.content !== undefined &&
+        JSON.stringify(message.content).includes("Message Type: MESSAGE") &&
+        JSON.stringify(message.content).includes("WIRE_MAILBOX_PAYLOAD"),
+    ),
+  ).toBe(true);
+  expect(
+    body.messages.some(
+      (message) =>
+        message.role === "user" &&
+        message.content !== undefined &&
+        JSON.stringify(message.content).includes("WIRE_MAILBOX_PAYLOAD"),
+    ),
+  ).toBe(false);
+}, 60_000);

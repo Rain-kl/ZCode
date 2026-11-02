@@ -21,6 +21,11 @@
 每个场景检查实际协议终态、进程存活和后续输入，不以日志中的“重试”字样代替 HTTP 请求证据。
 初始 command accepted ACK 不作为任务完成的信号。
 
+另以真实 HTTP 工具往返验证 `send_message`：provider 首次返回指向 `/root` 的消息工具调用，
+第二次请求必须携带同一 call ID 的空字符串 tool result，以及 assistant MESSAGE 信封。
+不能回填 `{}` 或把协作正文序列化为 user 授权。该场景使用真实工具执行器、controller 邮箱和
+adapter 序列化，补足仅检查 `ToolExecutionResult.modelContent` 无法证明最终 wire 内容的边界。
+
 ## 2026-11-02 执行记录
 
 先构建 bootstrap 依赖闭包，再运行
@@ -35,6 +40,10 @@
 projection、store 和 model 清理的标记，不能仅凭 deadline 导致的退出码 0 推断清理成功。
 此断言曾抓出施工中 bootstrap 源码与旧 Core dist 混用的缺失方法；重建 contracts/Core 后
 3/3 通过，独立质量复跑同样 3/3 通过并批准。Task3b 最终提交仍须统一重建复验。
+
+补充 OpenAI Chat Completions 的 `send_message` HTTP 往返后，4/4 通过，独立质量复跑
+同样 4/4 通过并批准。实际第二次请求的 tool result 为空字符串，消息正文只在 assistant
+信封；未据此宣称 Anthropic native wire 或全部六工具生命周期已经验证。
 
 ```sh
 PATH="$PWD/node_modules/.bin:$PATH" pnpm --dir apps/zcode-cli exec turbo run build --filter=@zcode/bootstrap...
