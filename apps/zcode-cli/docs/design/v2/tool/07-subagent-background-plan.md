@@ -1,10 +1,8 @@
 # Background Subagent 第一版实施规划（历史）
 
-> **文档状态（2026-07-10）**：本文保留 background subagent 第一版的实施边界和演进背景，
-> 不再作为当前完整行为契约。当前实现以 [Subagent Tool](./07-subagent.md) 为总览；main 与 child
-> 的双向消息契约以
-> [Subagent RespondToCoordinator](../../../../../../docs/subagent-respond-to-coordinator.md) 为准。
-> 本文中“第一版不支持 `SendMessage`”等表述只描述原始阶段，不应覆盖后续已落地能力。
+> **二开替换说明（2026-11-02，codex-collaboration）**：本文仅为旧执行器的历史记录。
+> 旧工具、自动前后台转换与旧回信路径已被废弃；当前规范是
+> [子智能体协作六工具](07-subagent.md)，实施进度以该规范链接的证据为准。
 
 ## 目标
 

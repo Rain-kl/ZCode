@@ -1,5 +1,11 @@
 # Subagent 模型与 Reasoning Effort 覆盖
 
+> **二开替换说明（2026-11-02，codex-collaboration）**：本页保留 Settings/Host 配置来源和
+> 当时验证记录。旧 Agent/SendMessage 工具调用及 terminal 时按父定义重选模型的规则已废弃。
+> 新创建遵循 fork all/none 的继承与覆盖合同，已有 child 后续任务和冷恢复读取自己的保存选择；
+> 详见[六工具合同](features/codex-collaboration/tools-contract.md)和
+> [运行链](features/codex-collaboration/runtime-integration.md)，实施进度另见对应记录。
+
 > 当前裁决（2026-09-08，Todo88/96/97）：主动选模型时填该模型最高档；历史缺档位不补默认。候选及能力仅取目标 Environment 的 Selection View，不用 App metadata/catalog 双源回填。下文早期“默认档位”“catalog 对账”相关历史验收以本说明及现行覆盖矩阵为准，不能据其恢复旧抽象。
 
 ## 目标

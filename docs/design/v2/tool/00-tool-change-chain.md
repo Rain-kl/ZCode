@@ -1,5 +1,13 @@
 # 工具变更链路
 
+## 二开替换说明：codex-collaboration
+
+2026-11-02 起子智能体的工具和调度链以
+[六工具合同](../../../features/codex-collaboration/tools-contract.md)与
+[真实运行链](../../../features/codex-collaboration/runtime-integration.md)为准。
+下方旧工具、旧 runner、前后台转换、专属回信及闲时轮旧名称是历史记录，不得作为恢复旧入口的依据。
+当前 CLI 接线追踪同时见仓库内 `apps/zcode-cli/docs/design/v2/tool/00-tool-change-chain.md`。
+
 ## Subagent 上下文配置刷新
 
 Settings/外部写盘 → Host 原生 watcher → 逐文件读取及共享纯解析 → 内存 snapshot →
