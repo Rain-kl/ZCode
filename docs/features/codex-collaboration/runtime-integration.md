@@ -107,6 +107,9 @@ followup 的旧 command drain 在进入 controller 串行通道之前等待；�
 显式unload与自动eviction在lane内等待旧command结算时，已中断command在异步投影返回后、
 进入controller邮箱lane之前必须检查原准入AbortSignal并退出，不能排到正等待它的release之后。
 信号只属于原command资源句柄，不新增状态owner/轮询/timeout，保留cleanupPending和同session followup。
+保留用例也必须遵守同一父工具目录：persistent-memory自定义profile使用父实际可用的Bash作为额外
+工具标记，仍真实执行Write并保留scope/deny断言；TaskOutput公开description只指导Bash/workflow，
+不再承诺读取child或引用旧Agent工具。
 冷恢复终态只重建查询投影，不再次追加完成事件；恢复 running→interrupted 属于实际新转换。
 派生事件写失败保留待重放快照，并在 await 边界带上下文失败；成功 append 后才确认投影 receipt。
 

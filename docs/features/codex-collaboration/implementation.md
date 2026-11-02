@@ -463,3 +463,18 @@ release仍等原command结算再关闭资源；不改变controller状态owner、
 shutdown9文件115/115、controller3文件54/54、独立审查原BOUNDARY2探针1/1通过。测试在真正第二边界
 和release开始处设gate，确认投影未恢复前浏览器未关，恢复后旧child没有第二次provider IO；eviction
 等待replacement实际provider请求并验证不同session。core noEmit/scoped lint通过，架构0违规。
+
+### Task3b 最终精准回归与保留 fixture 对齐
+
+最后扩大到43个相关测试文件。首轮536/542通过，6失败中4项为fixture遗漏：persistent-memory三scope
+自定义profile仍请求父embedded目录没有的Grep；TaskOutput contract仍要求已删除的Agent指导。
+按已审批合同把profile额外标记改为Bash，并同步父可见Tools文本断言；仍实际执行Write、保留全部scope/
+路径/deny断言。TaskOutput精确description断言改为Bash/workflow，schema/default/超时断言不变。
+修后两文件13/13通过。扩大复跑的42文件/539项通过，另3项在加载旧文本断言时失败，最终由该13项
+精确复跑覆盖；不把分批结果冒充同一次542全绿。Workflow首轮5秒timeout与exec spy0失败，独立无并发
+build后2/2通过（0.894s测试），没有扩展timeout或修改产品，保留首失败记录。
+
+最终source检查：CLI typecheck32/32、根typecheck0exit、根lint102warnings/0errors、架构0违规、removal
+guard36816文件通过。src公共入口+controller专用include6文件57/57；Bash封口与普通fork隔离定向2/2
+（同文件其余158项未跑）；prompt trajectory recorder5/5。CLI lint实际仍3个max-lines错误/71warnings，
+沿上文精确文件边界记录。OpenAI HTTP4项由根统一重建后复验，provider/客户端边界仍同前，不宣称Task4完成。

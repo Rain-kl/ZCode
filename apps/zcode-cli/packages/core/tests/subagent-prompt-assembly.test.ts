@@ -531,7 +531,7 @@ describe("subagent provider-visible prompt assembly", () => {
                 memory: scope,
                 source: "user",
                 systemPrompt: "",
-                tools: ["Grep"],
+                tools: ["Bash"],
               },
             ],
           },
@@ -611,7 +611,7 @@ describe("subagent provider-visible prompt assembly", () => {
         `\n${expectedMemoryPrompt}`,
       );
       const childToolNames = childRequests[0].tools.map((tool: any) => tool.name);
-      expect(childToolNames).toContain("Grep");
+      expect(childToolNames).toContain("Bash");
       expect(childToolNames).toContain("Write");
       expect(childToolNames).not.toContain("Edit");
       expect(childToolNames).not.toContain("Read");
@@ -621,7 +621,7 @@ describe("subagent provider-visible prompt assembly", () => {
         parentRequests[0].messages
           .map((message: any) => modelMessageContentToText(message.content))
           .join("\n"),
-      ).toContain("Tools: Grep, Write");
+      ).toContain("Tools: Bash, Write");
     },
   );
 
