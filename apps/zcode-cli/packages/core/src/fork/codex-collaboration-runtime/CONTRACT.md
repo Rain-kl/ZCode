@@ -5,6 +5,10 @@ session-entry storage, prepared prompt admission, mailbox receipts and read-only
 lifecycle projections. Resource maps contain handles, never independent accepted or
 status truth. The runtime binding exposes six caller-bound tools, model boundaries,
 accepted-input wakeups, native child interruption and awaited shutdown.
+Driver release waits for the original accepted run promise to settle before closing
+runtime resources. An abort notification is not a drain acknowledgment. The temporary
+drain handle observes completion only; execution errors remain on the original run
+and cleanup errors keep their causes. No independent timeout or accepted owner exists.
 
 The root session entry restores identity and normalized limits before controller
 creation. Child model-selection entries restore actual resolved selections. Only

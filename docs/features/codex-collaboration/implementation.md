@@ -398,3 +398,16 @@ child 终态封住后台 Bash 自动唤醒，followup 准入才重开，防止 i
 本批不把 executor 间接断言当作 provider wire 证明。Anthropic 原生 wire、
 客户端冷 drilldown/TUI/mobile、生产包装器完整交互由后续 Task4 验证；本记录不宣称整体迁移完成。
 完整顺序合同见 [runtime-integration](runtime-integration.md)。
+
+### Task3b spec 修正：实际 command drain 与关闭封口
+
+独立审查用不响应 abort 的模型 gate 证明，原 shutdown 测试只在 abort listener 的微任务间隙检查，
+未证明执行退出；closeBrowserSession 本身也不是运行 drain。现 driver 临时持有原 admission.run Promise，
+release 等其成功或失败实际结算后才关闭 child 浏览器/资源，原 run 拒绝仍返回原 controller/turn 错误链。
+interrupt 紧接 followup 在进入 controller lane 之前等待同一旧 command 退出，再给同 session 准入新轮。
+dispose 调用同步封住新的普通 controller admission，避免新消息边界排到 dispose 后形成等待环；已开始
+的操作仍按原 admission 完成，maintenance 保存/释放重试保留原 cause。没有另加 timeout 或轮询。
+
+RED：跨 setImmediate 检查 browser 已提前关闭；紧接 followup 提前返回忙错误；dispose 排队后新消息
+不能立即拒绝，三项均实际失败。GREEN：真实 runtime+生产关闭测试5文件45/45；controller3文件54/54。
+测试同时断言模型仍 gate 时共享依赖可用、browser未关闭，以及后续模型使用同一childSessionId。

@@ -76,6 +76,7 @@ export async function createCollaborationController(
 }
 
 class Controller implements CollaborationController {
+  private closingRequested = false;
   private state: CollaborationSnapshot;
   private readonly loaded = new Map<string, Loaded>();
   private readonly waiters: ActivityWaiters;
@@ -148,6 +149,11 @@ class Controller implements CollaborationController {
     this.loaded.set(this.options.root.agentId, { runtime: this.options.rootRuntime });
   }
   private enqueue<T>(operation: () => Promise<T>, maintenance = false): Promise<T> {
+    // 在 dispose 入队的同步边界封口；否则 child 可把消息排到 dispose 之后，形成释放等待环。
+    if (this.closingRequested && !maintenance)
+      return Promise.reject(
+        new CollaborationError("CLOSED", "Collaboration controller is closing"),
+      );
     const result = this.tail.then(() => {
       if (this.closed && !maintenance)
         throw new CollaborationError("CLOSED", "Collaboration controller is closed");
@@ -744,6 +750,7 @@ class Controller implements CollaborationController {
     }
   }
   dispose(): Promise<void> {
+    this.closingRequested = true;
     return this.enqueue(async () => {
       // 宿主关闭先封住普通准入并停止所有轮次；不能让持久化失败阻止资源回收。
       this.closed = true;

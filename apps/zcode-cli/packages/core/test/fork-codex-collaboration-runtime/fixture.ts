@@ -1,5 +1,10 @@
 import { afterEach } from "vitest";
-import { createSessionId, modelMessageContentToText, type ModelRequest } from "@zcode/contracts";
+import {
+  createSessionId,
+  modelMessageContentToText,
+  type ModelRequest,
+  type BrowserControlPort,
+} from "@zcode/contracts";
 import { createTestAgentRuntime } from "../../tests/test-agent-runtime.js";
 import { createTestModelFactory } from "../../tests/test-runtime-model.js";
 import { createRecordingSubagentSessionStore } from "../../tests/subagent-test-store.js";
@@ -17,7 +22,10 @@ function gate() {
   });
   return { promise, resolve };
 }
-function setup(generate: Parameters<typeof createTestModelFactory>[0]["generateText"]) {
+function setup(
+  generate: Parameters<typeof createTestModelFactory>[0]["generateText"],
+  browserControlPort?: BrowserControlPort,
+) {
   const store = createRecordingSubagentSessionStore();
   const rootId = createSessionId("collaboration-runtime-root");
   const runtime = createTestAgentRuntime(
@@ -32,6 +40,7 @@ function setup(generate: Parameters<typeof createTestModelFactory>[0]["generateT
       eventStore: createTestSessionEventStore(),
       sessionStore: store,
       modelFactory: createTestModelFactory({ generateText: generate }),
+      browserControlPort,
       modelCatalogPort: {
         listModels: () => [
           {

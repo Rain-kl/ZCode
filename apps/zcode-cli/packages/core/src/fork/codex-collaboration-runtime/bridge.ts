@@ -18,6 +18,7 @@ import type {
   AgentIdentity,
   CollaborationController,
   CollaborationSnapshot,
+  RunResult,
 } from "../codex-collaboration/contract.js";
 import {
   buildCollaborationRole,
@@ -68,6 +69,13 @@ export function createRuntimeCollaborationBinding(
   const handles = new Map<string, AgentRuntimeInternal>();
   const bindings = new Map<string, RuntimeCollaborationBinding>();
   const mailboxes = new Map<string, ReturnType<typeof createRuntimeMailbox>>();
+  const runningCommands = new Map<string, Promise<RunResult>>();
+  async function drainCommand(agentId: string) {
+    const command = runningCommands.get(agentId);
+    // 这里只观察 IO 已成功或失败结算；原始拒绝继续由 admission.run 返回 controller/turn 错误链。
+    // 不能等 controller.finish：release 本身位于 controller 的串行通道内。
+    if (command) await Promise.allSettled([command]);
+  }
   const published = new Map<string, string>();
   const savedEntry = () =>
     (savedRoot ??= readCollaborationRootEntry(rootRuntime.sessionStore, rootRuntime.sessionId));
@@ -143,7 +151,22 @@ export function createRuntimeCollaborationBinding(
           throw new Error(
             `Host execution selection does not match saved child model for ${identity.path}`,
           );
-        return prepareCollaborationTurn(runtime, task, signal, () => mailbox.deliver(task));
+        const admission = await prepareCollaborationTurn(runtime, task, signal, () =>
+          mailbox.deliver(task),
+        );
+        return {
+          cancel: () => admission.cancel(),
+          async run() {
+            const command = admission.run();
+            runningCommands.set(identity.agentId, command);
+            try {
+              return await command;
+            } finally {
+              if (runningCommands.get(identity.agentId) === command)
+                runningCommands.delete(identity.agentId);
+            }
+          },
+        };
       },
     };
   };
@@ -242,6 +265,7 @@ export function createRuntimeCollaborationBinding(
             const child =
               handle as unknown as import("../../runtime/agent-runtime.js").AgentRuntime;
             child.beginShutdown();
+            await drainCommand(identity.agentId);
             await child.closeBrowserSession();
             handles.delete(identity.agentId);
             bindings.delete(identity.agentId);
@@ -415,6 +439,8 @@ export function createRuntimeCollaborationBinding(
           throw new Error(
             `Host execution policy background: deny forbids followup_task starting ${target.path}`,
           );
+        // 在进入 controller 串行通道之前 drain；旧 run 的最后消息边界也可能需要该通道。
+        if (target.status !== "running") await drainCommand(target.agentId);
         await withPreparation(target.path, call, () =>
           withRuntimeErrorContext(() =>
             tree.followup(identity.agentId, input.target, input.message),

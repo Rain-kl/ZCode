@@ -1,6 +1,29 @@
 import { expect, it } from "vitest";
 import { deferred, setup } from "../../../test/fork-codex-collaboration/driver.js";
 
+it("rejects new child boundary calls immediately once shutdown is requested behind an occupied lane", async () => {
+  const f = await setup();
+  const prepare = deferred<void>();
+  f.gatePrepare(prepare.promise);
+  const spawning = f.controller.spawn(f.spawn);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const closing = f.controller.dispose();
+  let rejected = false;
+  const sending = f.controller.send("root-id", "/root", "late boundary").catch((error: unknown) => {
+    expect(error).toMatchObject({ code: "CLOSED" });
+    rejected = true;
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  try {
+    expect(rejected).toBe(true);
+  } finally {
+    prepare.resolve();
+    await spawning;
+    await closing;
+    await sending;
+  }
+});
+
 async function failedUnload() {
   const f = await setup();
   const child = await f.controller.spawn(f.spawn);

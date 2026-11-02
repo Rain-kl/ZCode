@@ -78,6 +78,14 @@ path、generation、原始 parentToolCallId、profile 与保存的模型选择�
 新用户输入唤醒所选 runtime 的 controller wait，不取消 child。普通 Stop 只停所选 session；
 原生 UI child stop 调用同一 controller.interrupt，模型 TaskStop 不接受 child。根普通完成不会
 关闭 child；宿主 shutdown 必须 await controller.dispose 后才关闭 execution/MCP/session-store。
+driver.release 必须先等待该身份已接受 admission.run 的原执行 Promise 实际结算，再关闭浏览器等
+资源。abort 事件或 beginShutdown 只发出停止请求，不代表模型/工具已经停止访问共享依赖。
+driver 的临时 drain handle 只观察原 run 的成功/失败结算，不存 accepted/status，也不另设超时；
+执行错误继续沿原 run 返回 controller 和持久 turn 事件，真实 release 错误继续携带原 cause。
+interrupt 的状态提交先于实际执行退出；紧接的 followup 先等待同一原 run 结算，再在同一 childSessionId
+预留下一轮，不能用暂时非 idle 报错丢失已接纳的新任务，也不能并行启动两轮。
+followup 的旧 command drain 在进入 controller 串行通道之前等待；关闭请求同步封住新的普通 controller
+调用，使运行中 command 的后续消息边界及时失败，不能形成 dispose→run→controller tail 的等待环。
 冷恢复终态只重建查询投影，不再次追加完成事件；恢复 running→interrupted 属于实际新转换。
 派生事件写失败保留待重放快照，并在 await 边界带上下文失败；成功 append 后才确认投影 receipt。
 

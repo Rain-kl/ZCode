@@ -316,12 +316,28 @@ describe("actual collaboration lifecycle", () => {
     const started = gate();
     const cancelled = gate();
     const released = gate();
-    const { runtime } = setup(async (request) => {
-      started.resolve();
-      request.abortSignal?.addEventListener("abort", () => cancelled.resolve(), { once: true });
-      await released.promise;
-      return done;
+    let modelSettled = false;
+    let sharedStoreOpen = true;
+    const browserClosed = vi.fn(async () => {
+      expect(modelSettled).toBe(true);
     });
+    const { runtime } = setup(
+      async (request) => {
+        started.resolve();
+        request.abortSignal?.addEventListener("abort", () => cancelled.resolve(), { once: true });
+        await released.promise;
+        expect(sharedStoreOpen).toBe(true);
+        modelSettled = true;
+        return done;
+      },
+      {
+        list: async () => [],
+        execute: async () => {
+          throw new Error("browser execution not requested");
+        },
+        closeSession: browserClosed,
+      },
+    );
     await tool(runtime, "spawn_agent", {
       task_name: "worker",
       message: "await cancellation",
@@ -331,11 +347,61 @@ describe("actual collaboration lifecycle", () => {
     let closed = false;
     const closing = runtime.shutdownCollaboration().then(() => {
       closed = true;
+      sharedStoreOpen = false;
     });
     await cancelled.promise;
-    expect(closed).toBe(false);
-    released.resolve();
-    await closing;
+    // abort listener 只说明停止请求已送达；推进事件循环后仍不得提前关闭共享依赖。
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      expect(modelSettled).toBe(false);
+      expect(browserClosed).not.toHaveBeenCalled();
+      expect(closed).toBe(false);
+    } finally {
+      released.resolve();
+      await closing;
+    }
+    expect(modelSettled).toBe(true);
+    expect(browserClosed).toHaveBeenCalledTimes(1);
     expect(closed).toBe(true);
+  });
+  it("waits for an interrupted command to settle before followup admits the same child session", async () => {
+    const started = gate();
+    const release = gate();
+    const sessions: string[] = [];
+    const { runtime, rootId } = setup(async (_request, observation) => {
+      const sessionId = observation.invocationContext?.traceContext?.sessionId;
+      if (sessionId === rootId) return done;
+      sessions.push(String(sessionId));
+      if (sessions.length === 1) {
+        started.resolve();
+        await release.promise;
+      }
+      return done;
+    });
+    await tool(runtime, "spawn_agent", {
+      task_name: "worker",
+      message: "first",
+      fork_turns: "none",
+    });
+    await started.promise;
+    expect((await tool(runtime, "interrupt_agent", { target: "worker" })).success).toBe(true);
+    let admitted = false;
+    const followup = tool(runtime, "followup_task", {
+      target: "worker",
+      message: "continue after drain",
+    }).then((result) => {
+      admitted = true;
+      return result;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      expect(admitted).toBe(false);
+      expect(sessions).toHaveLength(1);
+    } finally {
+      release.resolve();
+    }
+    expect((await followup).success).toBe(true);
+    await vi.waitFor(() => expect(sessions).toHaveLength(2));
+    expect(sessions[1]).toBe(sessions[0]);
   });
 });
