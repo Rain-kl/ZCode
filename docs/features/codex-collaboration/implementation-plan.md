@@ -24,7 +24,7 @@ CLI 路径默认相对于 apps/zcode-cli/packages；fork 标记统一 codex-coll
 
 ## Task 1: 请求与断流恢复
 
-- [ ] 在 adapters/tests 和 core/tests 写失败回归，实际断言请求数、取消与恢复状态。
+- [x] 在 adapters/tests 和 core/tests 写失败回归，实际断言请求数、取消与恢复状态。
 
 ```ts
 expect(resolveAiSdkModelRetryOptions(undefined, {}).maxAttempts).toBe(21);
@@ -35,7 +35,7 @@ expect(classifyModelFailure(new Error("provider response failed")).retryable).to
 必须另测用户 signal 未取消时 SDK AbortError、正文后的断流、未知错误块和缺失终态。
 使用本地 HTTP 服务器或注入 runner runtime，确认后续请求存在；失败测试先红再实现。
 
-- [ ] 引入调用级恢复预算，让 adapter 和 core 对同一连续失败链计数。
+- [x] 引入调用级恢复预算，让 adapter 和 core 对同一连续失败链计数。
 
 ```ts
 interface ModelRecoveryBudget {
@@ -49,19 +49,19 @@ interface ModelRecoveryBudget {
 最多 21 次物理请求，所有重试路径读同一个预算；无预算的独立 adapter 请求自行创建。
 成功模型响应才结束恢复链。保持本地取消、权限和网络禁止的类型化排除。
 
-- [ ] 修正错误准入、Retry-After 硬上限、断流安全锚点和 promise 清理。
+- [x] 修正错误准入、Retry-After 硬上限、断流安全锚点和 promise 清理。
   无完整响应的 EOF 抛结构化流失败；已输出时移交 runtime，不重播已结算工具。
-- [ ] 跑新回归及现有 retry/stream/recovery/model-budget 相关套件，记录先红后绿证据。
+- [x] 跑新回归及现有 retry/stream/recovery/model-budget 相关套件，记录先红后绿证据。
 
 ```sh
 node apps/zcode-cli/node_modules/vitest/vitest.mjs run --root apps/zcode-cli packages/adapters/tests/runner-retry.test.ts
 ```
 
-- [ ] 同批更新规格和笔记，独立提交 fix(model)。规范审查通过后再做质量审查。
+- [x] 同批更新规格和笔记，独立提交 fix(model)。规范审查通过后再做质量审查。
 
 ## Task 2: 协作控制器
 
-- [ ] 以假执行 driver 写调度合同回归，先检查不存在实现时失败。
+- [x] 以假执行 driver 写调度合同回归，先检查不存在实现时失败。
 
 ```ts
 const child = await coordinator.spawn(root, { task_name: "worker", message: "work" });
@@ -74,14 +74,14 @@ expect(driver.sessionIds).toEqual([child.session_id, child.session_id]);
 必测 mailbox queue-only 与 trigger-turn、先订阅后检查、steer 唤醒不取消 driver、
 spawn 接受边界、路径隔离、并发名额、generation 和冷恢复身份。
 
-- [ ] 建立 managed 模块 contract.ts/module.ts/contract.example.ts/contract.test.ts/CONTRACT.md。
+- [x] 建立 managed 模块 contract.ts/module.ts/contract.example.ts/contract.test.ts/CONTRACT.md。
   driver 是执行与持久化的有限端口；控制器不直接使用 fetch/fs/process。
-- [ ] 实现身份树、顺序 admission、邮箱与 wait、运行名额和显式 interrupt。
-  旧 runtimeTaskRegistry 对子代理是单一控制器的投影，不能新增另一份可写状态真相。
+- [x] 实现身份树、顺序 admission、邮箱与 wait、运行名额和显式 interrupt（控制器部分）。
+  旧 runtimeTaskRegistry 对子代理是单一控制器的投影，不能新增另一份可写状态真相；真实 registry 接线在 Task 3 验收。
   completion/error/interrupted 释放运行名额，但保留身份、历史和未读消息。
   Codex 默认是 4 个总名额（含根），即 3 个 child 执行名额；另有驻留 runtime 限额，
   卸载空闲 runtime 不删除身份和邮箱。图快照复用版本化根 session entry，无 DB migration。
-- [ ] 跑控制器合同和生命周期回归，同批更新合同/笔记，提交 feat(agent)。
+- [x] 跑控制器合同和生命周期回归，同批更新合同/笔记，提交 feat(agent)。
   规范审查通过后做质量审查，修复后再进入下一任务。
 
 ## Task 3: 工具、角色与实际 runtime 装配

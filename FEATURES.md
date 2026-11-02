@@ -16,7 +16,7 @@
 
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
-- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界；调度器、六工具、角色提示词与 mailbox 生命周期仍待后续任务。
+- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界并通过桌面5/5回放；Task 2 独立协作控制器已通过规格/质量双审及53项测试。六工具、角色与真实 runtime/mailbox 接线正在 Task 3 实施，尚未宣称整体交付。
 - **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
   用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
 - **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
@@ -30,6 +30,13 @@
 - **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
 - **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
+
+### 持久协作控制器（2026-11-02）
+
+- **背景与修改**：旧子任务的取消与父轮耦合，失败后缺少稳定身份和原会话续跑边界。新增根所有的身份树、调用去重、durable ACK 邮箱、独立 signal/generation、容量与驻留控制，以及原会话恢复的有限 driver 合同。
+- **修改文件**：CLI `core/src/fork/codex-collaboration/**`、测试 driver 与 `architecture-policy.yaml`；新增模块不修改上游产品代码，无逐行标记。
+- **错误与生命周期**：拒绝会破坏已接受历史的损坏快照；失败清理保留原因，重试与 admission 串行；关闭先取消全部 child，保存失败仍尝试释放全部资源。
+- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；53测试与独立竞态探针通过，spec/quality 均批准。真实 driver 和客户端投影仍须后续接线验证。
 
 ### steer 安全边界更正（2026-11-02）
 
