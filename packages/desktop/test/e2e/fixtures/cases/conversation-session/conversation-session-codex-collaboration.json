@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-codex-collaboration",
+  "spec": "./test/e2e/conversation-session/conversation-session-codex-collaboration.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-codex-collaboration.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "csc-root-spawn",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-message",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-accepted",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-child-first",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-child-message",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-child-completed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-completed-query",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-followup",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-resumed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-child-second",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-inspect",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    },
+    {
+      "id": "csc-root-inspected",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+    }
+  ]
+}

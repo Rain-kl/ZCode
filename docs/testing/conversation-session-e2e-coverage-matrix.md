@@ -10,6 +10,20 @@ MR 集成基线 `f05db3e645` 的补验见规格末节：Composer 5/5（`desktop-
 
 未知/拒绝/duplicate、存储失败和跨主机身份组合主要由单测证明；E2E 的在途延迟不等于全面断网测试。Linux Electron 与浏览器触屏视口不替代 MacBook Air 安装包或实体手机；详细环境失败、修正及未验证项保留在规格中。
 
+## 六工具协作客户端（CSC01）
+
+2026-11-03：`codex-collaboration` 六工具取代旧 Agent/Task/SendMessage/RespondToCoordinator。
+旧 BG25、SAT12 及 XML 回传证据按历史合同保留，不能用于宣称新生命周期已覆盖；不增加兼容 handler。
+CSC01 accepted，当前 pending、真实 Electron 1/1 通过（24 秒，fresh Desktop/Agent build，
+artifact `desktop-e2e-20261102-163823-235`，2026-11-03 本地时间）。候选文件
+`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-codex-collaboration.test.ts`。
+范围和事件顺序见 [desktop-client-acceptance.md](../features/codex-collaboration/desktop-client-acceptance.md)。
+手机 replayable 只接受客户端协议定向测试证据，实际手机 GUI 仍未验证。
+此前复用首次新构建 bundle 的同用例另为 1/1、23.1 秒；两次运行不合并计数。
+质量审查的 attempt-all cleanup 修复后，同一最新 bundle 再验 1/1、50.6 秒，artifact
+`desktop-e2e-20261102-164341-233`；清理失败路径另由 node:test 1/1 证明。
+cold-seed 非法关联 backgroundWork 清除的后续修复由定向测试验证，此 GUI case 不覆盖该冷恢复路径。
+
 ## BG46–BG47 子代理回传交错
 
 BG46 按 catalog 新增的 before-before / before-during / before-after / during-during /

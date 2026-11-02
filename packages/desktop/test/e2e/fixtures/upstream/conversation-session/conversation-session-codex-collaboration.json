@@ -1,0 +1,511 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-codex-collaboration",
+  "spec": "./test/e2e/conversation-session/conversation-session-codex-collaboration.test.ts",
+  "fixtures": [
+    {
+      "id": "csc-root-spawn",
+      "description": "csc-root-spawn",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_START"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-spawn",
+            "name": "spawn_agent",
+            "input": {
+              "task_name": "worker",
+              "message": "E2E_CSC_CHILD_BOOT: bounded child task",
+              "fork_turns": "none"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-message",
+      "description": "csc-root-message",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_START",
+          "csc-spawn"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-list-first",
+            "name": "list_agents",
+            "input": {}
+          },
+          {
+            "id": "csc-send",
+            "name": "send_message",
+            "input": {
+              "target": "worker",
+              "message": "E2E_CSC_MAIL"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-accepted",
+      "description": "csc-root-accepted",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_START",
+          "csc-send"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_CSC_ROOT_ACCEPTED",
+          "inputTokens": 128,
+          "outputTokens": 16
+        }
+      }
+    },
+    {
+      "id": "csc-child-first",
+      "description": "csc-child-first",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_CHILD_BOOT",
+          "Your canonical task name is /root/worker."
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"csc-child-first\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 128, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_CSC_CHILD_STREAM\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_CSC_CHILD_STREAM_END\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"tool_use\", \"id\": \"csc-child-todo\", \"name\": \"TodoRead\", \"input\": {}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-child-message",
+      "description": "csc-child-message",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_CHILD_STREAM_END",
+          "csc-child-todo",
+          "E2E_CSC_MAIL",
+          "Message Type: MESSAGE",
+          "Your canonical task name is /root/worker."
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-child-report",
+            "name": "send_message",
+            "input": {
+              "target": "/root",
+              "message": "E2E_CSC_REPORT"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-child-completed",
+      "description": "csc-child-completed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_CHILD_BOOT",
+          "csc-child-report",
+          "Your canonical task name is /root/worker."
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_CSC_CHILD_FINAL",
+          "inputTokens": 128,
+          "outputTokens": 16
+        }
+      }
+    },
+    {
+      "id": "csc-root-completed-query",
+      "description": "csc-root-completed-query",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_RESUME"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-list-completed",
+            "name": "list_agents",
+            "input": {}
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-followup",
+      "description": "csc-root-followup",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_RESUME",
+          "csc-list-completed"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-followup",
+            "name": "followup_task",
+            "input": {
+              "target": "worker",
+              "message": "E2E_CSC_CHILD_SECOND"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-resumed",
+      "description": "csc-root-resumed",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_RESUME",
+          "E2E_CSC_REPORT",
+          "csc-followup"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_CSC_ROOT_RESUMED",
+          "inputTokens": 128,
+          "outputTokens": 16
+        }
+      }
+    },
+    {
+      "id": "csc-child-second",
+      "description": "csc-child-second",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "controlled-stream",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_CHILD_SECOND",
+          "Your canonical task name is /root/worker."
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"csc-child-second\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"deepseek-v4-flash\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 128, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_CSC_SECOND_STREAM\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_CSC_SECOND_STREAM_END\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 16}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-inspect",
+      "description": "csc-root-inspect",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_INSPECT"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "csc-interrupt",
+            "name": "interrupt_agent",
+            "input": {
+              "target": "worker"
+            }
+          },
+          {
+            "id": "csc-list-final",
+            "name": "list_agents",
+            "input": {}
+          },
+          {
+            "id": "csc-wait",
+            "name": "wait_agent",
+            "input": {
+              "timeout_ms": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "csc-root-inspected",
+      "description": "csc-root-inspected",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_CSC_INSPECT",
+          "csc-wait"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_CSC_ROOT_INSPECTED",
+          "inputTokens": 128,
+          "outputTokens": 16
+        }
+      }
+    }
+  ]
+}

@@ -1200,6 +1200,12 @@ replayable 不创建、恢复、持久化或消费 group。
 
 ## SAT. Subagent Session Side Tabs / 子会话右侧标签
 
+2026-11-03（codex-collaboration）：当前子代理全面切换六工具；以下旧 Agent/Task、foreground、
+SendMessage 自动续跑与 XML 回传的历史证据不能证明新行为。新合同以
+[六工具客户端验收](features/codex-collaboration/desktop-client-acceptance.md) 为准。
+新增 accepted `CSC01`：spawn accepted 后 child 继续、真实 opaque 身份下钻、assistant 邮件边界、
+同会话 followup、原生单目标 Stop 与其余协作工具展示；候选保留 pending，不自动提升旧覆盖。
+
 2026-10-19 类型回归：SAT30 覆盖 subagent_child、workflow_child、selection_side_chat 与历史 nested_workflow_child；
 项目父链继承与只读准入分开。SAT28 只拒绝三类 agent child，辅助对话继续发送；SAT29 清理四类隐藏索引，保留 fork 与未确认身份。
 远端 UI 候选已通过 macOS 客户端 → SSH → Linux arm64 Server 发布包回归（`r3-server-workflow-hotfix-2f5c48dd`）：工作流 actor 正文可读且只读、显式 GLM-5.3 路由、辅助对话首发与续发、主列表不泄漏；模型回复使用回放。辅助对话 Recent 查所属主会话项目，命令仍发给 child。
