@@ -104,6 +104,9 @@ interrupt 的状态提交先于实际执行退出；紧接的 followup 先等待
 预留下一轮，不能用暂时非 idle 报错丢失已接纳的新任务，也不能并行启动两轮。
 followup 的旧 command drain 在进入 controller 串行通道之前等待；关闭请求同步封住新的普通 controller
 调用，使运行中 command 的后续消息边界及时失败，不能形成 dispose→run→controller tail 的等待环。
+显式unload与自动eviction在lane内等待旧command结算时，已中断command在异步投影返回后、
+进入controller邮箱lane之前必须检查原准入AbortSignal并退出，不能排到正等待它的release之后。
+信号只属于原command资源句柄，不新增状态owner/轮询/timeout，保留cleanupPending和同session followup。
 冷恢复终态只重建查询投影，不再次追加完成事件；恢复 running→interrupted 属于实际新转换。
 派生事件写失败保留待重放快照，并在 await 边界带上下文失败；成功 append 后才确认投影 receipt。
 

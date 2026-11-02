@@ -9,6 +9,9 @@ Driver release waits for the original accepted run promise to settle before clos
 runtime resources. An abort notification is not a drain acknowledgment. The temporary
 drain handle observes completion only; execution errors remain on the original run
 and cleanup errors keep their causes. No independent timeout or accepted owner exists.
+An interrupted command rechecks its original admission signal after asynchronous
+projection and before entering the controller mailbox lane. Explicit unload and
+automatic eviction can then drain it without a lane/command dependency cycle.
 The root liveness query reads the whole canonical tree plus unsettled original command
 handles and pending derived event writes. Child bindings read their subtree. Interrupted
 status is not evidence that IO has drained, so automatic residency eviction remains blocked.

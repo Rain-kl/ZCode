@@ -71,12 +71,15 @@ export function createRuntimeCollaborationBinding(
   const preparingBrowsers = new Map<string, BrowserControlPort>();
   const bindings = new Map<string, RuntimeCollaborationBinding>();
   const mailboxes = new Map<string, ReturnType<typeof createRuntimeMailbox>>();
-  const runningCommands = new Map<string, Promise<RunResult>>();
+  const runningCommands = new Map<
+    string,
+    { completion: Promise<RunResult>; signal: AbortSignal }
+  >();
   async function drainCommand(agentId: string) {
     const command = runningCommands.get(agentId);
     // 这里只观察 IO 已成功或失败结算；原始拒绝继续由 admission.run 返回 controller/turn 错误链。
     // 不能等 controller.finish：release 本身位于 controller 的串行通道内。
-    if (command) await Promise.allSettled([command]);
+    if (command) await Promise.allSettled([command.completion]);
   }
   const published = new Map<string, string>();
   function hasRunningWork(path: string): boolean {
@@ -171,11 +174,12 @@ export function createRuntimeCollaborationBinding(
           cancel: () => admission.cancel(),
           async run() {
             const command = admission.run();
-            runningCommands.set(identity.agentId, command);
+            const handle = { completion: command, signal };
+            runningCommands.set(identity.agentId, handle);
             try {
               return await command;
             } finally {
-              if (runningCommands.get(identity.agentId) === command)
+              if (runningCommands.get(identity.agentId) === handle)
                 runningCommands.delete(identity.agentId);
             }
           },
@@ -524,6 +528,9 @@ export function createRuntimeCollaborationBinding(
       async beforeModel(tools) {
         const tree = await ready();
         await awaitProjection();
+        // 中断后 release 在 controller lane 等原 run，旧模型边界不能再排到 release 后形成互等。
+        // 原准入 signal 是执行资源句柄；检查与 deliver 同步 enqueue 之间不能插入 await。
+        runningCommands.get(identity.agentId)?.signal.throwIfAborted();
         await tree.deliver(identity.agentId, identity.agentId);
         const entries = mailboxes.get(identity.agentId)?.consume() ?? [];
         return { entries, role: role(runtime, identity.path, tools, config) };

@@ -450,3 +450,16 @@ feature patch 再写入，避免混合 patch 部分成功。features 文件对�
 GREEN，包含动态 set/get/merge 拒绝、合法 feature/subagents 保留及混合 patch 原子拒绝。removal guard
 新增三个当前配置入口的禁回归规则并通过（36815文件）；adapters noEmit、scoped lint、架构0违规通过。
 仓库当前没有 config set/get CLI 子命令，因此通过实际动态 ConfigPort 边界验证，未发明新的 CLI 接口。
+
+### Task3b spec 修正：普通 eviction / unload 的模型边界等待环
+
+第二次模型边界等待派生投影时中断child，接着自动eviction或显式unload，会在controller lane内
+release等待旧command；旧command投影恢复后又排入同一lane的deliver，形成等待环。原shutdown封口
+只覆盖dispose，不能处理普通释放。现把原admission AbortSignal保留在同一个command资源句柄里，
+beforeModel投影返回后立即检查该信号，检查到deliver同步入队之间没有await。已中断旧轮直接走原取消链，
+release仍等原command结算再关闭资源；不改变controller状态owner、cleanupPending或增加timeout。
+
+新增实际RED2项都为blocked→settled（自动eviction、显式unload），修复后runtime/residency/background/
+shutdown9文件115/115、controller3文件54/54、独立审查原BOUNDARY2探针1/1通过。测试在真正第二边界
+和release开始处设gate，确认投影未恢复前浏览器未关，恢复后旧child没有第二次provider IO；eviction
+等待replacement实际provider请求并验证不同session。core noEmit/scoped lint通过，架构0违规。
