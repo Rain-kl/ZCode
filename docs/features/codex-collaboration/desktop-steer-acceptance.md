@@ -58,3 +58,20 @@ replayable recovery or the new child runtime adapter's behavior.
   `e2e:fixture:check`, `typecheck:e2e` and root `typecheck` passed. Root `lint`
   passed with 102 existing warnings and no errors. Fixture validation retains
   its existing warning that the goal-continuation matcher has no E2E marker.
+
+## Rebuilt collaboration runtime replay, November 2
+
+After Task3b's production source was frozen, the default desktop replay rebuilt
+the desktop and Agent bundle. `ZCODE_E2E_SKIP_AGENT_BUILD` was not set. The existing
+controlled-stream spec passed **5/5 in 48.4 seconds**, artifact
+`packages/desktop/.e2e-artifacts/desktop-e2e-20261102-140831-421`.
+
+Command: `PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN=false pnpm --filter @zcode/desktop exec
+wdio run wdio.conf.ts --spec
+./test/e2e/conversation-session/conversation-session-running-send-now.test.ts`.
+
+This run covers the original response boundary, complete response suffix in the
+next request, single selected-item consumption, retained unselected item and
+typed goal queue behavior using the rebuilt collaboration runtime. It does not
+exercise a spawned child's UI lifecycle or an actual mobile client. Those remain
+separate Task4 acceptance boundaries.

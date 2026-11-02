@@ -45,6 +45,10 @@ projection、store 和 model 清理的标记，不能仅凭 deadline 导致的�
 同样 4/4 通过并批准。实际第二次请求的 tool result 为空字符串，消息正文只在 assistant
 信封；未据此宣称 Anthropic native wire 或全部六工具生命周期已经验证。
 
+Task3b 生产源码冻结后，再次实际构建 bootstrap 依赖链（9/9 成功）并复跑 **4/4 通过**，
+耗时 13.73 秒。复跑使用本轮构建的 runtime；日志
+`/tmp/zcode-collaboration-final-protocol-wire.log`。生产包装器的关闭顺序另由 shutdown 合同测试验证。
+
 ```sh
 PATH="$PWD/node_modules/.bin:$PATH" pnpm --dir apps/zcode-cli exec turbo run build --filter=@zcode/bootstrap...
 node apps/zcode-cli/node_modules/vitest/vitest.mjs run --root apps/zcode-cli packages/bootstrap/tests/fork-codex-protocol-recovery/process.test.ts

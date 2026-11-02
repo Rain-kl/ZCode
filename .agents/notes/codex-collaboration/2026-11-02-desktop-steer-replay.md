@@ -16,3 +16,10 @@ GREEN in artifact desktop-e2e-20261102-113130-485. No product changes were neede
 This is a local desktop replay with an unchanged previously built Agent bundle;
 the next Task3 adapter still requires its own build and integration validation.
 Mobile/reconnect/active-goal-verifier cases are not established by these tests.
+
+## Rebuilt runtime verification
+
+Task3b production source frozen, then default WDIO rebuilt desktop and Agent without
+`ZCODE_E2E_SKIP_AGENT_BUILD`. The same controlled-stream spec passed **5/5 in 48.4s**,
+artifact `desktop-e2e-20261102-140831-421`. This replaces the earlier old-bundle evidence
+for main-session steer only; it is not child UI or mobile validation.
