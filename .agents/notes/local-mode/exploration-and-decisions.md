@@ -49,3 +49,7 @@
 完成协作功能桌面验收时，启动堆栈证实 Main 在 local-mode 跳过 SDK init 后仍 setConfig(user)，
 导致首窗前异常。由 Main 将同一 fork 开关注入身份同步，禁用时不写 SDK；去重事实只在写入成功后更新。
 两例测试先红后绿，既有 init/browser 禁用测试保留。该修改不启用任何遥测连接。
+
+身份写修复后真实回放定位下一条同类堆栈 configureDesktopStabilityTelemetry；一并检查全部
+启动 properties 配置（stability/resource/network）。它们保留本地聚合状态，只跳过禁用 SDK 的
+setConfig；启用路径保持原写入。新增三组双向合同先红后绿，避免逐个启动报错再补一个洞。

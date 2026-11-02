@@ -45,6 +45,7 @@
 - **背景与修改**：local-mode 不初始化 ARMS，但 Main 身份同步仍调用未初始化 SDK，导致首窗创建前抛出 `Config not initialized`。身份同步现在使用同一个 fork 开关，禁用时不写 SDK，且只在成功写入后记录去重状态。
 - **修改文件与标记**：`packages/desktop/src/main/{index,armsUserIdentity}.ts`、就近单测；`FORK(local-mode)`。
 - **文档与验证**：[design](docs/features/local-mode/design.md)、[implementation](docs/features/local-mode/implementation.md)；两例先红后绿，相关3文件36测试通过。
+- **后续启动链核对**：稳定性、资源、网络的启动配置同样跳过禁用 SDK 的 properties 写入并保留本地诊断。对应3组启用/禁用合同补齐后，相关6文件106测试通过；文件为 `desktop{Stability,Resource,Network}Telemetry.ts` 及就近测试，标记同为 `local-mode`。
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。
 

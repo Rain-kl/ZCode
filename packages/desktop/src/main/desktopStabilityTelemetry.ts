@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import armsRum from "@arms/rum-electron";
 import { BrowserWindow, type WebContents } from "electron";
 import {
+  // FORK(local-mode): 初始化被禁用时不能写入 SDK 配置，保留本地诊断上下文。
+  FORK_LOCAL_MODE,
   mapZCodeEnvToArmsRumEnv,
   type HostAgentProcessErrorResponse,
   type HostAgentProcessExceptionResponse,
@@ -897,6 +899,8 @@ function attachWebContentsStabilityWatch(
 
 export function configureDesktopStabilityTelemetry(context: StabilityGlobalContext): void {
   globalContext = context;
+  // FORK(local-mode): Main 在首窗前调用本入口，未初始化 SDK 会同步抛错并阻断启动。
+  if (FORK_LOCAL_MODE) return;
   armsRum.setConfig("properties", {
     device_mid: context.deviceMid,
     platform: normalizeOsCategory(context.platform),

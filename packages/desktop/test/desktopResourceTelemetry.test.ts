@@ -59,6 +59,14 @@ vi.mock("../src/main/logger.js", () => ({
   },
 }));
 
+const localPolicy = vi.hoisted(() => ({ enabled: false }));
+vi.mock("@zcode/shared", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zcode/shared")>()),
+  get FORK_LOCAL_MODE() {
+    return localPolicy.enabled;
+  },
+}));
+
 vi.mock("@arms/rum-electron", () => ({
   default: {
     sendCustom: sendCustomMock,
@@ -1356,3 +1364,28 @@ it("PRT-032 完成标识有界保存且重新配置清空，旧 CLI 无标识仍
   ingestToolExecResource(sample, "remote");
   expect(sendCustomMock).toHaveBeenCalledTimes(1029);
 });
+
+// FORK-BEGIN(local-mode)
+describe("local-mode startup SDK config", () => {
+  for (const enabled of [true, false]) {
+    it(`local-mode=${enabled} uses the same ARMS initialization policy`, async () => {
+      localPolicy.enabled = enabled;
+      const arms = await import("@arms/rum-electron");
+      const { configureDesktopResourceTelemetry } =
+        await import("../src/main/desktopResourceTelemetry.js");
+      vi.mocked(arms.default.setConfig).mockClear();
+      try {
+        configureDesktopResourceTelemetry({
+          deviceMid: "local-device",
+          platform: "darwin",
+          appVersion: "test",
+          armsEnv: "local",
+        });
+        expect(arms.default.setConfig).toHaveBeenCalledTimes(enabled ? 0 : 1);
+      } finally {
+        localPolicy.enabled = false;
+      }
+    });
+  }
+});
+// FORK-END(local-mode)

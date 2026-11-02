@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- 网络指标采集/聚合/ARMS 上报 */
 import armsRum from "@arms/rum-electron";
-import { mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
+// FORK(local-mode): 使用初始化同源开关，保留网络聚合而不写未初始化 SDK。
+import { FORK_LOCAL_MODE, mapZCodeEnvToArmsRumEnv } from "@zcode/shared";
 import type { NetworkObservation } from "@zcode/rpc";
 import {
   flushInterfaceNetworkStats,
@@ -182,6 +183,8 @@ function classifyWsError(error: unknown): string {
 
 export function configureDesktopNetworkTelemetry(context: NetworkGlobalContext): void {
   globalContext = context;
+  // FORK(local-mode): Main 仍需本地上下文，但 ARMS 被禁用时不能 setConfig。
+  if (FORK_LOCAL_MODE) return;
   armsRum.setConfig("properties", {
     device_mid: context.deviceMid,
     platform: normalizeOsCategory(context.platform),

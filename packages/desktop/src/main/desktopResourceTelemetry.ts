@@ -1,5 +1,7 @@
 import armsRum from "@arms/rum-electron";
 import {
+  // FORK(local-mode): 资源诊断保留本地状态，但禁用的 SDK 不得接收配置写入。
+  FORK_LOCAL_MODE,
   bytesToKb,
   createMemorySampleWriteGate,
   formatMemorySampleLine,
@@ -421,6 +423,8 @@ export function configureDesktopResourceTelemetry(context: ResourceGlobalContext
   globalContext = context;
   desktopHardware = resolveDesktopHardware(context.platform);
 
+  // FORK(local-mode): 与 appARMSBootstrap 共用开关，避免首窗前访问未初始化的 SDK。
+  if (FORK_LOCAL_MODE) return;
   armsRum.setConfig("properties", {
     device_mid: context.deviceMid,
     platform: normalizeOsCategory(context.platform),

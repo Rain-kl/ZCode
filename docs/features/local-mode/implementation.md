@@ -84,3 +84,7 @@
 先更新设计，再补两例失败回归（禁用不调用 SDK、写入失败后重试）；实现后
 `armsUserIdentity`、`appARMSBootstrap`、`armsBrowserInit` 定向测试通过。桌面 GUI 回放结果
 随 codex-collaboration 最终验收记录，不能用单测代替 GUI 通过。
+
+后续 GUI 启动继续暴露同一根因的 properties 写入口：稳定性、资源、网络配置仍 setConfig。
+三处均在保留本地诊断上下文后，按同一个 `FORK_LOCAL_MODE` 提前返回；分别补启用/禁用合同。
+新增三例先观察到禁用状态仍调用 SDK 的失败，修复后连同身份/init/browser 回归共6文件106例通过。
