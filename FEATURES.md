@@ -261,6 +261,12 @@
 - **已知边界**：未覆盖结构化输出（当前全产品无 `responseJsonSchema` 调用方）；按 provider 类型是全量切换，若某 provider 恰好流式有缺陷而非流式正常会反向受损（接线单点，回退只需去掉包装）；不修复 provider 侧通道不可用（`No available channel` 之类与请求方式无关）。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/core/src/runtime/methods/runtime-model.ts`。将 fork 的 stream→non-stream 适配器包在上游 invocation layer 外侧，保留上游 session type 与 retry budget 绑定，并用已拆出的 `factoryInput` 调用 model factory。
 
+### 模型能力声明透传（2026-11-02）
+
+- **触发与修复**：包装层手列 `Model` 字段时漏掉 `requestCapabilities`，导致支持 ToolSearch 的模型在 runtime 中被判为不支持。现直接透传该声明，`bind()` 后读取绑定模型的声明。
+- **修改文件**：`apps/zcode-cli/packages/core/src/fork/nonstream-via-stream/model.ts`、`apps/zcode-cli/packages/core/test/forkNonstreamViaStream.test.ts`；沿用本节设计和实现文档，无新增上游接线标记。
+- **验收**：契约测试先红后绿，检查原模型能力、绑定后变化及缺省能力；断言能力被包装层丢弃或沿用旧绑定时会失败。
+
 ## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 
 - **状态**：已实现（2026-09-29）。单测 11 例、全量单测、类型检查、lint、架构检查与移除守卫均通过；端到端复验（改动后的 bundle 里抓一次页面、确认日志无**新增** `web_fetch_processing`）待新进程验证。

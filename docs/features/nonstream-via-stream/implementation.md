@@ -58,3 +58,13 @@ return withNonStreamingViaStream(
 
 无。实现按设计落地；单测里有两条断言在编写时修正为**实际**语义（reasoning 按 id 分桶、
 provider code 被字符串化），属于把契约写准，不是实现偏差。
+
+## 6. 能力透传修复（2026-11-02）
+
+六工具接入的保留能力回归发现：`withNonStreamingViaStream` 手列端口字段时丢失
+`requestCapabilities`。底层支持 ToolSearch，但 runtime 收到的能力为 undefined，因而错误关闭搜索。
+这里只透传底层声明，不新增能力默认值或第二份状态。递归 `bind()` 自然使用绑定后模型的声明。
+
+新增第 8 条契约测试，实际先红（expected ToolSearch true/true，actual undefined），修复后 8/8 通过。
+测试同时要求绑定后采用 true/false 的新声明、缺省能力仍 undefined。证据限于模型端口；
+真实 ToolSearch runtime 的回归结果归入 codex-collaboration 运行时验收记录。

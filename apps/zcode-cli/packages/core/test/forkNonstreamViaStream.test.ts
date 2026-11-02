@@ -170,3 +170,26 @@ test("bind() 之后仍然是非流式走流式", async () => {
   await adapted.generateText({ messages: [{ role: "user", content: "hi" }] });
   assert.equal(requests.length, 1);
 });
+
+test("Model 能力契约：保留 ToolSearch 声明，绑定后采用新模型能力", () => {
+  const unboundCapabilities: Model["requestCapabilities"] = {
+    toolSearch: { protocolSupported: true, defaultEnabled: true },
+  };
+  const boundCapabilities: Model["requestCapabilities"] = {
+    toolSearch: { protocolSupported: true, defaultEnabled: false },
+  };
+  const bound: Model = {
+    ...createFakeModel([], []),
+    requestCapabilities: boundCapabilities,
+  };
+  const base: Model = {
+    ...createFakeModel([], []),
+    requestCapabilities: unboundCapabilities,
+    bind: () => bound,
+  };
+  const adapted = withNonStreamingViaStream(base);
+
+  assert.strictEqual(adapted.requestCapabilities, unboundCapabilities);
+  assert.strictEqual(adapted.bind({ maxOutputTokens: 128 }).requestCapabilities, boundCapabilities);
+  assert.equal(withNonStreamingViaStream(createFakeModel([], [])).requestCapabilities, undefined);
+});
