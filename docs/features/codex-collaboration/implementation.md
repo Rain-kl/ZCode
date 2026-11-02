@@ -478,3 +478,15 @@ build后2/2通过（0.894s测试），没有扩展timeout或修改产品，保�
 guard36816文件通过。src公共入口+controller专用include6文件57/57；Bash封口与普通fork隔离定向2/2
 （同文件其余158项未跑）；prompt trajectory recorder5/5。CLI lint实际仍3个max-lines错误/71warnings，
 沿上文精确文件边界记录。OpenAI HTTP4项由根统一重建后复验，provider/客户端边界仍同前，不宣称Task4完成。
+
+### Task3b quality 修正：child 终态使用具体错误正文
+
+普通provider Error被既有turn wrapper包装后，controller只读顶层Error.message，导致list_agents、canonical
+lastError与STATUS均固化成Turn execution failed。driver现在复用selectExecutionErrorMessage选取正文；
+只有选出正文与原摘要不同时，用既有CoreError保留原拒绝cause和type/context/retryable/recoverable。
+已具体的ModelError原对象直通，不改普通turn wrapper、纯controller或原始日志/重试链。
+
+实际RED为wrapped错误的list缺具体原因；ModelError非重试对照原本通过。修后实际runtime+turn-errors
+8文件56/56、质量原始独立probe1/1通过。新增两项同时查list、durable lastError、STATUS、父provider
+assistant邮件、原cause对象与同session followup恢复；core noEmit/scoped lint/架构通过。此修复仍待
+spec增量与quality复审，不宣称Task4完成。

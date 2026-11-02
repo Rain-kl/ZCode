@@ -100,6 +100,10 @@ driver.release 必须先等待该身份已接受 admission.run 的原执行 Prom
 资源。abort 事件或 beginShutdown 只发出停止请求，不代表模型/工具已经停止访问共享依赖。
 driver 的临时 drain handle 只观察原 run 的成功/失败结算，不存 accepted/status，也不另设超时；
 执行错误继续沿原 run 返回 controller 和持久 turn 事件，真实 release 错误继续携带原 cause。
+driver把run拒绝交给纯controller前，复用既有wrapper-aware execution error解析选取用户可见具体正文。
+若普通turn包装隐藏了下层原因，用既有CoreError保留原拒绝为cause、原type/context/retryable/recoverable
+并替换摘要；原摘要已正确的ModelError等原样抛出。list_agents、canonical lastError与STATUS使用同一
+具体正文；不修改普通turn wrapper，不在纯controller依赖runtime错误格式，不序列化Error造第二格式。
 interrupt 的状态提交先于实际执行退出；紧接的 followup 先等待同一原 run 结算，再在同一 childSessionId
 预留下一轮，不能用暂时非 idle 报错丢失已接纳的新任务，也不能并行启动两轮。
 followup 的旧 command drain 在进入 controller 串行通道之前等待；关闭请求同步封住新的普通 controller

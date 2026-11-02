@@ -5,6 +5,9 @@ import {
   createMessageId,
   createSessionEvent,
   SessionEventType,
+  CoreErrorType,
+  createCoreError,
+  isCoreError,
   type SessionId,
   type CollaborationConfig,
   type CollaborationToolPort,
@@ -35,6 +38,7 @@ import { createRuntimeMailbox } from "./mailbox.js";
 import { prepareCollaborationTurn } from "./admission.js";
 import { prepareChild } from "./prepared-child.js";
 import { CollaborationError } from "../codex-collaboration/contract.js";
+import { selectExecutionErrorMessage } from "../../errors/error-payload.js";
 async function withRuntimeErrorContext<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -178,6 +182,28 @@ export function createRuntimeCollaborationBinding(
             runningCommands.set(identity.agentId, handle);
             try {
               return await command;
+            } catch (error) {
+              // 普通 turn 的 wrapper 摘要不含真正原因；在 runtime 边界复用既有正文选择，保留整条原 cause。
+              // 纯 controller 只读 Error.message，不能让其依赖 runtime error payload 或丢掉 ModelError 身份。
+              if (error instanceof Error) {
+                const message = selectExecutionErrorMessage(error);
+                if (message !== error.message)
+                  throw createCoreError(
+                    isCoreError(error) ? error.type : CoreErrorType.UnknownError,
+                    message,
+                    {
+                      cause: error,
+                      ...(isCoreError(error)
+                        ? {
+                            context: error.context,
+                            retryable: error.retryable,
+                            recoverable: error.recoverable,
+                          }
+                        : {}),
+                    },
+                  );
+              }
+              throw error;
             } finally {
               if (runningCommands.get(identity.agentId) === handle)
                 runningCommands.delete(identity.agentId);
