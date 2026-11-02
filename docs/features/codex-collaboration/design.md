@@ -167,7 +167,10 @@ send_message / followup_task 成功时返回空文本；interrupt_agent 返回 `
 - `fork_turns` 只允许 all / none，默认 all。all 继承父模型和推理等级，不接受覆盖；
   none 时允许经过验证的 model / reasoning_effort，保留 ZCode 现有提供商选择边界。
 - 保留自定义 profile、skills、memory、AGENTS.md 和允许工具配置作为角色扩展，
-  但不能通过 profile 获得父会话没有的权限或绕过网络限制。
+  profile 工具集合只能缩小父可用工具范围，并继承静态 deny 与网络限制。
+  普通 profile 缺省审批模式继承父有效模式（含 plan）；内置 Explore 沿已有 Explore 策略。
+  用户显式配置的 profile.permissionMode 按既有模式策略解析，可覆盖缺省继承的 plan，
+  guarded 对派生 yolo 的约束仍保留。此次工具交集修复不重定义审批模式。
 - 基础协作规则允许子代理继续委派；是否实际暴露 spawn 由继承权限和深度限制决定。
   工具不可用时提示词不能宣称可以调用。显式委派/主动委派模式使用同一配置来源。
 - 只移植当前环境实际具备的能力说明；不复制 Codex 专用 functions.exec/recipient
