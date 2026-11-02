@@ -47,6 +47,12 @@
 - **修改文件**：Core `runtime/{agent-runtime,internal-methods,methods/{index,steering}}.ts`；Bootstrap `app/{types,input-facade}.ts`、V4 `commands/{prompt-turn,handlers/{session-flow,queue}}.ts` 与 `product-projection.ts`；就近 CLI 测试、正式 running-send-now E2E/fixture、验收目录与矩阵；UI 两处旧协议注释。
 - **影响标记**：`FORK(codex-collaboration)`；设计与验证见本功能 [design](docs/features/codex-collaboration/design.md)、[implementation](docs/features/codex-collaboration/implementation.md) 和 CLI `turn-steering.md`。本项不代表剩余协作迁移已经完成。
 
+### 协议关闭期间保护共享依赖（2026-11-02）
+
+- **背景与修改**：关闭等待超时不代表子会话已停止写入。app 资源 owner 纳入已接受但尚未返回的创建，等待 late app 清理后才确认排空；失败或超时时不提前关闭共享数据库、MCP、browser broker 和模型 registry，独立投影与诊断继续清理。
+- **修改文件与标记**：CLI `bootstrap/src/fork/codex-collaboration-shutdown/**`（managed）；`zcode-protocol/{runtime-cleanup,runtime-resources}.ts` 仅保留 `FORK(codex-collaboration)` 单向导出；就近 `protocol-runtime-shutdown.test.ts` 与架构登记。
+- **设计与证据**：[client-acceptance](docs/features/codex-collaboration/client-acceptance.md#production-shutdown-dependency-order)、[shutdown-implementation](docs/features/codex-collaboration/shutdown-implementation.md)。失败清理保留逐级原因；本项不宣称六工具或生产启动包装器端到端验收完成。
+
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 
 ### 禁用 ARMS 时保持启动可用（2026-11-02）
