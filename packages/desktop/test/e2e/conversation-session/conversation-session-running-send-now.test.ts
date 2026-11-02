@@ -1,5 +1,6 @@
 import { TID_CHAT_QUEUE_SEND_NOW_BUTTON, TID_V4_QUEUE_ITEM_SEND_NOW } from "@zcode/shared/test-ids";
 import { clearAppData } from "../helpers/desktop-app.js";
+import { releaseControlledReplay } from "../helpers/controlled-replay.js";
 import {
   INCOMING_MESSAGE_MODES,
   prepareIncomingMessageCapability,
@@ -88,6 +89,8 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       expect(sentNowItem.id).toBe(queuedBeforeSendNow[0]?.id);
       expect(sentNowItem.content).toContain(queuedMarker);
 
+      await expectNoUpstreamRequestForTextWithin(queuedMarker, 900);
+      await releaseControlledReplay("upstream-running-send-now-head-base");
       await waitForUpstreamRequestContaining(queuedMarker, 60000);
       await waitForV4UserMessageContaining(queuedMarker);
       await waitForV4ConversationState(
@@ -149,6 +152,8 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     expect(sentNowItem.id).toBe(selectedQueueItem.id);
     expect(sentNowItem.content).toContain(secondMarker);
 
+    await expectNoUpstreamRequestForTextWithin(secondMarker, 900);
+    await releaseControlledReplay("upstream-running-send-now-promote-base");
     await waitForUpstreamRequestContaining(secondMarker, 60000);
     await waitForV4UserMessageContaining(secondMarker);
     await waitForV4ConversationState(
@@ -175,6 +180,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     expect(await countUpstreamRequestsContaining(secondMarker)).toBeGreaterThan(
       secondRequestsBefore,
     );
+    await expectOriginalStreamTailInSelectedRequest(secondMarker);
   });
 
   it("running 中点击 queued /goal 不截断当前流，自然空闲后按 goal 语义消费", async function () {
@@ -200,6 +206,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     await expectNoUpstreamRequestForTextWithin(goalMarker, 900);
     expect((await getQueueItems())[0]?.id).toBe(queue[0]?.id);
     expect((await getV4GoalProjection())?.objective?.includes(goalMarker)).not.toBe(true);
+    await releaseControlledReplay("upstream-running-send-now-goal-base");
     // FORK-END(codex-collaboration)
 
     await browser.waitUntil(
@@ -242,6 +249,8 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     const secondRequestsBefore = await countUpstreamRequestsContaining(secondMarker);
 
     await doubleClickQueueSendNow(selectedQueueItem.id);
+    await expectNoUpstreamRequestForTextWithin(secondMarker, 900);
+    await releaseControlledReplay("upstream-running-send-now-double-base");
     await waitForUpstreamRequestContaining(secondMarker, 60000);
     await waitForV4UserMessageContaining(secondMarker);
     await waitForV4ConversationState(
@@ -269,8 +278,17 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
       message.text.includes(firstMarker),
     );
     expect(remainingUserMessages).toHaveLength(0);
+    await expectOriginalStreamTailInSelectedRequest(secondMarker);
   });
 });
+
+async function expectOriginalStreamTailInSelectedRequest(marker: string) {
+  const evidence = await getUpstreamRequestEvidence({
+    includes: [marker],
+    excludes: ["Generate a concise title"],
+  });
+  expect(JSON.stringify(evidence.at(-1)?.requestJson)).toContain("E2E_STEER_STREAM_COMPLETE");
+}
 
 function buildRunningPrompt(marker: string) {
   return `E2E_HOLD_STREAM ${marker}: Reply with exactly "${E2E_REPLY_TOKEN}" and no other text.`;

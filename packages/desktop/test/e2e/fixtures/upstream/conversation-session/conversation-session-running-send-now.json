@@ -16,57 +16,43 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ]
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_HEAD_BASE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_HEAD_BASE"]
       },
       "response": {
         "statusCode": 200,
         "headers": {
           "content-type": "text/event-stream; charset=utf-8"
         },
-        "events": [
+        "releaseAfterChunks": 3,
+        "chunks": [
           {
-            "sequence": 0,
             "offsetMs": 0,
             "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"send-now-head-partial\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"output_tokens\":0}}}\n\n"
           },
           {
-            "sequence": 1,
             "offsetMs": 0,
             "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
-            "sequence": 2,
             "offsetMs": 0,
             "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"send-now-head-partial\"}}\n\n"
           },
           {
-            "sequence": 3,
-            "offsetMs": 60000,
+            "offsetMs": 0,
             "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_STEER_STREAM_COMPLETE\"}}\n\n"
           },
           {
-            "sequence": 4,
-            "offsetMs": 60000,
+            "offsetMs": 0,
             "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
-            "sequence": 5,
-            "offsetMs": 60000,
+            "offsetMs": 0,
             "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\n"
           },
           {
-            "sequence": 6,
-            "offsetMs": 60000,
+            "offsetMs": 0,
             "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
         ]
@@ -92,16 +78,9 @@
           "Address the message above as you continue this turn.",
           "E2E_STEER_STREAM_COMPLETE"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD"
-        ],
-        "lastUserMessageExcludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD_BASE"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_HEAD"],
+        "lastUserMessageExcludes": ["E2E_RUNNING_SEND_NOW_HEAD_BASE"]
       },
       "response": {
         "statusCode": 200,
@@ -127,27 +106,24 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"
-        ]
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_PROMOTE_BASE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_BASE"]
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 60000,
-        "text": {
-          "id": "upstream-e2e-running-send-now-promote-base",
-          "inputTokens": 120,
-          "outputTokens": 12,
-          "text": "upstream-e2e-ok"
-        }
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"send-now-promote-base\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"send-now-promote-partial\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_STEER_STREAM_COMPLETE\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
       }
     },
     {
@@ -163,13 +139,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_SEND_NOW_PROMOTE_FIRST"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -194,17 +165,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SLOW_STREAM",
-          "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"
-        ]
+        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_PROMOTE_SECOND"]
       },
       "response": {
         "statusCode": 200,
@@ -230,27 +193,24 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_RUNNING_SEND_NOW_GOAL_BASE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_GOAL_BASE"
-        ]
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_GOAL_BASE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_GOAL_BASE"]
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 60000,
-        "text": {
-          "id": "upstream-e2e-running-send-now-goal-base",
-          "inputTokens": 120,
-          "outputTokens": 12,
-          "text": "upstream-e2e-ok"
-        }
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"send-now-goal-base\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"send-now-goal-partial\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_STEER_STREAM_COMPLETE\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
       }
     },
     {
@@ -266,9 +226,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Continue working toward the active session goal"
-        ],
+        "bodyIncludes": ["Continue working toward the active session goal"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -299,27 +257,24 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"
-        ]
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_RUNNING_SEND_NOW_DOUBLE_BASE"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_BASE"]
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 60000,
-        "text": {
-          "id": "upstream-e2e-running-send-now-double-base",
-          "inputTokens": 120,
-          "outputTokens": 12,
-          "text": "upstream-e2e-ok"
-        }
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "releaseAfterChunks": 1,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"send-now-double-base\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"send-now-double-partial\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" E2E_STEER_STREAM_COMPLETE\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
       }
     },
     {
@@ -335,13 +290,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_RUNNING_SEND_NOW_DOUBLE_FIRST"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_FIRST"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -366,17 +316,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SLOW_STREAM",
-          "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"
-        ]
+        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_RUNNING_SEND_NOW_DOUBLE_SECOND"]
       },
       "response": {
         "statusCode": 200,

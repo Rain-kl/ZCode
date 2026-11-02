@@ -1200,13 +1200,13 @@ Fork 更正（2026-11-02，codex-collaboration）：`M07a-k` 的运行中普通�
 
 | Catalog ID | 覆盖状态  | 自动化         | 后续复现点                                                                                                                                                                                                                                                                                                            |
 | ---------- | --------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M07a       | planned | SN | 新断言：当前流完整尾部出现在后续 provider 请求，原 ID 同 turn 只消费一次；等待新版桌面 replay。 |
-| M07b       | planned | SN | 被点项在安全边界消费，未点项原 ID 与顺序不变；等待新版桌面 replay。 |
-| M07c       | planned | SN | busy goal 提升保留原项、不改 goal；自然空闲后按 typed goal intent 消费；等待新版桌面 replay。 |
+| M07a       | covered | SN | 2026-11-02 受控闸门 replay：MCS/non-MCS 均保留当前流完整尾部到后续请求，单次消费；证据 `desktop-e2e-20261102-113130-485`。 |
+| M07b       | covered | SN | 2026-11-02 同次 replay：被点项只在释放原流后消费，完整尾部保留，未点项原 ID 不变。 |
+| M07c       | covered | SN | 2026-11-02 同次 replay：busy goal 保留原项、不改 goal；自然空闲后按 typed goal intent 消费。 |
 | M07d       | planned   |                | `active turn 处在 tool call / approval window 时点立即`                                                                                                                                                                                                                                                               |
 | M07e       | planned |  | 持久化与原轮结束竞争：原 ID 明确回落 queue；Core 回归已覆盖，桌面待复验。 |
 | M07f       | planned |  | Core admission 决定 guide/拒绝，不按 activeInputId 回退 stop。 |
-| M07g       | planned | SN | 重复点击同项只消费一次，其他项不变；新版协议回归通过，桌面待复验。 |
+| M07g       | covered | SN | 2026-11-02 同次 replay：重复点击同项只消费一次，其他项原 ID 不变，下一请求含原流完整尾部。 |
 | M07h       | planned |  | 消费保留队列项冻结的 Submission Selection，当前 in-flight 请求不变。 |
 | M07i       | planned | GR | 旧等价 Stop 证据已失效；新版必须保持 active goal 与当前流。 |
 | M07j       | planned | GR | 旧 verifier 抢占证据已失效；新版 busy 不可 inline 时保留队列，不取消 verifier。 |
