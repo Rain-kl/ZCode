@@ -59,84 +59,34 @@ describe("toolIdentity", () => {
     expect(isFileDiffToolCall(patchTool)).toBe(true);
   });
 
-  it("keeps legacy ZCode Agent agent shapes behind fallback identity", () => {
-    expect(
-      resolveToolCallIdentity({
-        kind: "think",
-        title: "Task",
-        input: { subagent_type: "Explore" },
-      }),
-    ).toMatchObject({
-      family: "agent",
-      isLegacy: true,
-    });
-  });
+  it.each(["Agent", "Task", "SendMessage", "RespondToCoordinator"])(
+    "retires %s identity without legacy routing",
+    (toolName) => {
+      expect(resolveToolCallIdentity({ toolName, kind: "think", title: toolName })).toMatchObject({
+        family: "unknown",
+      });
+    },
+  );
 
-  it("keeps explicit Task tool calls as current agent identity", () => {
-    expect(
-      resolveToolCallIdentity({
-        toolName: "Task",
-        input: { subagent_type: "Explore" },
-      }),
-    ).toMatchObject({
-      toolName: "Task",
-      family: "agent",
+  it.each([
+    "spawn_agent",
+    "followup_task",
+    "send_message",
+    "interrupt_agent",
+    "list_agents",
+    "wait_agent",
+  ])("recognizes current collaboration tool %s", (toolName) => {
+    expect(resolveToolCallIdentity({ toolName })).toMatchObject({
+      toolName,
+      family: toolName === "spawn_agent" ? "agent" : "collaboration",
       isLegacy: false,
     });
   });
 
-  it("recognizes current SendMessage but not legacy send_message", () => {
-    expect(
-      resolveToolCallIdentity({
-        toolName: "SendMessage",
-      }),
-    ).toMatchObject({
-      toolName: "SendMessage",
-      family: "message",
-      isLegacy: false,
-    });
-
-    expect(
-      resolveToolCallIdentity({
-        toolName: "send_message",
-      }),
-    ).toMatchObject({
-      toolName: null,
-      family: "unknown",
-    });
-  });
-
-  it("recognizes current TaskStop as task control", () => {
-    expect(
-      resolveToolCallIdentity({
-        toolName: "TaskStop",
-      }),
-    ).toMatchObject({
-      toolName: "TaskStop",
+  it.each(["TaskOutput", "TaskStop"])("preserves non-child task control %s", (toolName) => {
+    expect(resolveToolCallIdentity({ toolName })).toMatchObject({
+      toolName,
       family: "task-control",
-      isLegacy: false,
-    });
-  });
-
-  it("recognizes TaskOutput and RespondToCoordinator presentation families", () => {
-    expect(
-      resolveToolCallIdentity({
-        toolName: "TaskOutput",
-      }),
-    ).toMatchObject({
-      toolName: "TaskOutput",
-      family: "task-control",
-      isLegacy: false,
-    });
-
-    expect(
-      resolveToolCallIdentity({
-        toolName: "RespondToCoordinator",
-      }),
-    ).toMatchObject({
-      toolName: "RespondToCoordinator",
-      family: "message",
-      isLegacy: false,
     });
   });
 

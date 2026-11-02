@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): cold seed 只消费 canonical 只读事实，不另建控制器。
+import type { CollaborationChildFact } from "../fork/codex-collaboration-client/contract.js";
 import { PERMISSION_FULL_ACCESS_OPTION_ID } from "@zcode/shared/zcode-protocol-v4";
 // ProductProjection —— CLI 权威投影第二 reducer。
 // 输入：CLI 事件日志（SessionEvent，权威事实源）；输出：ConversationDelta[]。
@@ -267,6 +269,7 @@ interface ContextWindowProjectionState {
 }
 
 export interface SessionSubagentsSeed {
+  lifecycle?: readonly CollaborationChildFact[];
   revision: number;
   childSessionIds: string[];
   running: RunningSubagentSummary[];
@@ -756,6 +759,53 @@ export class ProductProjection {
           : [],
       ),
     );
+    // FORK-BEGIN(codex-collaboration)
+    // canonical seed 同时修复 accepted-before-tool-result gap；不把 cold saved running 冒充活执行。
+    if (seed.lifecycle) {
+      this.snapshot = {
+        ...this.snapshot,
+        rows: {
+          ...this.snapshot.rows,
+          window: this.snapshot.rows.window.filter(
+            (row) =>
+              row.kind !== "subagent" || (row.childSessionId && allowed.has(row.childSessionId)),
+          ),
+        },
+        // 冷种子撤销 child 时，其原生 Stop work 也必须同步退出，不能留下幽灵可取消入口。
+        backgroundWorks: this.snapshot.backgroundWorks.filter(
+          (work) =>
+            work.kind !== "subagent" || (work.childSessionId && allowed.has(work.childSessionId)),
+        ),
+      };
+      this.rowIndexById = new Map(
+        this.snapshot.rows.window.map((row, index) => [row.rowId, index]),
+      );
+      this.pruneRemovedSubagentIndexes();
+      for (const child of seed.lifecycle) {
+        const existing = this.findSubagentRow(child.agentId);
+        const anchor = this.findToolRow(child.parentToolCallId);
+        const event = {
+          sessionId: this.snapshot.sessionId,
+          turnId: existing?.turnId ?? anchor?.turnId,
+          sequenceNumber: this.snapshot.seq,
+          timestamp: new Date(anchor?.startedAt ?? 0),
+          payload: {
+            ...child,
+            agentType: child.agentType,
+            description: child.path,
+            background: true,
+          },
+        } as SessionEvent;
+        const deltas =
+          child.status === "running"
+            ? this.onSubagentSpawned(event)
+            : this.onSubagentStopped(event);
+        const count = this.snapshot.rows.window.length;
+        this.snapshot = applyConversationDeltas(this.snapshot, deltas);
+        this.updateRowIndexAfterImmutableApply(count, deltas);
+      }
+    }
+    // FORK-END(codex-collaboration)
     const running = seed.running.filter((item) => allowed.has(item.childSessionId));
     this.snapshot = {
       ...this.snapshot,
@@ -4428,6 +4478,8 @@ export class ProductProjection {
     const payload = event.payload as Record<string, unknown>;
     const agentId = this.subagentAgentId(payload, event);
     const existing = this.findSubagentLifecycleRow(agentId, payload, event);
+    // FORK(codex-collaboration): generation 是控制器事实，旧代终态和重复 running 不能倒退当前行。
+    if (!this.acceptSubagentGeneration(existing, payload)) return [];
     if (existing) this.subagentRowIdByAgentId.set(agentId, existing.rowId);
     const childSessionId = this.stringPayload(payload, "childSessionId");
     const parentToolCallId = this.stringPayload(payload, "parentToolCallId");
@@ -4439,6 +4491,7 @@ export class ProductProjection {
     );
     if (
       existing?.status === "running" &&
+      existing.generation === payload.generation &&
       (!childSessionId || childSessionId === existing.childSessionId) &&
       (!parentToolCallId || parentToolCallId === existing.parentToolCallId) &&
       (payload.background !== true || existing.backgrounded === true)
@@ -4448,13 +4501,13 @@ export class ProductProjection {
     if (existing) {
       const row: SubagentRow = {
         ...existing,
+        ...this.subagentIdentityFields(payload),
         status: "running",
         summaryText:
           this.stringPayload(payload, "description") ??
           this.stringPayload(payload, "prompt") ??
           existing.summaryText,
-        // resume 事件携带的是 SendMessage call id，但 parentToolCallId 是 row 的创建锚点；
-        // 已存在的锚点不能作为生命周期字段被覆盖，否则 UI 无法再关联原 Agent 行。
+        // followup 保留原 spawn 锚点；不能被后续工具调用覆盖，否则 UI 会丢失唯一 child 入口。
         ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
         ...(childSessionId ? { childSessionId } : {}),
         ...(payload.background === true ? { backgrounded: true as const } : {}),
@@ -4470,6 +4523,7 @@ export class ProductProjection {
     const row: SubagentRow = {
       ...this.rowBase(event, this.turnIdOf(event), agentId),
       kind: "subagent",
+      ...this.subagentIdentityFields(payload),
       ...(this.stringPayload(payload, "parentToolCallId")
         ? { parentToolCallId: this.stringPayload(payload, "parentToolCallId") }
         : {}),
@@ -4497,12 +4551,11 @@ export class ProductProjection {
     agentId: string,
     childSessionId: string | undefined,
   ): ConversationDelta | undefined {
-    if (payload.background !== true || payload.resumed !== true || !childSessionId) {
+    if (payload.background !== true || !childSessionId) {
       return undefined;
     }
 
-    // SendMessage resume 直接进入 subagent port，不经过 Agent tool executor，
-    // 因而不会产生 tracker 的 BackgroundTaskStarted。SubagentSpawned 已是单一启动事实，
+    // 协作控制器不经过 Bash tracker，因而不会产生 BackgroundTaskStarted。SubagentSpawned 是单一启动事实，
     // 这里在同一次 V4 transaction 内补齐可取消 work，避免再引入第二个可失败事件。
     const previous = this.snapshot.backgroundWorks;
     const existing = previous.find((work) => work.workId === agentId);
@@ -4527,7 +4580,11 @@ export class ProductProjection {
       status: "running",
       startedAt: this.ms(event),
       cancellable: true,
-      anchorRowId: existing?.anchorRowId ?? null,
+      // FORK(codex-collaboration): Stop 面板与原始 spawn 工具保持相同创建锚点。
+      anchorRowId:
+        existing?.anchorRowId ??
+        this.findToolRow(this.stringPayload(payload, "parentToolCallId") ?? "")?.rowId ??
+        null,
       childSessionId,
     };
     const backgroundWorks = existing
@@ -4551,6 +4608,8 @@ export class ProductProjection {
     const payload = event.payload as Record<string, unknown>;
     const agentId = this.subagentAgentId(payload, event);
     const existing = this.findSubagentLifecycleRow(agentId, payload, event);
+    // FORK(codex-collaboration): followup 已启动新代时，延迟的上一代 stop 必须被忽略。
+    if (!this.acceptSubagentGeneration(existing, payload)) return [];
     const parentToolCallId = this.stringPayload(payload, "parentToolCallId");
     const status = this.mapSubagentStatus(this.stringPayload(payload, "status"));
     const summaryText =
@@ -4563,10 +4622,11 @@ export class ProductProjection {
     const row: SubagentRow = existing
       ? {
           ...existing,
+          ...this.subagentIdentityFields(payload),
           status,
           summaryText,
           endedAt: this.ms(event),
-          // resumed child 的终态同样属于原 Agent row，只在旧 row 缺失锚点时补齐。
+          // followup child 的终态同样属于原 spawn row，只在行缺失锚点时补齐。
           ...(!existing.parentToolCallId && parentToolCallId ? { parentToolCallId } : {}),
           ...(this.stringPayload(payload, "childSessionId")
             ? { childSessionId: this.stringPayload(payload, "childSessionId") }
@@ -4575,6 +4635,7 @@ export class ProductProjection {
       : {
           ...this.rowBase(event, this.turnIdOf(event), agentId),
           kind: "subagent",
+          ...this.subagentIdentityFields(payload),
           ...(this.stringPayload(payload, "parentToolCallId")
             ? {
                 parentToolCallId: this.stringPayload(payload, "parentToolCallId"),
@@ -4591,7 +4652,26 @@ export class ProductProjection {
           endedAt: this.ms(event),
         };
     this.subagentRowIdByAgentId.set(agentId, row.rowId);
-    return [{ op: existing ? "row.upserted" : "row.appended", row }];
+    // FORK(codex-collaboration): child 与原生 Stop work 在同一次投影事务终止，不能残留可取消 running。
+    const backgroundWorks = this.snapshot.backgroundWorks.map((work) =>
+      work.workId === agentId
+        ? {
+            ...work,
+            status:
+              status === "success"
+                ? ("resultPending" as const)
+                : status === "cancelled"
+                  ? ("cancelled" as const)
+                  : ("failed" as const),
+            cancellable: false,
+            endedAt: this.ms(event),
+          }
+        : work,
+    );
+    return [
+      { op: existing ? "row.upserted" : "row.appended", row },
+      { op: "state.updated", patch: { backgroundWorks } },
+    ];
   }
 
   // cancelBackgroundWork：后台任务生命周期（BackgroundTaskStarted/Updated/Completed）
@@ -5773,26 +5853,64 @@ export class ProductProjection {
     const parentToolCallId = this.stringPayload(payload, "parentToolCallId");
     if (!parentToolCallId) return undefined;
     const turnId = this.turnIdOf(event);
-    // 晚订阅 hydration 无法从后台 Agent 的文本 tool output 恢复真实 agentId，
-    // 会先用 toolCallId 合成一条 SubagentRow。后到的 live lifecycle 携带真实 agentId，
-    // 旧逻辑因此追加第二行，UI 又会让无 childSessionId 的合成行抢占配对。父 tool call
-    // 在同一 turn 内是稳定唯一身份，这里将真实事件归并回合成行并补齐 childSessionId。
-    return this.snapshot.rows.window.find(
+    // FORK(codex-collaboration): 相同锚点的不同 opaque agent 是身份冲突，不可按旧占位行逻辑收养。
+    const conflict = this.snapshot.rows.window.find(
       (row): row is SubagentRow =>
         row.kind === "subagent" &&
         row.turnId === turnId &&
         row.parentToolCallId === parentToolCallId,
     );
+    if (conflict)
+      throw new Error(
+        `Collaboration lifecycle identity conflict: agentId ${agentId}, anchor ${parentToolCallId}`,
+      );
+    return undefined;
   }
 
-  private subagentAgentId(payload: Record<string, unknown>, event: SessionEvent): string {
-    return (
-      this.stringPayload(payload, "agentId") ??
-      this.stringPayload(payload, "childSessionId") ??
-      this.stringPayload(payload, "parentToolCallId") ??
-      `subagent-${event.sequenceNumber}`
-    );
+  // FORK-BEGIN(codex-collaboration)
+  private subagentIdentityFields(payload: Record<string, unknown>): Partial<SubagentRow> {
+    const generation = payload.generation;
+    return {
+      ...(typeof generation === "number" && Number.isInteger(generation) && generation >= 0
+        ? { generation }
+        : {}),
+      ...Object.fromEntries(
+        ["agentId", "parentId", "parentSessionId", "path"].flatMap((key) => {
+          const value = this.stringPayload(payload, key);
+          return value ? [[key, value]] : [];
+        }),
+      ),
+    };
   }
+
+  private acceptSubagentGeneration(
+    existing: SubagentRow | undefined,
+    payload: Record<string, unknown>,
+  ): boolean {
+    if (!existing) return true;
+    const generation = payload.generation;
+    if (existing.generation !== undefined && typeof generation !== "number") return false;
+    if (typeof generation === "number" && existing.generation !== undefined) {
+      if (generation < existing.generation) return false;
+      if (generation === existing.generation && existing.status !== "running") return false;
+    }
+    for (const key of ["childSessionId", "parentToolCallId"] as const) {
+      const value = this.stringPayload(payload, key);
+      if (value && existing[key] && value !== existing[key]) {
+        throw new Error(
+          `Collaboration lifecycle identity conflict: ${key} for ${String(payload.agentId)}`,
+        );
+      }
+    }
+    return true;
+  }
+
+  private subagentAgentId(payload: Record<string, unknown>, _event: SessionEvent): string {
+    const id = this.stringPayload(payload, "agentId");
+    if (!id) throw new Error("Collaboration lifecycle requires agentId");
+    return id;
+  }
+  // FORK-END(codex-collaboration)
 
   private stringPayload(payload: Record<string, unknown>, key: string): string | undefined {
     const value = payload[key];
@@ -5831,7 +5949,6 @@ function toProtocolToolCallDisplay(
   switch (display.kind) {
     case "node_repl_images":
     case "task_output":
-    case "respond_to_coordinator":
     case "mcp_tool":
     case "create_workflow":
     // 观察类工作流工具的五个 display kind——shared 侧 toolCallDisplaySchema 已同步加

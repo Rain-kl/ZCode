@@ -1,6 +1,24 @@
 import { requestSecurityMessagesZhCN } from "@/request-security-edition/messages.js";
 /** 中文翻译 */
 const zhCN: Record<string, string> = {
+  // FORK-BEGIN(codex-collaboration)
+  "chat.toolCall.collaboration.spawn": "创建子代理",
+  "chat.toolCall.collaboration.followup": "继续子任务",
+  "chat.toolCall.collaboration.send": "发送消息",
+  "chat.toolCall.collaboration.interrupt": "中断子代理",
+  "chat.toolCall.collaboration.list": "查看子代理",
+  "chat.toolCall.collaboration.wait": "等待子代理",
+  "chat.toolCall.collaboration.target": "目标",
+  "chat.toolCall.collaboration.message": "消息",
+  "chat.toolCall.collaboration.result": "结果",
+  "chat.toolCall.collaboration.agentType": "代理类型",
+  "chat.toolCall.collaboration.pathPrefix": "路径前缀",
+  "chat.toolCall.collaboration.forkTurns": "会话历史",
+  "chat.toolCall.collaboration.model": "模型",
+  "chat.toolCall.collaboration.reasoningEffort": "推理强度",
+  "chat.toolCall.collaboration.timeout": "超时（毫秒）",
+  "chat.toolCall.collaboration.open": "打开子代理",
+  // FORK-END(codex-collaboration)
   "preview.image.copy": "复制图片",
   "preview.image.actions": "图片操作",
   "preview.image.added": "已添加到聊天",

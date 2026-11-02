@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): canonical 身份解析收在有限只读模块，协议层不拥有协作状态。
+import { readCollaborationChildren } from "../fork/codex-collaboration-client/module.js";
 import {
   isAuxiliarySessionKind,
   isReadonlyAgentSessionKind,
@@ -125,11 +127,7 @@ import { createProtocolBrowserControlBroker } from "./browser-control-broker.js"
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
 import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
 import { projectIdFromDirectory } from "../app/paths.js";
-import {
-  collectSubagentChildSessionIds,
-  paginateEndedSubagents,
-  projectSessionSubagents,
-} from "./subagent-session-query.js";
+import { paginateEndedSubagents, projectSessionSubagents } from "./subagent-session-query.js";
 import { runSessionModelConfigMutation } from "../zcode-protocol-v4/model-config-mutation.js";
 import { runWithSessionResidencyFinalization } from "./session-residency.js";
 import { resolveDynamicWorkflowRuntimeGate } from "./dynamic-workflow-policy.js";
@@ -1773,6 +1771,7 @@ export async function listSessionSubagents(
     return {
       revision: liveParent?.stateRevision ?? 0,
       childSessionIds: [],
+      lifecycle: [],
       running: [],
       ended: { total: 0, items: [] },
     };
@@ -1796,55 +1795,27 @@ export async function listSessionSubagents(
     );
   }
   const messages = persistedMessages ?? (await store.messages({ sessionID: parentSession.id }));
-  const parentEvents = liveParent
-    ? await liveParent.eventStore.getEvents(parentSession.id).catch(() => [])
-    : [];
-  const childSessionIds = collectSubagentChildSessionIds(parentSession, messages, parentEvents);
-  const childEntries = await Promise.all(
-    childSessionIds.map(async (childSessionId) => {
-      const childSession = await store.getSession(childSessionId as SessionId);
-      if (!childSession || childSession.taskType !== "subagent_child") return null;
-      const childMessages = await store.messages({
-        sessionID: childSession.id,
-      });
-      const liveChild = context.sessions.get(childSessionId);
-      const childProjection = liveChild
-        ? await liveChild.app.runtime.getProjection().catch(() => undefined)
-        : undefined;
-      return { childMessages, childProjection, childSession, childSessionId };
-    }),
-  );
-  const persistedChildren = childEntries.filter(
-    (entry): entry is NonNullable<typeof entry> => entry !== null,
-  );
-  const parentProjection = liveParent
-    ? await liveParent.app.runtime.getProjection().catch(() => undefined)
-    : undefined;
+  // FORK-BEGIN(codex-collaboration)
+  const facts = await readCollaborationChildren({
+    store,
+    session: parentSession,
+    messages,
+    getAgentStatus: (rootId, agentId) =>
+      context.sessions.get(rootId)?.app.runtime.getCollaborationAgentStatus(agentId),
+  });
   const projection = projectSessionSubagents({
     revision: liveParent?.stateRevision ?? parentSession.time.updated,
-    parentSession,
-    messages,
-    childSessionsById: new Map(
-      persistedChildren.map((entry) => [entry.childSessionId, entry.childSession]),
-    ),
-    childMessagesById: new Map(
-      persistedChildren.map((entry) => [entry.childSessionId, entry.childMessages]),
-    ),
-    childProjectionsById: new Map(
-      persistedChildren.flatMap((entry) =>
-        entry.childProjection ? [[entry.childSessionId, entry.childProjection]] : [],
-      ),
-    ),
-    ...(parentProjection ? { parentProjection } : {}),
-    ...(parentEvents.length > 0 ? { parentEvents } : {}),
+    children: facts.children,
   });
+  // FORK-END(codex-collaboration)
   const ended = paginateEndedSubagents(projection.ended, {
     cursor: params.endedCursor,
     limit: params.endedLimit,
   });
   return {
     revision: projection.revision,
-    childSessionIds: persistedChildren.map((entry) => entry.childSessionId),
+    childSessionIds: facts.children.map((entry) => entry.childSessionId),
+    lifecycle: facts.children,
     running: projection.running,
     ended: {
       total: projection.ended.length,

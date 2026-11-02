@@ -98,12 +98,8 @@ export function toolCallRowToLegacyNode(row: ToolCallRow): TaskChatToolCallTreeN
       input: inputPreview.input,
       status: legacyStatus,
       output: row.output?.text,
-      // V4 ToolCallRow 没有 legacy taskNotification raw；background Agent
-      // 的终态摘要只落在 output。Agent renderer 读取 content 展示活动结果，因此在
-      // Agent/Task 行显式桥接，避免失败详情虽已投影却仍只显示一张空卡。
-      ...((row.toolName === "Agent" || row.toolName === "Task") && row.output?.text
-        ? { content: row.output.text }
-        : {}),
+      // FORK(codex-collaboration): 创建工具保留原始结果正文；child 身份/生命周期始终由配对 row 提供。
+      ...(row.toolName === "spawn_agent" && row.output?.text ? { content: row.output.text } : {}),
       // v4 row 是自包含投影，部分 provider 只把工具失败正文塞进 output，
       // 不补回 legacy error 会让 ToolOutput 看不到失败原因，只剩一张空的 failed 摘要。
       error: errorText,

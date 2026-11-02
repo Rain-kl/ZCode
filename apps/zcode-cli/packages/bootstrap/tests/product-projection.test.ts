@@ -1726,13 +1726,6 @@ describe("ProductProjection 黄金测试（L1）", () => {
       } as const,
     },
     {
-      toolName: "RespondToCoordinator",
-      display: {
-        kind: "respond_to_coordinator",
-        status: "success",
-      } as const,
-    },
-    {
       toolName: "CreateWorkflow",
       display: {
         kind: "create_workflow",
@@ -2934,7 +2927,7 @@ describe("ProductProjection 黄金测试（L1）", () => {
     });
   });
 
-  it("SAT12：SendMessage resumed spawn 在同一次投影中恢复原 row 和 cancellable work", () => {
+  it("SAT12：followup_task resumed spawn 在同一次投影中恢复原 row 和 cancellable work", () => {
     const turnId = "turn-send-message-resume";
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
@@ -2977,7 +2970,8 @@ describe("ProductProjection 黄金测试（L1）", () => {
         background: true,
         childSessionId: "sess-child-resume",
         description: "恢复到后台",
-        parentToolCallId: "call-send-message",
+        parentToolCallId: "call-agent",
+        generation: 2,
         resumed: true,
         status: "running",
       },
@@ -3044,7 +3038,8 @@ describe("ProductProjection 黄金测试（L1）", () => {
           agentType: "general-purpose",
           background: true,
           childSessionId: "sess-child-resume",
-          parentToolCallId: "call-send-message",
+          parentToolCallId: "call-agent",
+          generation: 2,
           status: "cancelled",
         },
         { turnId },
@@ -4635,7 +4630,7 @@ describe("结构性4：两 profile 终态一致", () => {
     );
   });
 
-  it("BG26：真实失败 lifecycle 归并 hydration 合成行并补齐 child session 身份", () => {
+  it("BG26：真实失败 lifecycle 按 opaque agent 身份更新唯一 child 行", () => {
     const turnId = "turn-background-agent-rate-limit";
     const parentToolCallId = "call-background-agent-rate-limit";
     const realAgentId = "agent-background-rate-limit";
@@ -4651,11 +4646,10 @@ describe("结构性4：两 profile 终态一致", () => {
       SessionEventType.ToolCallScheduled,
       {
         toolCallId: parentToolCallId,
-        toolName: "Agent",
+        toolName: "spawn_agent",
         input: {
-          description: "Trigger provider rate limit",
-          prompt: "Trigger provider rate limit",
-          run_in_background: true,
+          task_name: "rate_limit",
+          message: "Trigger provider rate limit",
         },
         schedule: {
           parallelGroups: [[parentToolCallId]],
@@ -4666,22 +4660,10 @@ describe("结构性4：两 profile 终态一致", () => {
     );
     log.push(
       SessionEventType.ToolCallStarted,
-      { toolCallId: parentToolCallId, toolName: "Agent", startedAt: new Date() },
+      { toolCallId: parentToolCallId, toolName: "spawn_agent", startedAt: new Date() },
       { turnId },
     );
-    // transcript hydration 只能从文本 tool output 合成出 toolCallId 身份，拿不到 childSessionId。
-    log.push(
-      SessionEventType.SubagentSpawned,
-      {
-        agentId: parentToolCallId,
-        agentType: "general-purpose",
-        description: "Trigger provider rate limit",
-        parentToolCallId,
-        status: "running",
-      },
-      { turnId },
-    );
-    // hydration await 窗口内补回的真实 spawned 也必须复用合成行，并建立真实 agentId 映射。
+    // child 身份完全来自控制器事件，禁止从 spawn 的模型结果推断。
     log.push(
       SessionEventType.SubagentSpawned,
       {

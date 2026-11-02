@@ -1,6 +1,24 @@
 import { requestSecurityMessagesEnUS } from "@/request-security-edition/messages.js";
 /** English translations */
 const enUS: Record<string, string> = {
+  // FORK-BEGIN(codex-collaboration)
+  "chat.toolCall.collaboration.spawn": "Spawn agent",
+  "chat.toolCall.collaboration.followup": "Follow up task",
+  "chat.toolCall.collaboration.send": "Send message",
+  "chat.toolCall.collaboration.interrupt": "Interrupt agent",
+  "chat.toolCall.collaboration.list": "List agents",
+  "chat.toolCall.collaboration.wait": "Wait for agents",
+  "chat.toolCall.collaboration.target": "Target",
+  "chat.toolCall.collaboration.message": "Message",
+  "chat.toolCall.collaboration.result": "Result",
+  "chat.toolCall.collaboration.agentType": "Agent type",
+  "chat.toolCall.collaboration.pathPrefix": "Path prefix",
+  "chat.toolCall.collaboration.forkTurns": "Conversation history",
+  "chat.toolCall.collaboration.model": "Model",
+  "chat.toolCall.collaboration.reasoningEffort": "Reasoning effort",
+  "chat.toolCall.collaboration.timeout": "Timeout (ms)",
+  "chat.toolCall.collaboration.open": "Open agent",
+  // FORK-END(codex-collaboration)
   "preview.image.copy": "Copy image",
   "preview.image.actions": "Image actions",
   "preview.image.added": "Added to chat",

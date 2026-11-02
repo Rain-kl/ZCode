@@ -2,6 +2,29 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: codex-collaboration-ui
+    roots: [packages/ui/src/fork/codex-collaboration]
+    managed: true
+    requires: [ui, shared]
+    publicEntrypoints:
+      - packages/ui/src/fork/codex-collaboration/module.ts
+      - packages/ui/src/fork/codex-collaboration/contract.ts
+    layers: { ui: . }
+    owner: agent
+  - id: codex-collaboration-client
+    roots:
+      [
+        apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-client,
+        apps/zcode-cli/packages/bootstrap/src/app/subagent-observation.ts,
+      ]
+    managed: true
+    requires: [zcode-cli, shared, codex-collaboration-runtime, codex-collaboration-tools-contract]
+    publicEntrypoints:
+      - apps/zcode-cli/packages/bootstrap/src/app/subagent-observation.ts
+      - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-client/module.ts
+      - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-client/contract.ts
+    layers: { adapters: . }
+    owner: agent
   - id: codex-collaboration-shutdown
     roots:
       - apps/zcode-cli/packages/bootstrap/src/fork/codex-collaboration-shutdown

@@ -2,7 +2,6 @@ import {
   createWorkflowToolResultDisplayPayloadSchema,
   parseCompletedToolPartMetadata,
   parseToolResultDisplayPayload,
-  respondToCoordinatorToolResultDisplayPayloadSchema,
   taskOutputToolResultDisplayPayloadSchema,
   toolResultDisplayPayloadSchema,
 } from "../src/tools/tool-result-metadata.js";
@@ -51,28 +50,14 @@ describe("tool result display metadata", () => {
     ).toBe(false);
   });
 
-  it.each(["success", "failed"] as const)(
-    "accepts RespondToCoordinator %s without response content",
-    (status) => {
-      const display = {
-        kind: "respond_to_coordinator",
-        status,
-      } as const;
-
-      expect(respondToCoordinatorToolResultDisplayPayloadSchema.parse(display)).toEqual(display);
-      expect(parseToolResultDisplayPayload(display)).toEqual(display);
+  it.each(["local_agent_message", "respond_to_coordinator"])(
+    "rejects retired %s display",
+    (kind) => {
+      expect(toolResultDisplayPayloadSchema.safeParse({ kind, status: "success" }).success).toBe(
+        false,
+      );
     },
   );
-
-  it("rejects RespondToCoordinator delivery details", () => {
-    expect(
-      respondToCoordinatorToolResultDisplayPayloadSchema.safeParse({
-        kind: "respond_to_coordinator",
-        status: "success",
-        responseId: "response-1",
-      }).success,
-    ).toBe(false);
-  });
 
   it("accepts bounded authoritative CUA target-app display metadata", () => {
     const display = {

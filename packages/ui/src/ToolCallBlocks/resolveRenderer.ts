@@ -1,3 +1,5 @@
+// FORK(codex-collaboration): 六工具专用展示避免 list/wait 落入默认 Stop renderer。
+import { CollaborationToolCallBlock } from "@/fork/codex-collaboration/module.js";
 // ============================================================
 // 工具卡 renderer 注册表：tool identity → 具体 renderer 组件
 // ============================================================
@@ -6,7 +8,6 @@
 // 本文件只做纯分流，不含 JSX、不碰 context 装配，ToolCallBlocks.tsx 单向依赖它。
 
 import { EditToolCallBlock } from "@/ToolCallBlocks/renderers/edit.js";
-import { AgentToolCallBlock } from "@/ToolCallBlocks/renderers/agent.js";
 import { ChangesGroupToolCallBlock } from "@/ToolCallBlocks/renderers/changes-group.js";
 import { CreateWorkflowToolCallBlock } from "@/ToolCallBlocks/renderers/create-workflow.js";
 import { EscalateToolCallBlock } from "@/ToolCallBlocks/renderers/escalate.js";
@@ -41,10 +42,8 @@ import { McpToolCallBlock, readMcpToolPresentation } from "@/ToolCallBlocks/rend
 import { PlanGuidanceToolCallBlock } from "@/ToolCallBlocks/renderers/plan-guidance.js";
 import { ReadToolCallBlock } from "@/ToolCallBlocks/renderers/read.js";
 import { ReadSessionContextToolCallBlock } from "@/ToolCallBlocks/renderers/read-session-context.js";
-import { RespondToCoordinatorToolCallBlock } from "@/ToolCallBlocks/renderers/respond-to-coordinator.js";
 import { WebFetchToolCallBlock } from "@/ToolCallBlocks/renderers/web-fetch.js";
 import { SearchToolCallBlock, ToolSearchToolCallBlock } from "@/ToolCallBlocks/renderers/search.js";
-import { SendMessageToolCallBlock } from "@/ToolCallBlocks/renderers/send-message.js";
 import { SkillToolCallBlock } from "@/ToolCallBlocks/renderers/skill.js";
 import { SubmitResultToolCallBlock } from "@/ToolCallBlocks/renderers/submit-result.js";
 import { SwitchModeToolCallBlock } from "@/ToolCallBlocks/renderers/switch-mode.js";
@@ -139,21 +138,18 @@ export function resolveToolCallRenderer(context: ToolCallBlockRenderContext) {
     case "plan-guidance":
       return PlanGuidanceToolCallBlock;
     case "agent":
-      return AgentToolCallBlock;
+    case "collaboration":
+      return CollaborationToolCallBlock;
     case "todo":
       return TodoToolCallBlock;
     case "ask-user-question":
       return AskQuestionToolCallBlock;
-    case "message":
-      return identity.toolName === "RespondToCoordinator"
-        ? RespondToCoordinatorToolCallBlock
-        : SendMessageToolCallBlock;
     case "task-control":
       return identity.toolName === "TaskOutput" ? TaskOutputToolCallBlock : TaskStopToolCallBlock;
     case "skill":
       return SkillToolCallBlock;
     case "workflow":
-      // family 内按工具名分派（`message` family 对 RespondToCoordinator 的同款先例）：
+      // family 内按工具名分派，保持共用 family 的不同工具各自的展示规则：
       // 工作流的两个工具卡面完全不同——一个是脚本/图，一个是 actor 提交的结果。
       return identity.toolName === "submit_result"
         ? SubmitResultToolCallBlock

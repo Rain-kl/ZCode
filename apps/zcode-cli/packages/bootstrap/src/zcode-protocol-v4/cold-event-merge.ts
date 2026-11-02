@@ -193,9 +193,7 @@ const TRANSCRIPT_DERIVED_EVENT_TYPES = new Set<string>([
   SessionEventType.CompactFailed,
   SessionEventType.TargetCompletionVerification,
   SessionEventType.SessionForked,
-  SessionEventType.SubagentSpawned,
-  SessionEventType.SubagentMessage,
-  SessionEventType.SubagentStopped,
+  // FORK(codex-collaboration): 生命周期由控制器持久事件提供，transcript tool 结果不能重建。
 ]);
 
 const HOOK_LIFECYCLE_EVENT_TYPES = new Set<string>([

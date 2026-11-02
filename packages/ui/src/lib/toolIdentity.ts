@@ -126,32 +126,6 @@ function readRawToolNameCandidates(raw: unknown) {
   };
 }
 
-function isLegacyAgentTool(
-  toolCall: ToolIdentityLike,
-  rawNames: ReturnType<typeof readRawToolNameCandidates>,
-) {
-  const kind = normalizeLegacyToken(toolCall.kind);
-  const title = normalizeLegacyToken(toolCall.title);
-  const rawDirect = normalizeLegacyToken(rawNames.direct);
-  const rawZCode = normalizeLegacyToken(rawNames.zcode);
-  const rawClaude = normalizeLegacyToken(rawNames.claudeCode);
-
-  return (
-    rawClaude === "agent" ||
-    rawClaude === "task" ||
-    rawZCode === "agent" ||
-    rawZCode === "spawn_agent" ||
-    rawDirect === "agent" ||
-    rawDirect === "spawn_agent" ||
-    kind === "agent" ||
-    kind === "spawn_agent" ||
-    (kind === "think" && (title === "agent" || title === "task")) ||
-    (kind === "think" &&
-      isRecord(toolCall.input) &&
-      typeof toolCall.input.subagent_type === "string")
-  );
-}
-
 function isLegacySkillTool(
   toolCall: ToolIdentityLike,
   rawNames: ReturnType<typeof readRawToolNameCandidates>,
@@ -237,17 +211,7 @@ export function resolveToolCallIdentity(toolCall: ToolIdentityLike): ToolCallIde
     }
   }
 
-  if (isLegacyAgentTool(toolCall, rawNames)) {
-    return identityFromLegacyFamily(
-      rawNames.direct ?? rawNames.zcode ?? rawNames.claudeCode ?? "Agent",
-      "agent",
-      "legacy-payload",
-    );
-  }
-
-  // `Task` 现在是现役 Claude 兼容工具名，但历史 ZCode Agent 投影会用
-  // kind="think" + title="Task" 表示子 agent 活动。title 只是展示名，必须放在
-  // legacy payload 判断之后，避免把旧会话误升级成非 legacy 工具身份。
+  // FORK(codex-collaboration): 旧 Agent/Task 不能通过历史 payload 恢复为现役子代理入口。
   const titleIdentity = identityFromKnownToolName(toolCall.title, "title");
   if (titleIdentity) {
     return titleIdentity;

@@ -676,7 +676,7 @@ describe("buildAssistantWorkRenderItems", () => {
 
   it("pairs agent tool calls with subagent rows by parentToolCallId", () => {
     const rows = [
-      toolCall(1, "Agent", {
+      toolCall(1, "spawn_agent", {
         prompt: "分析当前工作区",
         subagent_type: "Explore",
       }),
@@ -700,9 +700,9 @@ describe("buildAssistantWorkRenderItems", () => {
 
   it("keeps concurrent agent details bound when subagents spawn in reverse order", () => {
     const rows = [
-      toolCall(1, "Agent", { description: "测试 general-purpose agent" }),
-      toolCall(2, "Agent", { description: "测试 Explore agent" }),
-      toolCall(3, "Agent", { description: "测试 test-hello2 agent" }),
+      toolCall(1, "spawn_agent", { description: "测试 general-purpose agent" }),
+      toolCall(2, "spawn_agent", { description: "测试 Explore agent" }),
+      toolCall(3, "spawn_agent", { description: "测试 test-hello2 agent" }),
       subagent(4, {
         childSessionId: "child-test-hello2",
         parentToolCallId: "tool-3",
@@ -732,22 +732,16 @@ describe("buildAssistantWorkRenderItems", () => {
     ]);
   });
 
-  it("only falls back for one unambiguous legacy pair", () => {
+  it("does not guess an unanchored child even when only one spawn remains", () => {
     const onePair = buildRenderItems([
-      toolCall(1, "Agent", { description: "旧 Agent" }),
+      toolCall(1, "spawn_agent", { description: "旧 Agent" }),
       subagent(2),
     ]);
-    expect(onePair).toMatchObject([
-      {
-        kind: "agentToolCall",
-        row: { rowId: 1 },
-        subagentRow: { rowId: 2 },
-      },
-    ]);
+    expect(onePair.map((item) => item.kind)).toEqual(["row", "row"]);
 
     const ambiguous = buildRenderItems([
-      toolCall(1, "Agent", { description: "旧 Agent A" }),
-      toolCall(2, "Agent", { description: "旧 Agent B" }),
+      toolCall(1, "spawn_agent", { description: "旧 Agent A" }),
+      toolCall(2, "spawn_agent", { description: "旧 Agent B" }),
       subagent(3),
       subagent(4),
     ]);
@@ -757,7 +751,7 @@ describe("buildAssistantWorkRenderItems", () => {
 
   it("keeps background subagents paired without requesting an inline output preview", () => {
     const rows = [
-      toolCall(1, "Agent", {
+      toolCall(1, "spawn_agent", {
         prompt: "后台分析当前工作区",
         run_in_background: true,
         subagent_type: "Explore",

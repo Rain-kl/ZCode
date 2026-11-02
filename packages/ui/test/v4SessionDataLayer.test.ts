@@ -2174,3 +2174,117 @@ describe("ConversationProjectionStore.loadOlder", () => {
     expect(mergeOlderRows(window, [])).toBeNull();
   });
 });
+
+// 六工具沿同一真实 publisher → renderer store 链验证，profile 只改变交付，不改变 child 身份。
+describe.each(["continuous", "replayable"] as const)(
+  "Codex collaboration delivery %s",
+  (deliveryProfile) => {
+    it("repairs a dropped frame without duplicate children or stale generation rollback", async () => {
+      const { ConversationTopicPublisher } =
+        await import("../../../apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/conversation-topic-publisher.js");
+      const { SessionEventType } =
+        await import("../../../apps/zcode-cli/packages/contracts/src/index.js");
+      const publisher = new ConversationTopicPublisher("s1", "epoch-1");
+      let sequence = 0;
+      const event = (
+        type: import("../../../apps/zcode-cli/packages/contracts/src/index.js").SessionEvent["type"],
+        payload: Record<string, unknown>,
+      ) =>
+        publisher.ingest({
+          id: `e${++sequence}`,
+          sessionId: "s1",
+          turnId: "turn-1",
+          traceId: "trace",
+          timestamp: new Date(sequence * 1000),
+          sequenceNumber: sequence,
+          type,
+          payload,
+        } as import("../../../apps/zcode-cli/packages/contracts/src/index.js").SessionEvent);
+      event(SessionEventType.SessionCreated, { mode: "default" });
+      event(SessionEventType.TurnStarted, { turnNumber: 1, input: "delegate" });
+      const transport = new FakeTransport();
+      let pubSub = "";
+      transport.subscribeImpl = (_params, subId) => {
+        const result = publisher.subscribe({ connectionId: "reader", deliveryProfile });
+        pubSub = result.ack.subscriptionId;
+        return {
+          ack: { ...result.ack, subscriptionId: subId },
+          initialFrame: result.frame ? { ...result.frame, subscriptionId: subId } : undefined,
+        };
+      };
+      transport.resyncImpl = (params) => {
+        const frame = publisher.resync(pubSub);
+        if (!frame) throw new Error("Publisher lost active subscription");
+        queueMicrotask(() =>
+          transport.emitRecovery({ ...frame, subscriptionId: params.subscriptionId }),
+        );
+        return {
+          ack: { subscriptionId: params.subscriptionId, mode: "snapshot", logEpoch: "epoch-1" },
+        };
+      };
+      const store = new ConversationProjectionStore("conversation/s1", transport);
+      const off = transport.onFrame((frame, context) => store.handleFrame(frame, context));
+      await store.connect();
+      const identity = {
+        version: 1,
+        agentId: "agent-opaque-a7",
+        childSessionId: "session-random-f91",
+        parentId: "root-agent",
+        parentSessionId: "s1",
+        parentToolCallId: "spawn-call-6",
+        path: "/root/worker",
+        agentType: "worker",
+        generation: 1,
+        background: true,
+      };
+      const flush = () => {
+        const frame = publisher.flush(pubSub);
+        if (!frame) throw new Error("Expected lifecycle frame");
+        return { ...frame, subscriptionId: store.getState().subscriptionId! };
+      };
+      event(SessionEventType.SubagentSpawned, identity);
+      const spawn = flush();
+      transport.emitKind(spawn, "online");
+      transport.emitKind(spawn, "online");
+      event(SessionEventType.TurnSteerQueued, {
+        pendingInputId: "steer",
+        input: "continue parent",
+        inputPreview: "continue parent",
+        inputSize: 15,
+        targetTurnId: "turn-1",
+        queueLength: 1,
+        delivery: "guide",
+      });
+      transport.emitKind(flush(), "online");
+      event(SessionEventType.SubagentStopped, { ...identity, status: "completed" });
+      flush(); // physically dropped terminal frame
+      event(SessionEventType.SubagentSpawned, { ...identity, generation: 2, resumed: true });
+      transport.emitKind(flush(), "online"); // gap must trigger the existing store recovery path
+      await flushMicrotasks();
+      expect(transport.resyncCalls).toHaveLength(1);
+      expect(
+        store.getState().snapshot?.rows.window.filter((row) => row.kind === "subagent"),
+      ).toMatchObject([
+        {
+          generation: 2,
+          status: "running",
+          childSessionId: identity.childSessionId,
+          parentToolCallId: "spawn-call-6",
+        },
+      ]);
+      event(SessionEventType.SubagentStopped, { ...identity, status: "completed" });
+      transport.emitKind(flush(), "online");
+      expect(store.getState().snapshot?.subagents.running).toHaveLength(1);
+      event(SessionEventType.SubagentStopped, { ...identity, generation: 2, status: "completed" });
+      transport.emitKind(flush(), "online");
+      expect(
+        store.getState().snapshot?.rows.window.filter((row) => row.kind === "subagent"),
+      ).toMatchObject([{ status: "success", generation: 2 }]);
+      expect(store.getState().snapshot?.subagents.endedTotal).toBe(1);
+      expect(store.getState().snapshot?.seq).toBe(publisher.getSnapshot().seq);
+      off();
+      await store.close();
+      publisher.unsubscribe(pubSub, "reader");
+    });
+  },
+);

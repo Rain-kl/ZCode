@@ -21,6 +21,7 @@ import {
 // errorCode/suggestedAction/media(screenshot) 等结构化内容带到 renderer）。consume-main 之前
 // 缺这个 union + toolOutputSchema.display 字段——协议层 zod 校验会把 agent 下发的 display 整个
 // strip 掉，导致 UI 永远拿不到 display?.kind==="cua"，CUA 工具调用退化成 fallback 渲染。
+// FORK(codex-collaboration): 六工具不接纳旧消息专用显示协议。
 export const toolResultDisplaySchema = z.discriminatedUnion("kind", [
   bashOutputDisplaySchema,
   z.object({
@@ -40,12 +41,6 @@ export const toolResultDisplaySchema = z.discriminatedUnion("kind", [
     truncated: z.boolean().optional(),
   }),
   z.object({
-    kind: z.literal("local_agent_message"),
-    status: z.enum(["success", "failed"]),
-    error: z.string().optional(),
-    message: z.string().optional(),
-  }),
-  z.object({
     kind: z.literal("task_stop"),
     taskId: z.string().min(1),
     taskType: z.string().min(1),
@@ -59,10 +54,6 @@ export const toolResultDisplaySchema = z.discriminatedUnion("kind", [
     taskStatus: z.string().min(1).max(64).optional(),
     output: z.string().min(1).max(2_000).optional(),
     truncated: z.literal(true).optional(),
-  }),
-  z.object({
-    kind: z.literal("respond_to_coordinator"),
-    status: z.enum(["success", "failed"]),
   }),
   z.object({
     kind: z.literal("cua"),
@@ -245,13 +236,6 @@ const toolCallTaskOutputDisplaySchema = z
   })
   .strict();
 
-const toolCallRespondToCoordinatorDisplaySchema = z
-  .object({
-    kind: z.literal("respond_to_coordinator"),
-    status: z.enum(["success", "failed"]),
-  })
-  .strict();
-
 const toolCallMcpDisplaySchema = z
   .object({
     kind: z.literal("mcp_tool"),
@@ -279,7 +263,6 @@ const toolCallMcpDisplaySchema = z
 export const toolCallDisplaySchema = z.discriminatedUnion("kind", [
   toolCallNodeReplImageDisplaySchema,
   toolCallTaskOutputDisplaySchema,
-  toolCallRespondToCoordinatorDisplaySchema,
   toolCallMcpDisplaySchema,
   toolCallCreateWorkflowDisplaySchema,
   toolCallGetWorkflowRunDisplaySchema,

@@ -1151,6 +1151,8 @@ export class ConversationTelemetrySupervisor {
     child.usageReported = true;
     // 无 usage 不代表调用未发生；真实终态仍上报，缺失 token 沿用 foreground builder 的零值。
     const toolId = scopedChildToolCallId(child, terminalToolCallIdOf(child));
+    // FORK(codex-collaboration): native child 的 usage 属于原 spawn；workflow actor 保持独立归因。
+    const toolName = child.kind === "background" ? "spawn_agent" : "Agent";
     // Bug 根因：后台只报内部工具并丢弃 usage，缺少 foreground 外层 Agent 的 token owner。
     // 在 child 终态用共享 builder 结算一次；内部工具继续逐条上报，避免重复计算同一份 token。
     recordAgentStepTelemetryEvent({
@@ -1160,10 +1162,10 @@ export class ConversationTelemetrySupervisor {
         taskId: child.childSessionId,
         traceId: outcome.eventId,
         toolId,
-        toolName: "Agent",
-        kind: "Agent",
+        toolName,
+        kind: toolName,
         input: {},
-        title: "Agent",
+        title: toolName,
         raw: {},
       },
       now: child.startedAt,
@@ -1187,8 +1189,8 @@ export class ConversationTelemetrySupervisor {
         taskId: child.childSessionId,
         traceId: outcome.eventId,
         toolId,
-        toolName: "Agent",
-        kind: "Agent",
+        toolName,
+        kind: toolName,
         raw: {},
         status: outcome.success ? "completed" : "failed",
         error: outcome.errorMessage,

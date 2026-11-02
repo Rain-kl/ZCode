@@ -13,13 +13,6 @@ import {
   type ToolCallSavedWorkflowListDisplay,
 } from "@zcode/shared/zcode-protocol-v4";
 
-export interface LocalAgentMessageToolResultDisplay {
-  kind: "local_agent_message";
-  status: "success" | "failed";
-  error?: string;
-  message?: string;
-}
-
 export interface TaskStopToolResultDisplay {
   kind: "task_stop";
   taskId: string;
@@ -35,11 +28,6 @@ export interface TaskOutputToolResultDisplay {
   taskStatus?: string;
   output?: string;
   truncated?: true;
-}
-
-export interface RespondToCoordinatorToolResultDisplay {
-  kind: "respond_to_coordinator";
-  status: "success" | "failed";
 }
 
 export interface CuaToolResultDisplay {
@@ -64,11 +52,10 @@ export interface CuaToolResultDisplay {
   };
 }
 
+// FORK(codex-collaboration): 旧消息展示类型与 reader 整链删除，Bash/workflow 保持独立。
 export type ToolResultDisplay =
-  | LocalAgentMessageToolResultDisplay
   | TaskStopToolResultDisplay
   | TaskOutputToolResultDisplay
-  | RespondToCoordinatorToolResultDisplay
   | CuaToolResultDisplay
   | ToolCallGetWorkflowRunDisplay
   | ToolCallListWorkflowRunsDisplay
@@ -91,8 +78,7 @@ const WORKFLOW_DISPLAY_PARSERS_BY_KIND: Record<
   (value: Record<string, unknown>) => ToolResultDisplay | undefined
 > = {
   get_workflow_run: (value) => parseWorkflowDisplay(toolCallGetWorkflowRunDisplaySchema, value),
-  list_workflow_runs: (value) =>
-    parseWorkflowDisplay(toolCallListWorkflowRunsDisplaySchema, value),
+  list_workflow_runs: (value) => parseWorkflowDisplay(toolCallListWorkflowRunsDisplaySchema, value),
   eval_workflow_snippet: (value) =>
     parseWorkflowDisplay(toolCallEvalWorkflowSnippetDisplaySchema, value),
   saved_workflow_list: (value) =>
@@ -123,19 +109,6 @@ function readOptionalString(
 
 function parseDisplay(value: unknown): ToolResultDisplay | undefined {
   if (!isRecord(value)) return undefined;
-
-  if (value.kind === "local_agent_message") {
-    if (value.status !== "success" && value.status !== "failed") return undefined;
-    const error = readOptionalString(value, "error");
-    const message = readOptionalString(value, "message");
-    if (error === null || message === null) return undefined;
-    return {
-      kind: "local_agent_message",
-      status: value.status,
-      ...(error !== undefined ? { error } : {}),
-      ...(message !== undefined ? { message } : {}),
-    };
-  }
 
   if (value.kind === "task_stop") {
     const taskId = readOptionalString(value, "taskId");
@@ -188,16 +161,6 @@ function parseDisplay(value: unknown): ToolResultDisplay | undefined {
       ...(taskStatus !== undefined ? { taskStatus } : {}),
       ...(output !== undefined ? { output } : {}),
       ...(truncated === true ? { truncated: true } : {}),
-    };
-  }
-
-  if (value.kind === "respond_to_coordinator") {
-    if (value.status !== "success" && value.status !== "failed") {
-      return undefined;
-    }
-    return {
-      kind: "respond_to_coordinator",
-      status: value.status,
     };
   }
 

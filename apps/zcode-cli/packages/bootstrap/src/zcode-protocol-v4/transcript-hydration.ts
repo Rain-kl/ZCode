@@ -25,7 +25,6 @@ import {
   CompactTimelineStatus,
   CompactTrigger,
   CoreErrorType,
-  createSessionId,
   ModelErrorCode,
   parseCompletedToolPartMetadata,
   SessionEventType,
@@ -50,7 +49,6 @@ import { shouldHideInvalidToolCallFromProduct } from "../tool-call-product-visib
 import { ProductProjection } from "./product-projection.js";
 import { HYDRATION_TRACE_ID } from "./projection-state.js";
 
-const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
 const LEGACY_MODEL_REQUEST_CANCELLED_MESSAGE = "Model request was cancelled.";
 const LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE = "ZCode Protocol session stopped";
 const PERSISTED_CANCELLATION_CODES = new Set<string>([
@@ -86,16 +84,6 @@ interface TranscriptFootprint {
   //（footprint 不计数 → 缺这两类 marker 的事件日志被误判为已覆盖）。
   goalVerificationCount: number;
   modelChangeCount: number;
-}
-
-interface ParsedSubagentOutput {
-  agentId?: string;
-  agentType?: string;
-  childSessionId?: string;
-  description?: string;
-  parentToolCallId?: string;
-  prompt?: string;
-  summaryText?: string;
 }
 
 interface SynthesizeOptions {
@@ -378,26 +366,6 @@ function compactPayloadFromLegacyCompactionPart(
   };
 }
 
-function parseJsonObject(input: string | undefined): Record<string, unknown> | null {
-  if (!input) return null;
-  try {
-    const parsed = JSON.parse(input) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function stringField(
-  source: Record<string, unknown> | undefined | null,
-  key: string,
-): string | undefined {
-  const value = source?.[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadata | undefined {
   const persistedHighspeed = highspeedMessageMetaSchema.safeParse(message.info.metadata?.highspeed);
   const fullIntent = conversationInputIntentSchema.safeParse(
@@ -479,80 +447,6 @@ function executionKindOfMessage(message: MessageWithParts): "agent" | "controlOn
 function epilogueStartOfMessage(message: MessageWithParts): number | undefined {
   const value = message.info.metadata?.epilogueStart;
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
-function contentBlocksToText(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const chunks = value
-    .map((block) => {
-      if (!block || typeof block !== "object") return "";
-      const text = (block as Record<string, unknown>).text;
-      return typeof text === "string" ? text : "";
-    })
-    .filter((text) => text.length > 0);
-  return chunks.length > 0 ? chunks.join("\n\n") : undefined;
-}
-
-function subagentInfoFromToolPart(
-  part: Extract<MessagePart, { type: "tool" }>,
-): ParsedSubagentOutput | null {
-  if (!SUBAGENT_TOOL_NAMES.has(part.tool)) return null;
-  const input =
-    part.state.input && typeof part.state.input === "object"
-      ? (part.state.input as Record<string, unknown>)
-      : {};
-  const output = part.state.status === "completed" ? parseJsonObject(part.state.output) : null;
-  const metadata = part.metadata && typeof part.metadata === "object" ? part.metadata : {};
-  const explicitAgentId =
-    stringField(output, "agentId") ??
-    stringField(metadata, "agentId") ??
-    agentIdFromToolOutput(part.state.status === "completed" ? part.state.output : undefined);
-  const agentId = explicitAgentId ?? part.callID;
-  return {
-    agentId,
-    agentType:
-      stringField(output, "agentType") ??
-      stringField(metadata, "agentType") ??
-      stringField(input, "agent") ??
-      stringField(input, "agentType") ??
-      "subagent",
-    childSessionId:
-      stringField(output, "childSessionId") ??
-      stringField(metadata, "childSessionId") ??
-      // 后台 Agent 的持久化 tool output 是人类可读文本而非 JSON；cold merge
-      // 会抑制重复 durable spawned，若不从稳定 agentId 行恢复 child session，侧栏入口会丢失。
-      (explicitAgentId ? createSessionId(`subagent_${agentId}`) : undefined),
-    description:
-      stringField(output, "description") ??
-      stringField(input, "description") ??
-      stringField(metadata, "description"),
-    parentToolCallId: part.callID,
-    prompt: stringField(output, "prompt") ?? stringField(input, "prompt"),
-    summaryText:
-      contentBlocksToText(output?.content) ??
-      stringField(output, "result") ??
-      stringField(output, "summary") ??
-      stringField(input, "description") ??
-      stringField(input, "prompt"),
-  };
-}
-
-function agentIdFromToolOutput(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return /(?:^|\r?\n)agentId:\s*([^\s(]+)/u.exec(value)?.[1];
-}
-
-function subagentStatusFromToolPart(
-  part: Extract<MessagePart, { type: "tool" }>,
-): "completed" | "failed" | "cancelled" {
-  switch (part.state.status) {
-    case "completed":
-      return "completed";
-    case "error":
-      return "failed";
-    default:
-      return "cancelled";
-  }
 }
 
 /**
@@ -717,42 +611,6 @@ function synthesizeReasoningPart(
   );
 }
 
-function synthesizeSubagentLifecycle(
-  info: ParsedSubagentOutput,
-  status: "completed" | "failed" | "cancelled",
-  push: PushEvent,
-  turnId: string,
-): void {
-  const agentId = info.agentId ?? `subagent-${turnId}`;
-  push(
-    SessionEventType.SubagentSpawned,
-    {
-      agentId,
-      agentType: info.agentType ?? "subagent",
-      childSessionId: info.childSessionId,
-      description: info.description ?? info.summaryText ?? info.prompt ?? agentId,
-      parentToolCallId: info.parentToolCallId,
-      prompt: info.prompt,
-      status: "running",
-    },
-    turnId,
-  );
-  push(
-    SessionEventType.SubagentStopped,
-    {
-      agentId,
-      agentType: info.agentType ?? "subagent",
-      childSessionId: info.childSessionId,
-      description: info.description,
-      parentToolCallId: info.parentToolCallId,
-      prompt: info.prompt,
-      summaryText: info.summaryText,
-      status,
-    },
-    turnId,
-  );
-}
-
 function synthesizeToolPart(
   part: Extract<MessagePart, { type: "tool" }>,
   assistantMessageId: string,
@@ -805,10 +663,7 @@ function synthesizeToolPart(
   // （2026-09-12）：历史 transcript 里残留的 metadata.widgetState 不再合成事件，
   // 冷恢复直接忽略（widgetState 只留 renderer 内存）。
 
-  const subagentInfo = subagentInfoFromToolPart(part);
-  if (subagentInfo && started) {
-    synthesizeSubagentLifecycle(subagentInfo, subagentStatusFromToolPart(part), push, turnId);
-  }
+  // FORK(codex-collaboration): spawn accepted 不等于 child terminal；生命周期只从 canonical seed/真实事件进入。
 
   if (part.state.status === "completed") {
     push(
@@ -1196,25 +1051,6 @@ function assistantMessageHasSynthesizableContent(message: MessageWithParts): boo
   });
 }
 
-function synthesizeSubtaskPart(
-  part: Extract<MessagePart, { type: "subtask" }>,
-  push: PushEvent,
-  turnId: string,
-): void {
-  synthesizeSubagentLifecycle(
-    {
-      agentId: String(part.id),
-      agentType: part.agent,
-      description: part.description,
-      prompt: part.prompt,
-      summaryText: part.description,
-    },
-    "completed",
-    push,
-    turnId,
-  );
-}
-
 function synthesizeAssistantParts(
   message: MessageWithParts,
   emittedCompactOperations: Set<string>,
@@ -1280,7 +1116,7 @@ function synthesizeAssistantParts(
         );
         break;
       case "subtask":
-        synthesizeSubtaskPart(part, push, turnId);
+        // FORK(codex-collaboration): 旧 subtask 不再合成缺少真实身份的 child。
         break;
       default:
         break;
@@ -2066,14 +1902,6 @@ function transcriptFootprint(
       if (part.type === "tool") {
         if (shouldHideInvalidToolCallFromProduct(part.tool, part.metadata)) continue;
         footprint.toolCallIds.push(part.callID);
-        const subagentInfo = subagentInfoFromToolPart(part);
-        if (subagentInfo && part.state.status !== "pending") {
-          footprint.subagentCount += 1;
-        }
-        continue;
-      }
-      if (part.type === "subtask") {
-        footprint.subagentCount += 1;
         continue;
       }
       if (part.type === "timeline" && part.timelineType === "goal_verification") {

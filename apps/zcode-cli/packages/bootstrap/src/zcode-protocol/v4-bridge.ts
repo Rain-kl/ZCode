@@ -2126,6 +2126,8 @@ export function createConversationV4Gateway(
           revision: subagents.revision,
           childSessionIds: subagents.childSessionIds,
           running: subagents.running,
+          // FORK(codex-collaboration): canonical 事实修复 accepted/tool-result 崩溃间隙，并校正冷 running。
+          lifecycle: subagents.lifecycle,
         },
         ...(source.sharedContextImport ? { sharedContextImport: source.sharedContextImport } : {}),
         sourceEventSeq,

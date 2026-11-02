@@ -4942,7 +4942,7 @@ describe("zcodeSessionProjection", () => {
     ]);
   });
 
-  it("maps subagent tool updates into parented tool calls and agent activity", () => {
+  it("maps subagent tool updates without deriving lifecycle from model result JSON", () => {
     const state = {
       streamedTurnKeys: new Set<string>(),
       toolNameById: new Map<string, string>(),
@@ -5050,158 +5050,33 @@ describe("zcodeSessionProjection", () => {
         type: "tool_call_update",
         toolId: "call_parent_agent",
         toolName: "Agent",
-        content: {
-          kind: "agent_activity",
-          content: "Subagent summary",
-        },
+        content: parentToolResult.payload.result.content,
       },
     ]);
   });
 
-  it("keeps background Agent launch acknowledgements in progress", () => {
-    const state = {
-      streamedTurnKeys: new Set<string>(),
-      toolNameById: new Map<string, string>(),
-    };
-    zcodeSessionEventToZCodeStreamEvents({
-      event: {
-        eventId: "evt_parent_agent",
-        sessionId: "sess_1",
-        turnId: "turn_1",
-        seq: 10,
-        timestamp: 10,
-        traceId: "trace_session",
-        type: "tool.updated",
-        payload: {
-          kind: "scheduled",
-          toolCallId: "call_parent_agent",
-          toolName: "Agent",
-          input: {
-            description: "Inspect workspace",
-            prompt: "Find the project shape",
-            run_in_background: true,
-          },
-        },
-      } satisfies ZCodeSessionEvent,
-      state,
-      taskId: "sess_1",
-    });
-
+  it.each([
+    "spawn_agent",
+    "followup_task",
+    "send_message",
+    "interrupt_agent",
+    "list_agents",
+    "wait_agent",
+  ])("settles %s tool result without deriving a child terminal", (toolName) => {
     const events = zcodeSessionEventToZCodeStreamEvents({
-      event: {
-        eventId: "evt_parent_agent_result",
-        sessionId: "sess_1",
-        turnId: "turn_1",
-        seq: 11,
-        timestamp: 11,
-        traceId: "trace_session",
-        type: "tool.updated",
-        payload: {
-          kind: "result",
-          toolCallId: "call_parent_agent",
-          duration: 4,
-          result: {
-            success: true,
-            content: [
-              'Agent Explore task "Inspect workspace" started in background.',
-              "agentId: agent_1",
-              "backgroundTaskId: agent_1",
-              "Runtime will wait for this background Agent before completing the current turn.",
-            ].join("\n"),
-          },
-        },
-      } satisfies ZCodeSessionEvent,
-      state,
       taskId: "sess_1",
-    });
-
-    expect(events).toMatchObject([
-      {
-        type: "tool_call_update",
-        toolId: "call_parent_agent",
-        toolName: "Agent",
-        status: "in_progress",
-      },
-    ]);
-  });
-
-  it("keeps previous and current async Task launch acknowledgements in progress", () => {
-    const state = {
-      streamedTurnKeys: new Set<string>(),
-      toolNameById: new Map<string, string>(),
-    };
-    zcodeSessionEventToZCodeStreamEvents({
+      state: { toolNameById: new Map([["call", toolName]]) },
       event: {
-        eventId: "evt_parent_task",
+        eventId: "evt",
         sessionId: "sess_1",
-        turnId: "turn_1",
-        seq: 10,
-        timestamp: 10,
-        traceId: "trace_session",
+        seq: 1,
+        timestamp: 1,
+        traceId: "trace",
         type: "tool.updated",
-        payload: {
-          kind: "scheduled",
-          toolCallId: "call_parent_task",
-          toolName: "Task",
-          input: {
-            description: "Inspect workspace",
-            prompt: "Find the project shape",
-          },
-        },
-      } satisfies ZCodeSessionEvent,
-      state,
-      taskId: "sess_1",
+        payload: { kind: "result", toolCallId: "call", result: { success: true, content: "" } },
+      } as ZCodeSessionEvent,
     });
-
-    const acknowledgementContents = [
-      [
-        'Agent general-purpose task "Inspect workspace" started in background.',
-        "agentId: agent_1",
-        "outputFile: /tmp/agent_1/output.txt",
-        "You will be notified when the Agent completes.",
-      ].join("\n"),
-      [
-        "Async agent launched successfully.",
-        "agentId: agent_1 (internal ID - do not mention to user. Use SendMessage with to: 'agent_1' to continue this agent.)",
-        "The agent is working in the background. You will be notified automatically when it completes.",
-        "output_file: /tmp/agent_1/output.txt",
-        "Do NOT Read or tail this file via the shell tool.",
-      ].join("\n"),
-    ];
-
-    for (const [index, content] of acknowledgementContents.entries()) {
-      const events = zcodeSessionEventToZCodeStreamEvents({
-        event: {
-          eventId: `evt_parent_task_result_${index}`,
-          sessionId: "sess_1",
-          turnId: "turn_1",
-          seq: 11 + index,
-          timestamp: 11 + index,
-          traceId: "trace_session",
-          type: "tool.updated",
-          payload: {
-            kind: "result",
-            toolCallId: "call_parent_task",
-            duration: 4,
-            result: {
-              success: true,
-              content,
-            },
-          },
-        } satisfies ZCodeSessionEvent,
-        state,
-        taskId: "sess_1",
-      });
-
-      expect(events).toMatchObject([
-        {
-          type: "tool_call_update",
-          toolId: "call_parent_task",
-          toolName: "Task",
-          status: "in_progress",
-        },
-      ]);
-    }
+    expect(events).toMatchObject([{ type: "tool_call_update", toolName, status: "completed" }]);
   });
 
   it("does not project subagent TodoWrite updates as the main runtime plan", () => {

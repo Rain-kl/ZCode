@@ -1,17 +1,30 @@
 # Tool Change Chain Spec
 
-## Fork：Codex 协作调度设计评审（2026-10-29）
+## Fork：Codex 六工具客户端投影（Task4）
 
-当前仅设计，产品行为尚未改变。拟引入 Codex MultiAgent V2 的 spawn_agent、
+canonical root entry / accepted relation → strict private ToolPart metadata →
+bootstrap read-only root resolver → existing ProductProjection lifecycle rows →
+shared protocol → desktop continuous / mobile replayable / TUI presentation。
+只有 spawn_agent 配对 child 行；followup_task/send_message/interrupt_agent/
+list_agents/wait_agent 是独立动作。spawn 结果仅表示 accepted，终态来自 controller；
+同 child 的 followup 保留原始 anchor，generation 阻止旧终态覆盖新 running。
+冷查询不启动执行，普通 fork 不继承来源协作树，不解析 ACK、不推断 session ID。
+六工具使用专用有意义摘要，空成功结果保持成功。原生 child Stop 仍走 controller，
+TaskOutput/TaskStop 仅用于 Bash/workflow。验收与证据边界见
+[client acceptance](../../../../../../docs/features/codex-collaboration/client-acceptance.md)。
+
+## Fork：Codex 协作调度合同（2026-10-29，六工具落地后更新）
+
+当前使用 Codex MultiAgent V2 的 spawn_agent、
 send_message、followup_task、interrupt_agent、list_agents、wait_agent，完整合同见
 [协作与重试设计](../../../../../../docs/features/codex-collaboration/design.md)。
 
-实施时必须覆盖：模型可见 schema/描述和角色提示 → ToolSearch/权限/执行器 →
+完整链路覆盖：模型可见 schema/描述和角色提示 → ToolSearch/权限/执行器 →
 根 runtime 协作控制器的任务 admission、邮箱和独立取消信号 → 子 session 持久化 →
 有序事件 → V4/TUI/Desktop/mobile 投影。按2026-11-02用户新指示，废弃旧 Agent/Task/
 SendMessage/RespondToCoordinator，不保留注册、执行、隐藏兼容、搜索或别名入口；
 同步清理旧提示词、技能与示例，增加移除守卫。TaskOutput/TaskStop 仅保留 Bash/workflow
-等非子代理合同。本文后续旧入口说明属于迁移前事实，落地时须改成六工具的实际链路。
+等非子代理合同。本文中的历史实现不能作为恢复旧工具入口的依据。
 重点验收 spawn 接受前后取消、wait 被 steer 唤醒而 child 继续、API 预算耗尽后的
 同身份 followup，以及已执行工具和已接受 spawn 在流恢复中不重复。
 
@@ -156,10 +169,12 @@ Invalid task ID "<id>". This lookup failure does not mean the task has completed
 完整 ID 命中后的停止行为、其他错误、schema、权限、协议与 App 交互保持原样。
 回归覆盖短 ID、未知完整 ID 的失败文案及模型错误标记，并保留成功停止和其他失败分支断言。
 
-## 闲时后台执行（实施中）
+## 闲时后台执行与协作子任务
 
-按根目录 `docs/off-peak-task/background-lifecycle-plan.md` 实施：Agent 显式、profile 默认及超时转后台，
-SendMessage 运行中投递/终态恢复，以及 Bash 显式/超时后台复用普通工具链。
+协作子任务由 spawn_agent 创建后独立执行，send_message 向运行中或空闲目标投递，
+followup_task 在同 child session 和原始 spawn anchor 上续跑；interrupt_agent 明确中断。
+旧 Agent 显式/profile/超时转后台与 SendMessage 终态恢复合同已被取代。
+Bash 显式/超时后台继续复用普通工具链，详见根目录 `docs/off-peak-task/background-lifecycle-plan.md`。
 票据生命周期独立于工具执行：3102 使后续模型请求等待新票，本地 Bash 继续保存输出；
 换票只重试尚未提交结果的模型请求，不重放工具或原始 prompt。主轮结束后继续接收既有通知。
 真实用户输入接管后，新后台轮读取 Session Selection；已运行子轮保留本轮模型。
@@ -184,15 +199,16 @@ WebSearch、WebFetch processing、ReadSessionContext 的内部模型请求继承
 只调整观测分类，工具 schema、权限、执行、取消/超时、tool result、UI 与远控投递保持现状。
 覆盖 runtime 工具调用与模型边界测试，合同见根目录 Agent 模型请求归因 Header spec。
 
-## Agent listing attachment（2026-09-14）
+## Agent definition listing attachment（2026-09-14，六工具落地后更新）
 
-Agent description 的目录迁移到持久化 `agent_listing_delta` attachment；仅指引模型查阅会话。
+spawn_agent 可选 agent_type 的定义目录通过持久化 `agent_listing_delta` attachment 指引模型查阅会话。
 Runtime 在普通请求与 compact 恢复处共用增量收集器，按有效历史去重，通过无 I/O definitions
 读取入口预留未来增删。工具参数、执行、权限与桌面 continuous / 手机 replayable 交付不变。
 最终 role/顺序由现有通用 attachment 重排、MCS 与位置校验裁决；不增加 source 特例或放宽通用 anchor。
 合同与分层覆盖见根目录 `docs/subagent-listing-attachment.md`；I21/SA 保留四类 profile，MCS 用一个代表场景验收，增量/恢复/失败路径由 focused tests 直接断言。
-description 使用精简基线文案：补齐按 agent ID 的 SendMessage 续跑及
-模型/reasoning/tools 定义来源说明（`.zcode/agents/*.md` frontmatter），去掉与首次 listing 重复的并发提示；执行、后台默认和 isolation 不变。
+六工具描述区分 send_message 投递与 followup_task 续跑；target 使用控制器可见的任务路径。
+模型/reasoning/tools 定义来源为 `.zcode/agents/*.md` frontmatter，父级工具权限交集仍生效；
+旧 description 中按 agent ID 用 SendMessage 续跑的说明已废弃，不恢复旧工具或后台切换模式。
 用户／项目自定义 agent 的 Host、Settings 与独立 CLI 扫描均限 agents 根目录直接文件，
 与 depth:0 监听一致；插件递归发现不变。深层文件不进入 listing 或执行定义，父轮快照和 resume 边界不变。
 目录 metadata 在恢复及历史写入/替换边界校验、复制；请求收集只读有效 delta 的名称增删，

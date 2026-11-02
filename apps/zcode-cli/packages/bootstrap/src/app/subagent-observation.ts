@@ -1,5 +1,6 @@
+// FORK(codex-collaboration): TUI 与 V4 复用同一 canonical 只读身份投影。
+import { readCollaborationChildren } from "../fork/codex-collaboration-client/module.js";
 import {
-  EventReducer,
   SessionEventType,
   type SessionEvent,
   type SessionId,
@@ -9,7 +10,6 @@ import type { AgentRuntime } from "@zcode/core";
 import type { ZCodeSessionSubagentsResult } from "@zcode/shared";
 import { projectSessionTranscript, type SessionTranscriptMessage } from "../session-transcript.js";
 import {
-  collectSubagentChildSessionIds,
   paginateEndedSubagents,
   projectSessionSubagents,
 } from "../zcode-protocol/subagent-session-query.js";
@@ -39,51 +39,25 @@ export function createSubagentObservation(deps: ObservationDeps) {
       if (!parentSession)
         return { revision: 0, childSessionIds: [], running: [], ended: { total: 0, items: [] } };
       const messages = await deps.sessionStore.messages({ sessionID: deps.sessionId });
-      const parentEvents = await eventStore.getEvents(deps.sessionId);
-      const ids = collectSubagentChildSessionIds(parentSession, messages, parentEvents);
-      const children = await Promise.all(
-        ids.map(async (id) => {
-          const sessionId = id as SessionId;
-          const session = await deps.sessionStore.getSession(sessionId);
-          if (
-            !session ||
-            session.parentID !== deps.sessionId ||
-            session.taskType !== "subagent_child"
-          )
-            return null;
-          const [messages, events] = await Promise.all([
-            deps.sessionStore.messages({ sessionID: sessionId }),
-            eventStore.getEvents(sessionId),
-          ]);
-          return {
-            session,
-            messages,
-            projection: events.length ? new EventReducer().reduce(events) : undefined,
-          };
-        }),
-      );
-      const valid = children.filter((child) => child !== null);
+      // FORK-BEGIN(codex-collaboration)
+      const facts = await readCollaborationChildren({
+        store: deps.sessionStore,
+        session: parentSession,
+        messages,
+        getAgentStatus: (_rootId, agentId) => deps.runtime.getCollaborationAgentStatus(agentId),
+      });
       const projection = projectSessionSubagents({
         revision: await eventStore.getLatestSequenceNumber(deps.sessionId),
-        parentSession,
-        messages,
-        parentEvents,
-        parentProjection: await deps.runtime.getProjection(),
-        childSessionsById: new Map(valid.map((child) => [child.session.id, child.session])),
-        childMessagesById: new Map(valid.map((child) => [child.session.id, child.messages])),
-        childProjectionsById: new Map(
-          valid.flatMap((child) =>
-            child.projection ? [[child.session.id, child.projection] as const] : [],
-          ),
-        ),
+        children: facts.children,
       });
+      // FORK-END(codex-collaboration)
       const ended = paginateEndedSubagents(projection.ended, {
         cursor: input.endedCursor,
         limit: Math.min(100, Math.max(1, input.endedLimit ?? 20)),
       });
       return {
         revision: projection.revision,
-        childSessionIds: valid.map((child) => child.session.id),
+        childSessionIds: facts.children.map((child) => child.childSessionId),
         running: projection.running,
         ended: { total: projection.ended.length, ...ended },
       };
@@ -95,6 +69,10 @@ export function createSubagentObservation(deps: ObservationDeps) {
       if (!child || child.parentID !== deps.sessionId || child.taskType !== "subagent_child") {
         throw new Error("Subagent does not belong to the current session.");
       }
+      // FORK(codex-collaboration): parentID 仅是附加校验；必须同属 accepted graph 才可下钻。
+      const manifest = await this.readSubagents();
+      if (!manifest.childSessionIds.includes(childSessionId))
+        throw new Error(`Subagent has no accepted relation: ${childSessionId}`);
       // Read persisted history first, then the event tail. For messages with a
       // complete live stream, replay replaces persisted text instead of appending
       // it twice. Later events are admitted strictly after this watermark.

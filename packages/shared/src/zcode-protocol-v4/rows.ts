@@ -8,10 +8,7 @@ import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { timestampSchema } from "./core.js";
 import { conversationInputSourceSchema } from "./input-intent.js";
-import {
-  backgroundResultOriginMetaSchema,
-  workflowLaunchMetaSchema,
-} from "./workflow-row-meta.js";
+import { backgroundResultOriginMetaSchema, workflowLaunchMetaSchema } from "./workflow-row-meta.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
 
 // RowBase。rowId：session 内单调、永不复用、事件日志的确定性纯函数。
@@ -266,7 +263,14 @@ export type ArtifactRow = z.infer<typeof artifactRowSchema>;
 export const subagentRowSchema = z.object({
   ...rowBaseFields,
   kind: z.literal("subagent"),
-  // 触发该子智能体的 Agent/Task 工具调用；并发 spawn 顺序不可作为关联依据。
+  // FORK-BEGIN(codex-collaboration)
+  // 原始 spawn anchor 与 generation 是同 child 续跑和防止旧终态回写的持久契约。
+  agentId: z.string().min(1).optional(),
+  parentId: z.string().min(1).optional(),
+  parentSessionId: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  generation: z.number().int().nonnegative().optional(),
+  // FORK-END(codex-collaboration)
   parentToolCallId: z.string().optional(),
   subagentType: z.string(),
   status: z.enum(["running", "success", "failed", "cancelled"]),

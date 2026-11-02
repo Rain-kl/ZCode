@@ -1469,7 +1469,7 @@ describe("transcript→event 合成", () => {
     }
   });
 
-  it("BG26：cold hydration 保留 background notification 原文并恢复 Agent 失败终态", () => {
+  it("旧 background notification 保留原文，但不能凭 ACK 恢复 child 身份", () => {
     const toolCallId = "call-agent-rate-limit";
     const error = "Requests are too frequent. Request id: bg26-cold";
     const result = `Agent general-purpose task \"分析世界杯\" failed. ${error}`;
@@ -1490,7 +1490,7 @@ describe("transcript→event 合成", () => {
             messageID: "a1" as never,
             type: "tool",
             callID: toolCallId,
-            tool: "Agent",
+            tool: "spawn_agent",
             state: {
               status: "completed",
               input: {
@@ -1553,13 +1553,9 @@ describe("transcript→event 合成", () => {
       output: { text: result },
       status: "error",
     });
-    expect(
-      projection
-        .getSnapshot()
-        .rows.window.find((row) => row.kind === "subagent" && row.parentToolCallId === toolCallId),
-    ).toMatchObject({
-      childSessionId: "sess_subagent_agent-bg26",
-    });
+    expect(projection.getSnapshot().rows.window.filter((row) => row.kind === "subagent")).toEqual(
+      [],
+    );
   });
 
   it("selection side chat 的继承历史只进 provider context，冷恢复时间线从新问题开始", () => {
@@ -2224,7 +2220,7 @@ describe("transcript→event 合成", () => {
     ).toHaveLength(1);
   });
 
-  it("assistant reasoning/tool/compact/Agent part → 对应 v4 rows，Agent tool 同时保留 subagent row", () => {
+  it("assistant reasoning/tool/compact/spawn part → tool ACK 不合成 child terminal", () => {
     const agentOutput = JSON.stringify({
       agentId: "agent-1",
       agentType: "Explore",
@@ -2330,7 +2326,7 @@ describe("transcript→event 合成", () => {
             messageID: "a1" as never,
             type: "tool",
             callID: "call-agent",
-            tool: "Agent",
+            tool: "spawn_agent",
             state: {
               status: "completed",
               input: { description: "探索项目", prompt: "请探索项目" },
@@ -2426,13 +2422,7 @@ describe("transcript→event 合成", () => {
         },
       },
     });
-    expect(rows.find((row) => row.kind === "subagent")).toMatchObject({
-      childSessionId: "sess_child_1",
-      parentToolCallId: "call-agent",
-      status: "success",
-      subagentType: "Explore",
-      summaryText: "子代理总结",
-    });
+    expect(rows.filter((row) => row.kind === "subagent")).toEqual([]);
     expect(rows.find((row) => row.kind === "timelineMarker")).toMatchObject({
       lane: "assistantWork",
       sourceCommandId: "command-compact-cold",

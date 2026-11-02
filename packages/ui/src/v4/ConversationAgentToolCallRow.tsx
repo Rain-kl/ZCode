@@ -43,7 +43,24 @@ export function ConversationAgentToolCallRow({
   item: Extract<ConversationAssistantWorkRenderItem, { kind: "agentToolCall" }>;
   context: ConversationRowRenderContext;
 }) {
-  const toolCallNode = useMemo(() => toolCallRowToLegacyNode(item.row), [item.row]);
+  // FORK(codex-collaboration): 配对后展示唯一 lifecycle 的状态；spawn 工具 ACK 不代表 child 完成。
+  const toolCallNode = useMemo(() => {
+    const node = toolCallRowToLegacyNode(item.row);
+    return {
+      ...node,
+      toolCall: {
+        ...node.toolCall,
+        status:
+          item.subagentRow.status === "running"
+            ? "in_progress"
+            : item.subagentRow.status === "cancelled"
+              ? "stopped"
+              : item.subagentRow.status === "failed"
+                ? "failed"
+                : "completed",
+      },
+    };
+  }, [item.row, item.subagentRow.status]);
   const childSessionId = item.subagentRow.childSessionId;
   const subagentType = item.subagentRow.subagentType;
   // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。

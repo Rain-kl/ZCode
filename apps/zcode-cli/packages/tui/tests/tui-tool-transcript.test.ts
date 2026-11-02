@@ -192,3 +192,45 @@ function collectTextNodes(node: unknown): Array<{ style: Record<string, unknown>
   visit(node);
   return lines;
 }
+
+test("six collaboration tools have readable summaries and retain empty successful results", () => {
+  for (const toolName of [
+    "spawn_agent",
+    "followup_task",
+    "send_message",
+    "interrupt_agent",
+    "list_agents",
+    "wait_agent",
+  ]) {
+    const projection = buildToolTranscriptProjection(toolName, {
+      task_name: "worker",
+      target: "/root/worker",
+      message: "Continue verification",
+    });
+    assert.ok(projection.title, `${toolName} needs a purposeful title`);
+    const state = createToolProjectionState();
+    state.apply(
+      sessionEvent(SessionEventType.ToolCallScheduled, {
+        toolCallId: "call",
+        toolName,
+        input: { target: "/root/worker" },
+      }),
+    );
+    state.apply(
+      sessionEvent(SessionEventType.ToolCallResult, {
+        toolCallId: "call",
+        toolName,
+        result: { success: true, content: "" },
+      }),
+    );
+    assert.equal(onlyToolPart(state.messages).status, "completed");
+    state.apply(
+      sessionEvent(SessionEventType.ToolCallResult, {
+        toolCallId: "call",
+        toolName,
+        result: { success: true, content: "task finished" },
+      }),
+    );
+    assert.equal(onlyToolPart(state.messages).output, "task finished");
+  }
+});
