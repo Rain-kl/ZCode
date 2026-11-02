@@ -1,0 +1,89 @@
+# Task3b：真实运行链合同
+
+控制器版本化 root session-entry 是身份树、accepted 调用、generation 与 mailbox 的唯一持久权威。
+宿主 entry 包含固定的归一化协作配置与 controller snapshot；冷启动先校验并读取保存的根身份，
+再创建控制器。运行时句柄索引只用于资源寻址，registry、生命周期事件及 ToolPart 身份均为派生投影。
+root 首次模型边界只读检查旧 entry：无旧树时仅渲染角色，首次实际协作调用才建树；有旧树时先恢复并
+交付邮箱。这不会把普通无协作模型轮变成“必须具有可选 session-entry 写端口”的新要求；一旦实际
+创建持久树，缺端口仍明确失败，不静默降级到内存。
+普通 UI/selection conversation fork 是新的独立 root。现有 fork bundle 只复制模型选择与明确引用的
+verifier entries，不复制 `codex_collaboration` 或 child settings；历史正文仍按已有工具配对规则继承。
+
+## 准入和执行
+
+```mermaid
+sequenceDiagram
+  participant Tool as 标准工具执行链
+  participant Controller as 根控制器
+  participant Driver as Prepared child driver
+  participant Store as 会话存储
+  Tool->>Controller: caller绑定spawn + toolCallId
+  Controller->>Driver: prepare / installMailbox / admit
+  Driver->>Store: child session + 选择 + raw task receipt
+  Note over Driver: 预留现有PromptRuntimeCommand，不运行模型
+  Driver-->>Controller: run/cancel
+  Controller->>Store: 原子替换root entry，accepted持久化
+  Controller->>Driver: run
+  Driver->>Driver: 现有命令队列执行reserved prompt
+  Controller-->>Tool: task_name
+```
+
+prepare 复用既有 profile、权限、MCP、skills、memory、AGENTS 与 CUA 装配规则，移除旧 runner、
+watchdog、message sink 和 coordinator response owner。accepted 前失败只回收未接受 child；
+accepted 后的冷 running 收敛为 interrupted，必须显式 followup，不自动重放任务。
+raw task 按 messageId 查重，run 使用 recordedInputMessageId/skipInputRecord 与原 reservation，
+不能再插入任务，也不能绕过标准 CommandInbox。取消释放 reservation；没有模型 IO 的 admission
+不能调用会立即 drain 的 admitPrompt。
+
+## 模型、历史与消息
+
+all 继承 spawn 时的父选择；none 可用实际目录解析覆盖。agent_type 必须在发布的 profile 快照内，
+错误包含请求与可用集合。首次准备把实际 resolved selection 写入 child 模型 entry；后续恢复始终
+读取 child 保存的选择，不随父模型切换重算。all 历史复制只包含已闭合的工具调用/结果，剔除当前
+未完成 batch 的调用，保留历史正文；不复制活动权限、signal、工具状态或资源句柄。
+
+首次 prepare 同时保存严格版本化 child profile 与注入的 AGENTS 文本；冷恢复读取这些已接受设置，
+不随父配置后来删除/修改 profile 而换角色。MCP/skills/CUA 等活动资源仍通过当前宿主受控端口装配，
+不保存凭据或句柄。父 runtime 已卸载时，nested child 的新 prepare 明确失败并给出 parent/path，
+要求先恢复实际 parent；不得借 root 的历史、模型或权限配置冒充 parent。
+
+六工具创建的执行均为异步。Host 的 `ChildModelExecutionOverride.background: deny` 明确拒绝 spawn
+以及会启动 idle/terminal child 的 followup；对 running child 的 followup 只交付消息，不受此拒绝影响。
+send/list/wait 不启动执行。允许的执行期选模/请求依赖只通过工具调用的私有上下文进入 prepare，不进入
+模型参数、root graph 或持久凭据。child entry 只保存 resolved selection 和“需要执行上下文”标记；
+冷恢复若缺少该执行材料或选模不匹配必须失败，不能改用父常驻身份。
+已接受 child 的普通 turn 终态封住后台 Bash 通知的自动唤醒；后续 followup 准入时才重开本轮通知。
+后台命令仍会结算并更新自己的查询结果，但不能绕过控制器在 idle child 上另起模型轮。
+
+mailbox 的 ACK 只在 raw message 与私有来源持久化成功后返回，重复 messageId 不重复写入。
+send 对 idle/root 只排邮箱；followup 才启动 idle child。消息在下一模型/工具边界进入当前请求，
+不取消模型或工具。canonical transcript 保存 raw 文本和私有 kind/sender/recipient/path；
+provider 唯一出口才把它投影成 assistant 信封。冷 hydration 保留同一来源，不能变成用户授权。
+没有旧 inactivity watchdog；权限等待与显式 wait 超过旧期限仍有效。
+wait 的活动检查同时读取 controller 尚未交付的邮箱与 driver 已持久 ACK、尚未被模型消费的队列。
+driver 只提供同步只读 hasUnreadMessages；不增加消息所有者或轮询。先订阅再检查可避免消息先到、
+模型随后调用 wait 时丢失已发生的唤醒。
+旧 features.subagent/subagents.enabled 不再控制六工具。内部 script workflow 的隔离由有限的
+createCollaborationBinding 宿主注入明确返回 undefined 表达，不创建另一棵树，也不恢复旧模型工具。
+
+## 展示与关闭
+
+spawn 模型输出只有 task_name。标准 executor 允许记录私有身份到结果 metadata，再由已有 settlement
+写入 completed ToolPart；adapter 不直接修改 pending part。崩溃发生在 accepted 与结果落盘之间时，
+冷读侧从 root snapshot.accepted + agents 恢复关系，不从 ACK 推断完成。
+生命周期沿控制器 committed snapshot 派生，字段为 agentId、childSessionId、parentId、parentSessionId、
+path、generation、原始 parentToolCallId、profile 与保存的模型选择。interrupted 显式投影 cancelled。
+仅完成 spawn ACK 不代表 child completed。后续 generation 保留原 toolCallId 与同一 childSessionId。
+
+新用户输入唤醒所选 runtime 的 controller wait，不取消 child。普通 Stop 只停所选 session；
+原生 UI child stop 调用同一 controller.interrupt，模型 TaskStop 不接受 child。根普通完成不会
+关闭 child；宿主 shutdown 必须 await controller.dispose 后才关闭 execution/MCP/session-store。
+冷恢复终态只重建查询投影，不再次追加完成事件；恢复 running→interrupted 属于实际新转换。
+派生事件写失败保留待重放快照，并在 await 边界带上下文失败；成功 append 后才确认投影 receipt。
+
+## 必须实际验证
+
+真实 AgentRuntime + 记录型 store/model 验证无早期 IO、持久输入与幂等、全六工具和空输出、
+权限/ToolSearch 链、queue-only/trigger、safe-boundary 信封、冷同会话/模型/身份恢复、损坏历史明确失败、
+完整历史工具配对、profile/模型上下文错误、共享深度/容量、steer wait、权限/消息等待不超时、
+普通完成/单目标 Stop/全树 shutdown。Controller fake-driver 测试不能替代以上实际运行验收。

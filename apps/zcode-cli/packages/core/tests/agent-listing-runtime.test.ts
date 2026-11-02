@@ -32,13 +32,15 @@ const snapshot = (...names: string[]): AgentDefinitionsSnapshot => ({
 const initial = collectAgentListingAttachment({
   definitions: snapshot("A"),
   entries: [],
-  tools: [{ name: "Agent" }],
+  tools: [{ name: "spawn_agent" }],
 })!;
 const listingMessages = (request: ModelRequest) =>
   request.messages.filter(
     (m) =>
       typeof m.content === "string" &&
-      /(?:Available agent types|New agent types|The following agent types)/u.test(m.content),
+      /(?:Available agent types for the spawn_agent tool|New agent types are now available for the spawn_agent tool|The following agent types)/u.test(
+        m.content,
+      ),
   );
 const result = {
   finishReason: "stop" as const,
@@ -124,7 +126,9 @@ describe("runtime agent listing", () => {
     await runtime.executeTurn("continue");
     expect(requests).toHaveLength(3);
     expect(listingMessages(requests[0]!)).toHaveLength(1);
-    const description = requests[0]!.tools?.find((tool) => tool.name === "Agent")?.description;
+    const description = requests[0]!.tools?.find(
+      (tool) => tool.name === "spawn_agent",
+    )?.description;
     expect(description).toContain("Available agent types are listed in <system-reminder>");
     expect(description).not.toContain("Description A");
     const notices = listingMessages(requests[1]!);
@@ -137,17 +141,22 @@ describe("runtime agent listing", () => {
     expect(listingMessages(requests[2]!)).toEqual(notices);
   });
 
-  it.each(["disabled", "denied"])("does not read definitions when Agent is %s", async (reason) => {
-    definitions.mockImplementation(() => {
-      throw new Error("must not read");
-    });
-    runtime = createRuntime({}, { subagents: { enabled: reason !== "disabled" } });
-    await runtime.executeTurn("hello", undefined, {
-      toolDisallowlist: reason === "denied" ? ["Agent"] : [],
-    });
-    expect(definitions).not.toHaveBeenCalled();
-    expect(listingMessages(requests[0]!)).toEqual([]);
-  });
+  it.each(["isolated", "denied"])(
+    "does not read definitions when spawn_agent is %s",
+    async (reason) => {
+      definitions.mockImplementation(() => {
+        throw new Error("must not read");
+      });
+      runtime = createRuntime(
+        reason === "isolated" ? { createCollaborationBinding: () => undefined } : {},
+      );
+      await runtime.executeTurn("hello", undefined, {
+        toolDisallowlist: reason === "denied" ? ["spawn_agent"] : [],
+      });
+      expect(definitions).not.toHaveBeenCalled();
+      expect(listingMessages(requests[0]!)).toEqual([]);
+    },
+  );
 
   it.each([undefined, CompactTrigger.Manual, CompactTrigger.Reactive])(
     "persists and restores the same effective listing after compact=%s",
@@ -206,7 +215,7 @@ describe("runtime agent listing", () => {
         collectAgentListingAttachment({
           definitions: snapshot("A"),
           entries: history.toRuntimeEntries(),
-          tools: [{ name: "Agent" }],
+          tools: [{ name: "spawn_agent" }],
         }),
       ).toBeUndefined();
       for (const delta of [undefined, { ...initial.metadata.agentListingDelta, addedTypes: [1] }]) {
@@ -217,7 +226,7 @@ describe("runtime agent listing", () => {
           collectAgentListingAttachment({
             definitions: snapshot("A"),
             entries: restored.borrowReadOnlyRuntimeEntries(),
-            tools: [{ name: "Agent" }],
+            tools: [{ name: "spawn_agent" }],
           }),
         ).toEqual(initial);
       }
@@ -273,7 +282,7 @@ describe("runtime agent listing", () => {
       return result;
     });
     for (const prompt of ["first setup", "second setup", "third setup", "continue current work"])
-      await runtime.executeTurn(prompt, undefined, { toolDisallowlist: ["Agent"] });
+      await runtime.executeTurn(prompt, undefined, { toolDisallowlist: ["spawn_agent"] });
     expect(compactCount).toBe(1);
     expect(ordinaryCount).toBe(trigger === CompactTrigger.Auto ? 4 : 5);
     expect(definitions).not.toHaveBeenCalled();
@@ -282,7 +291,7 @@ describe("runtime agent listing", () => {
     );
     expect(
       ordinary.every(
-        (r) => listingMessages(r).length === 0 && !r.tools?.some((t) => t.name === "Agent"),
+        (r) => listingMessages(r).length === 0 && !r.tools?.some((t) => t.name === "spawn_agent"),
       ),
     ).toBe(true);
   });

@@ -5,6 +5,8 @@ import {
   isMidTurnInputPresentation,
 } from "../../system-reminder/incoming-message.js";
 import { wrapSystemReminderForSource } from "../../system-reminder/source.js";
+// FORK(codex-collaboration): assistant envelope 仅在请求投影生成，raw历史不伪装用户授权。
+import { formatCollaborationEnvelope } from "../../fork/codex-collaboration-tools/module.js";
 
 /** 仅单次请求拥有的投影映射；不写入 canonical history 或 provider payload。 */
 export class ProviderEntryOrigins {
@@ -54,6 +56,29 @@ export function projectIncomingMessageEntries(
   origins: ProviderEntryOrigins,
 ): RuntimeMessageEntry[] {
   return entries.map((entry) => {
+    // FORK(codex-collaboration): 私有来源先于普通 incoming presentation，不重复包装。
+    if (!isRuntimeAttachmentEntry(entry) && entry.metadata?.collaboration) {
+      const provenance = entry.metadata.collaboration;
+      const content = entry.message.content;
+      const body =
+        typeof content === "string"
+          ? content
+          : content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+      const projected: RuntimeMessageEntry = {
+        ...entry,
+        message: {
+          role: "assistant",
+          content: formatCollaborationEnvelope({
+            kind: provenance.kind,
+            senderPath: provenance.senderPath,
+            recipientPath: provenance.recipientPath,
+            text: body,
+          }),
+        },
+      };
+      origins.set(projected, [entry]);
+      return projected;
+    }
     if (isRuntimeAttachmentEntry(entry) || entry.message.role !== "user") return entry;
     const presentation = parseRuntimeInputPresentation(entry.metadata?.inputPresentation);
     if (!presentation) return entry;

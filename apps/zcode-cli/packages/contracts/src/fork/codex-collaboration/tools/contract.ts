@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { modelSelectionSchema } from "@zcode/shared";
+import type { ModelSelection } from "../../../model/index.js";
+import type { ChildModelExecutionOverride } from "../../../model/invocation-context.js";
 import { toToolJsonSchema } from "../../../tools/json-schema.js";
 import type { TraceContext } from "../../../tracing/tracer.js";
 
@@ -117,7 +120,41 @@ export interface CollaborationToolCallContext {
   toolCallId: string;
   signal: AbortSignal;
   traceContext?: TraceContext;
+  /** Host-owned, transient execution facts. Never supplied by the model or persisted as credentials. */
+  modelSelection?: ModelSelection;
+  executionOverride?: ChildModelExecutionOverride;
+  /** Private executor projection; never part of the tool output or provider schema. */
+  recordIdentity?: (identity: CollaborationIdentityMetadata) => void;
 }
+export const CollaborationIdentityMetadataSchema = z
+  .object({
+    version: z.literal(1),
+    agentId: z.string().min(1),
+    childSessionId: z.string().min(1),
+    parentId: z.string().optional(),
+    parentSessionId: z.string().optional(),
+    path: z.string().min(1),
+    generation: z.number().int().nonnegative(),
+    toolCallId: z.string().min(1),
+    agentType: z.string().min(1),
+    modelSelection: z
+      .custom<ModelSelection>((value) => modelSelectionSchema.safeParse(value).success)
+      .optional(),
+  })
+  .strict();
+export type CollaborationIdentityMetadata = z.infer<typeof CollaborationIdentityMetadataSchema>;
+export const CollaborationMessageProvenanceSchema = z
+  .object({
+    version: z.literal(1),
+    messageId: z.string().min(1),
+    kind: z.enum(["NEW_TASK", "MESSAGE", "FINAL_ANSWER", "STATUS"]),
+    senderId: z.string().min(1),
+    recipientId: z.string().min(1),
+    senderPath: z.string().min(1),
+    recipientPath: z.string().min(1),
+  })
+  .strict();
+export type CollaborationMessageProvenance = z.infer<typeof CollaborationMessageProvenanceSchema>;
 /** Bound to one caller by the runtime. Input cannot choose another caller identity. */
 export interface CollaborationToolPort {
   spawn(

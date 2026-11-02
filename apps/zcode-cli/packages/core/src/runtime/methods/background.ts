@@ -107,8 +107,11 @@ export async function stopBackgroundTask(
   }
 
   if (target.taskType === "local_agent") {
-    // FORK(codex-collaboration): 子代理停止不再交给旧 SubagentPort；唯一新入口在协作控制器。
-    return unsupportedBackgroundStopResult(target);
+    // FORK(codex-collaboration): 原生 UI 停止走同一 controller，模型 TaskStop 已在 handler 拒绝。
+    if (!this.collaboration || options.initiator === "model")
+      return unsupportedBackgroundStopResult(target);
+    await this.collaboration.interruptChild(taskId);
+    return { ok: true, taskId, type: "local_agent", status: "cancelled" };
   }
 
   if (target.taskType === "local_bash") {
@@ -337,7 +340,7 @@ export function buildBackgroundTaskPayload(
     taskId,
     toolCallId: existing?.toolCallId,
     toolName: existing?.toolName,
-    // 此构造器只服务 local Bash stop/update；Agent 终态由 subagent runner 产生。
+    // 此构造器只服务 local Bash stop/update；子代理终态由协作控制器派生。
     taskKind: "bash",
     blocked: existing?.blocked,
     blockedReason: existing?.blockedReason,
@@ -384,10 +387,8 @@ function commandFromRuntimeTask(
   task: RuntimeTaskSnapshot | undefined,
   existing: BackgroundTaskInfo | undefined,
 ): string | undefined {
-  // TaskStop 对 local_agent 返回短 description；旧 projection 的 command
-  // 可能已保存为完整 prompt，因此运行时任务必须先于 existing.command 取值。
+  // FORK(codex-collaboration): 原生面板从控制器派生条目取短描述，不读取任务私有正文。
   if (task?.type === "local_agent") return task.description;
-  if (!task && existing?.toolName === "Agent") return existing.description;
   if (existing?.command) return existing.command;
   if (task?.type === "local_bash") return task.description || task.prompt;
   return task?.prompt;
@@ -399,7 +400,7 @@ function runtimeTaskTypeFromBackgroundInfo(
   switch (task?.toolName) {
     case "Bash":
       return "local_bash";
-    case "Agent":
+    case "spawn_agent":
       return "local_agent";
     case "Workflow":
       return "local_workflow";
@@ -414,7 +415,7 @@ function runtimeTaskTypeFromBackgroundInfo(
 function toolNameFromRuntimeTaskType(type: RuntimeTaskType): string {
   switch (type) {
     case "local_agent":
-      return "Agent";
+      return "spawn_agent";
     case "local_bash":
       return "Bash";
     case "local_workflow":

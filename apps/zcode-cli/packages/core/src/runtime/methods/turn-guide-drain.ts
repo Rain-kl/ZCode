@@ -7,7 +7,7 @@ import { applyRuntimeExecutionState } from "../execution-state.js";
 
 /**
  * 在合法的 model-step 边界最多消费一条 guide，并准备下一次 provider request。
- * SendMessage 可能在 child 的 model request 进行中到达；若该 step 正常
+ * send_message 可能在 child 的 model request 进行中到达；若该 step 正常
  * text-only 收口，等待未来 tool batch 会把 coordinator input 永久留在无人唤醒的 queue。
  */
 export async function drainInlineGuideForNextRequest(

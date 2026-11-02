@@ -7,7 +7,6 @@ import {
   persistBackgroundTaskNotificationBatch,
   shouldSuppressTaskNotificationRuntimeCommand,
 } from "./background-notifications.js";
-import { persistSubagentMessageCommand } from "./subagent-messages.js";
 import { runControlOnlyTurnCommand } from "./control-only-turn.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
@@ -23,12 +22,7 @@ import type {
 } from "../types.js";
 
 export function enqueueRuntimeCommand(this: AgentRuntimeInternal, command: RuntimeCommand): void {
-  const sourceTaskId =
-    command.mode === "task-notification"
-      ? command.taskId
-      : command.mode === "subagent-message"
-        ? command.agentId
-        : undefined;
+  const sourceTaskId = command.mode === "task-notification" ? command.taskId : undefined;
   // 任务卡取消封住该执行的迟到通知；聊天 Stop 不设置此标记，保持原有唤起行为。
   if (sourceTaskId && this.runtimeTaskRegistry.get(sourceTaskId)?.offPeakCancelled) return;
   const offPeakExecutionId =
@@ -272,41 +266,6 @@ async function runRuntimeCommand(
       } finally {
         this.runtimeCommandQueue.clearCancelPending(command.id);
       }
-      return;
-    }
-    if (command.mode === "subagent-message") {
-      this.logger?.debug("Subagent response command started", {
-        ...traceContextToLogContext(command.traceContext),
-        agentId: command.agentId,
-        commandId: command.id,
-        event: "subagent.response.command_started",
-        messageLength: command.messageLength,
-        module: "core.runtime",
-        queueSize: this.runtimeCommandQueue.size(),
-        responseId: command.responseId,
-        summary: command.summary.slice(0, 200),
-      });
-      const messageId = await persistSubagentMessageCommand.call(this, command);
-      await this.executeTurnCommand(command.text, undefined, {
-        offPeakExecutionId: command.offPeakExecutionId,
-        abortSignal: foregroundExecution.controller.signal,
-        inputSource: "subagent_message",
-        inputVisibility: "model-only",
-        recordedInputMessageId: messageId,
-        skipInputRecord: true,
-        skipUserPromptSubmitHooks: true,
-        traceContext: command.traceContext,
-      });
-      this.logger?.debug("Subagent response command completed", {
-        ...traceContextToLogContext(command.traceContext),
-        agentId: command.agentId,
-        commandId: command.id,
-        event: "subagent.response.command_completed",
-        messageId,
-        module: "core.runtime",
-        queueSize: this.runtimeCommandQueue.size(),
-        responseId: command.responseId,
-      });
       return;
     }
     if (command.mode === "control-only-turn") {

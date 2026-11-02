@@ -5,7 +5,6 @@ import { AMEND_WORKFLOW_TOOL_DESCRIPTION } from "../src/tool/handlers/amend-work
 import { CREATE_WORKFLOW_TOOL_DESCRIPTION } from "../src/tool/handlers/create-workflow-description.js";
 import { EVAL_WORKFLOW_SNIPPET_TOOL_DESCRIPTION } from "../src/tool/handlers/eval-workflow-snippet-description.js";
 import { SAVE_WORKFLOW_TOOL_DESCRIPTION } from "../src/tool/handlers/save-workflow-description.js";
-import { agentToolEntry } from "../src/tool/handlers/agent.js";
 import { amendWorkflowToolEntry } from "../src/tool/handlers/amend-workflow.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 
@@ -61,7 +60,7 @@ describe("CreateWorkflow tool description", () => {
     expect(CREATE_WORKFLOW_TOOL_DESCRIPTION).toContain("When to use");
     expect(CREATE_WORKFLOW_TOOL_DESCRIPTION).toContain("工作流");
     // 简单委派仍归 Agent——形状助推的另一半，防止过度触发。
-    expect(CREATE_WORKFLOW_TOOL_DESCRIPTION).toContain("Agent");
+    expect(CREATE_WORKFLOW_TOOL_DESCRIPTION).toContain("spawn_agent");
   });
 
   it("点名即绑定是强制的：列出「use a workflow / 使用 workflow」这类措辞，并禁止以「太小」为由改道", () => {
@@ -82,7 +81,7 @@ describe("CreateWorkflow tool description", () => {
       "Without such an explicit request, do not start a workflow",
     );
     expect(CREATE_WORKFLOW_TOOL_DESCRIPTION).toContain(
-      "delegate with the Agent tool or do the work yourself",
+      "delegate with the spawn_agent tool or do the work yourself",
     );
   });
 
@@ -200,21 +199,3 @@ describe("facade prose", () => {
     }
   });
 });
-
-describe("Agent tool description", () => {
-  it("在 When to use 里交叉指向 CreateWorkflow", () => {
-    const description = agentToolEntry.metadata.description ?? "";
-    expect(description).toContain("When to use");
-    expect(description).toContain("工作流");
-    expect(description).toContain("CreateWorkflow");
-    // 反向指路同样是强制语气：Agent 不能以任务小为由接下点名工作流的请求。
-    expect(description).toContain("mandatory");
-    expect(description).toContain("use a workflow");
-  });
-});
-
-// 原先这里还断言 task-behavior 系统提示段里同样带路由规则。上游 4eea9c1d00
-// （align provider-visible prompt content）整段删掉了本地自撰的 task-behavior /
-// communication-style / risk-actions 等 section，并在 context-builder.test.ts 里反向断言
-// `not.toContain("# Task Behavior")`——那个落点已经不存在，也不允许重建。路由信号现在只
-// 由上面两个工具描述承载（CreateWorkflow 自述 + Agent 的反向指路），两处都在本文件里断言。

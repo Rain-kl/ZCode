@@ -674,7 +674,10 @@ class Controller implements CollaborationController {
       if (this.closed) throw new CollaborationError("CLOSED", "Collaboration controller is closed");
       return this.waiters.wait(
         callerId,
-        () => this.record(callerId, callerId).mailbox.length > 0,
+        // ACK 后邮件已转交 driver；先订阅再同时读两段队列，防止模型稍后 wait 丢失早到通知。
+        () =>
+          this.record(callerId, callerId).mailbox.length > 0 ||
+          this.loaded.get(callerId)?.runtime.hasUnreadMessages() === true,
         options,
       );
     } catch (error) {

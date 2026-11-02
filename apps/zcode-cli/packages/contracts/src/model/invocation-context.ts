@@ -6,12 +6,20 @@ import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { ModelApiCallObservation } from "../telemetry/index.js";
 import type { TraceContext } from "../tracing/tracer.js";
 import type {
+  ModelSelection,
   ModelRequestAdmission,
   ModelRequestSessionType,
   ModelRetryBudget,
   ModelStatusSink,
   ModelStreamRecoveryStatus,
 } from "./index.js";
+
+// FORK(codex-collaboration): 执行期选模由模型执行边界持有，不再依赖已废弃的子代理工具端口。
+export interface ChildModelExecutionOverride {
+  selection: ModelSelection;
+  requestDependencies?: ModelRequestDependencies;
+  background: "deny" | "allow";
+}
 
 /**
  * Runtime 与 Adapter 之间的调用级执行信息。

@@ -22,6 +22,26 @@ export const REGISTRY = [
   {
     featureId: "codex-collaboration",
     absentFiles: [
+      ...[
+        "runtime/methods/subagent.ts",
+        "runtime/methods/subagent-messages.ts",
+        "subagent/runner.ts",
+        "subagent/message-steering.ts",
+        "subagent/coordinator-response.ts",
+      ].map((file) => ({
+        path: `apps/zcode-cli/packages/core/src/${file}`,
+        reason: "协作控制器替代旧 runner 与消息 owner，禁止恢复第二写入路径",
+      })),
+      ...[
+        "interfaces/subagent.port.ts",
+        "interfaces/coordinator-response.port.ts",
+        "tools/agent.ts",
+        "tools/send-message.ts",
+        "tools/respond-to-coordinator.ts",
+      ].map((file) => ({
+        path: `apps/zcode-cli/packages/contracts/src/${file}`,
+        reason: "旧子代理模型工具协议已全面移除",
+      })),
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/agent.ts",
         reason: "旧子代理执行工具已移除",

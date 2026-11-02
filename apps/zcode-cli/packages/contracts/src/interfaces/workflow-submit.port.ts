@@ -46,7 +46,7 @@ export interface WorkflowSubmitPort {
   /**
    * 提交 actor 的结构化终态结果并等待引擎裁决。
    *
-   * 与 CoordinatorResponsePort 不同，这里 **阻塞** 直到引擎完成校验：引擎可能在带外
+   * 这里 **阻塞** 直到引擎完成校验：引擎可能在带外
    * 跑多轮修复/预算判定，因此 resolve 可能耗时任意长。取消不由本端口表达——由中止
    * 该 tool call（abort）来处理，driver 会把带外的 ask 取消转成 turn abort。
    *

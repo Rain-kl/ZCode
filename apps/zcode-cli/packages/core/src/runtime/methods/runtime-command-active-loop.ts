@@ -6,7 +6,6 @@ import {
   persistBackgroundTaskNotificationCommand,
   shouldSuppressTaskNotificationRuntimeCommand,
 } from "./background-notifications.js";
-import { persistSubagentMessageCommand } from "./subagent-messages.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { createRuntimeUserEntry, type RuntimeMessageEntry } from "../../agent/message-history.js";
 
@@ -35,7 +34,7 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
     // 再读到新 run 的进展。在它这里停下，
     // 后面的留给外层队列按序跑。
     if (command.mode === "control-only-turn") break;
-    if (command.mode !== "task-notification" && command.mode !== "subagent-message") {
+    if (command.mode !== "task-notification") {
       continue;
     }
     const removed = this.runtimeCommandQueue.removeById(command.id);
@@ -48,8 +47,6 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
         continue;
       }
       messageId = await persistBackgroundTaskNotificationCommand.call(this, removed);
-    } else if (removed.mode === "subagent-message") {
-      messageId = await persistSubagentMessageCommand.call(this, removed, true);
     } else {
       continue;
     }
@@ -70,12 +67,7 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
     }
     messageIds.push(messageId);
     runtimeEntries.push(
-      createRuntimeUserEntry(
-        removed.text,
-        runtimeInputMetadata(
-          removed.mode === "task-notification" ? "task_notification_steer" : "subagent_reply_steer",
-        ),
-      ),
+      createRuntimeUserEntry(removed.text, runtimeInputMetadata("task_notification_steer")),
     );
   }
 

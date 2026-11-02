@@ -14,6 +14,9 @@ is injected through finite ports; no provider, filesystem or registry dependency
   transcript entry durably and deduplicates by message ID. Cancel releases an
   unstarted admission; it never deletes prior transcript history.
 - `deliver` ACK transfers message ownership durably, idempotently by message ID.
+  `hasUnreadMessages` reads the driver's unconsumed ACKed queue synchronously;
+  wait subscribes before checking both controller and driver mail, so early ACKs
+  cannot lose activity while a provider response is in flight.
   Repeating an ACK after root-entry persistence failure cannot duplicate context.
   Ordinary idle send only queues. Running send uses this same sink. Root and idle
   mailboxes are drained explicitly by the runtime at its safe consumption boundary.

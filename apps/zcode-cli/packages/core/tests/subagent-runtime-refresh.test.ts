@@ -34,8 +34,8 @@ const snapshot = (version: string): AgentDefinitionsSnapshot => ({
 });
 const call = (id: string) => ({
   id,
-  name: "Agent",
-  input: { description: "Research", prompt: "Read", subagent_type: "researcher" },
+  name: "spawn_agent",
+  input: { task_name: id, message: "Read", agent_type: "researcher", fork_turns: "none" },
 });
 
 describe("subagent turn snapshot", () => {
@@ -93,7 +93,7 @@ describe("subagent turn snapshot", () => {
       try {
         await runtime.executeTurn("first");
         await runtime.executeTurn("second");
-        expect(children).toHaveLength(2);
+        await vi.waitFor(() => expect(children).toHaveLength(2));
         for (const request of children) {
           const tools = request.tools?.map((tool) => tool.name);
           expect(tools).toContain("Grep");
@@ -104,7 +104,7 @@ describe("subagent turn snapshot", () => {
         // 有效工具是 Runtime 的派生视图，不能回写 Host 配置或跨会话污染快照。
         expect(profile.tools).toEqual(["Grep"]);
       } finally {
-        runtime.beginShutdown();
+        await runtime.closeBrowserSession();
       }
     },
   );
@@ -164,7 +164,7 @@ describe("subagent turn snapshot", () => {
     expect(load).toHaveBeenCalledTimes(1);
     await runtime.executeTurn("second");
     expect(load).toHaveBeenCalledTimes(2);
-    expect(children.map((x) => x.model)).toEqual(["old", "old", "new"]);
+    await vi.waitFor(() => expect(children.map((x) => x.model)).toEqual(["old", "old", "new"]));
     expect(children.map((x) => x.reasoning)).toEqual(["low", "low", "high"]);
     expect(JSON.stringify(children[0]?.request)).toContain("PROFILE_old");
     expect(JSON.stringify(children[2]?.request)).toContain("PROFILE_new");
@@ -209,7 +209,7 @@ describe("subagent turn snapshot", () => {
     current = snapshot("new");
     blocked.resolve();
     await Promise.all([first, queued]);
-    expect(children).toEqual(["old", "new"]);
+    await vi.waitFor(() => expect(children).toEqual(["old", "new"]));
     expect(load).toHaveBeenCalledTimes(2);
   });
 
@@ -268,7 +268,7 @@ describe("subagent turn snapshot", () => {
     expect(failed[0]!.payload).toMatchObject({ turnPhase: TurnPhase.ProcessingInput });
     expect(JSON.stringify(failed[0]!.payload)).toContain("config unavailable");
     await runtime.executeTurn("second");
-    expect(children).toBe(1);
+    await vi.waitFor(() => expect(children).toBe(1));
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests[0]!.messages).match(/CONFIG_FAILED_USER_INPUT/g)).toHaveLength(
       1,

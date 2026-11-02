@@ -1,5 +1,5 @@
 const SORTED_PROVIDER_TOOL_NAMES = new Set([
-  "Agent",
+  // FORK(codex-collaboration): 旧工具不再参与 provider 排序。
   "AskUserQuestion",
   "Bash",
   "CronCreate",

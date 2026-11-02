@@ -7,7 +7,6 @@ import type {
   BrowserControlPort,
   CollaborationMode,
   CollaborationToolPort,
-  CoordinatorResponsePort,
   DynamicWorkflowRunPort,
   DynamicWorkflowSnippetPort,
   EmbeddedSearchBackend,
@@ -28,8 +27,7 @@ import type {
   SessionModePort,
   SessionStorePort,
   SkillPort,
-  SubagentPort,
-  SubagentRunOptions,
+  ChildModelExecutionOverride,
   ToolArtifactStorePort,
   TraceContext,
   TurnId,
@@ -103,8 +101,6 @@ export interface ToolExecutorOptions {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
   /** actor 的升级端口；存在即为该会话注册 escalate。 */
   workflowEscalatePort?: WorkflowEscalatePort;
@@ -184,7 +180,7 @@ export interface ToolExecuteOptions {
   offPeakTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
-  subagentModelOverride?: SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: ChildModelExecutionOverride;
   model?: Model;
 }
 
@@ -220,8 +216,6 @@ export interface ToolExecutorDeps {
   embeddedSearchBackend?: EmbeddedSearchBackend;
   nativeSearchEnhancementsEnabled?: boolean;
   skillPort?: SkillPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   workflowSubmitPort?: WorkflowSubmitPort;
   /** actor 的升级端口；存在即为该会话注册 escalate。 */
   workflowEscalatePort?: WorkflowEscalatePort;

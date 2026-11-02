@@ -11,7 +11,7 @@ import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
 import { enterPlanModeToolEntry, exitPlanModeToolEntry } from "../src/tool/handlers/plan-mode.js";
 import { taskOutputToolEntry } from "../src/tool/handlers/task-output.js";
 import { taskStopToolEntry } from "../src/tool/handlers/task-stop.js";
-import { sendMessageToolEntry } from "../src/tool/handlers/send-message.js";
+import { createCollaborationToolEntries } from "../src/fork/codex-collaboration-tools/module.js";
 import {
   cronCreateToolEntry,
   cronListToolEntry,
@@ -39,7 +39,7 @@ describe("ToolSearch semantics", () => {
       exitPlanModeToolEntry,
       taskOutputToolEntry,
       taskStopToolEntry,
-      sendMessageToolEntry,
+      ...createCollaborationToolEntries(),
       cronCreateToolEntry,
       cronListToolEntry,
       cronDeleteToolEntry,

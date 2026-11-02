@@ -1,13 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AgentInputSchema, BashInputJsonSchema, BashOutputJsonSchema } from "@zcode/contracts";
-import { agentToolEntry } from "../src/tool/handlers/agent.js";
+import { BashInputJsonSchema, BashOutputJsonSchema } from "@zcode/contracts";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
 import { globToolEntry } from "../src/tool/handlers/glob.js";
 import { grepToolEntry } from "../src/tool/handlers/grep.js";
 import { builtInTools, registerBuiltInTools } from "../src/tool/handlers/index.js";
 import { addReadLineNumbers, readToolEntry } from "../src/tool/handlers/read.js";
-import { sendMessageToolEntry } from "../src/tool/handlers/send-message.js";
 import { orderProviderVisibleToolContracts } from "../src/tool/provider-visible-order.js";
 import { writeToolEntry } from "../src/tool/handlers/write.js";
 import { formatTaskNotification } from "../src/runtime-task/notification.js";
@@ -32,7 +30,6 @@ const DIRECT_BRANCH_REFERENCE_SEARCH_DESCRIPTIONS = {
 } as const;
 
 const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
-  "Agent",
   "AskUserQuestion",
   "Bash",
   "Edit",
@@ -51,7 +48,12 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "Write",
   "ToolSearch",
   "DeferredToolCall",
-  "SendMessage",
+  "spawn_agent",
+  "send_message",
+  "followup_task",
+  "interrupt_agent",
+  "list_agents",
+  "wait_agent",
   "ReadSessionContext",
   "ReplyToChannel",
   "CreateWorkflow",
@@ -103,18 +105,6 @@ const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
   "- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
 ].join("\n");
 
-const SOURCE_DERIVED_SEND_MESSAGE_DESCRIPTION = [
-  "# SendMessage",
-  "",
-  "Send a message to another agent.",
-  "",
-  "```json",
-  '{"to": "agent_<uuid>", "summary": "assign task 1", "message": "start on task #1"}',
-  "```",
-  "",
-  "Your plain text output is NOT visible to other agents — to communicate, you MUST call this tool. Messages from agents are delivered automatically; you don't check an inbox. Refer to local agents by the `agentId` returned in the Agent spawn result. To resume a completed agent, use its `agentId`; it resumes in the background and you'll be notified when it finishes.",
-].join("\n");
-
 function getSchemaPath(schema: unknown, path: readonly string[]): unknown {
   let current = schema;
   for (const segment of path) {
@@ -130,8 +120,8 @@ describe("tool contract declarations", () => {
   it("orders shared provider-visible tool contracts by source name sort before appending local-only tools", () => {
     const directRegistry = createToolRegistry();
     registerBuiltInTools(directRegistry, {
-      includeAgent: true,
-      includeSendMessage: true,
+      includeCollaboration: true,
+
       includeSkill: true,
     });
     expect(directRegistry.list().slice(0, 4)).toEqual([
@@ -147,8 +137,8 @@ describe("tool contract declarations", () => {
     const embeddedRegistry = createToolRegistry();
     registerBuiltInTools(embeddedRegistry, {
       embeddedSearchEnabled: true,
-      includeAgent: true,
-      includeSendMessage: true,
+      includeCollaboration: true,
+
       includeSkill: true,
     });
     expect(
@@ -184,7 +174,7 @@ describe("tool contract declarations", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
       embeddedSearchEnabled: true,
-      includeAgent: true,
+      includeCollaboration: true,
       includeSkill: true,
     });
 
@@ -273,29 +263,6 @@ describe("tool contract declarations", () => {
     }
   });
 
-  it("matches the SendMessage prompt for the supported local-agent subset", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, { includeSendMessage: true });
-    const contract = registry.toContracts().find((tool) => tool.name === "SendMessage");
-
-    expect(contract?.description).toBe(SOURCE_DERIVED_SEND_MESSAGE_DESCRIPTION);
-    expect(getSchemaPath(contract?.inputSchema, ["required"])).toEqual([
-      "to",
-      "summary",
-      "message",
-    ]);
-    expect(getSchemaPath(contract?.inputSchema, ["additionalProperties"])).toBe(false);
-    expect(getSchemaPath(contract?.inputSchema, ["properties", "to", "description"])).toBe(
-      "Recipient: local agent ID returned by Agent (format agent_<uuid>).",
-    );
-    expect(getSchemaPath(contract?.inputSchema, ["properties", "summary", "description"])).toBe(
-      "A 5-10 word summary shown as a preview in the UI.",
-    );
-    expect(getSchemaPath(contract?.inputSchema, ["properties", "message", "description"])).toBe(
-      "Plain text message content",
-    );
-  });
-
   it("requires every built-in tool to declare the v2 common contract", () => {
     for (const entry of builtInTools) {
       expect(entry.capability, entry.metadata.name).toBeTruthy();
@@ -330,44 +297,16 @@ describe("tool contract declarations", () => {
   it("projects output schema and runtime-only declarations into model contracts", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
-      includeSendMessage: true,
+      includeCollaboration: true,
+
       includeWorkflow: true,
     });
 
     const contracts = registry.toContracts();
     const byName = new Map(contracts.map((contract) => [contract.name, contract]));
 
-    expect(byName.get("Agent")?.outputSchema).toBeDefined();
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.subagent_type.enum");
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.model");
-    expect(byName.get("Agent")?.inputSchema).toHaveProperty("properties.run_in_background.type");
-    expect(byName.get("Agent")?.permission?.sideEffectScope).toBe("session");
-
-    const agentDescription = byName.get("Agent")?.description ?? "";
-    const normalizedAgentDescription = agentDescription.replace(/\s+/gu, " ");
-    expect(agentDescription).toContain(
-      "Use SendMessage with the agent's ID to continue a previously spawned agent with its context intact; a new Agent call starts fresh.",
-    );
-    expect(agentDescription).toContain(
-      "Each agent type's model, reasoning effort, and tools come from its definition (`.zcode/agents/*.md` frontmatter).",
-    );
-    expect(agentDescription).not.toContain("ID or name");
-    expect(agentDescription).not.toContain(".claude/agents");
-    expect(agentDescription).not.toContain("When you launch multiple agents for independent work");
-    expect(agentDescription).toContain(
-      "Available agent types are listed in <system-reminder> messages in the conversation.",
-    );
-    expect(agentDescription).not.toContain("- general-purpose:");
-    expect(agentDescription).not.toContain("- Explore:");
-    expect(agentDescription).not.toContain("model:");
-    expect(agentDescription).not.toContain("(background: true)");
-    expect(normalizedAgentDescription).not.toContain("## Usage notes");
-    expect(normalizedAgentDescription).not.toContain("## When not to use");
-    expect(normalizedAgentDescription).not.toContain("Trust but verify");
-    expect(normalizedAgentDescription).not.toContain("Foreground vs background");
-    expect(normalizedAgentDescription).not.toContain("Example usage");
-    expect(byName.get("Agent")?.inputSchema).not.toHaveProperty("properties.isolation");
+    expect(byName.get("spawn_agent")?.outputSchema).toBeDefined();
+    expect(byName.get("spawn_agent")?.permission?.sideEffectScope).toBe("session");
     expect(byName.get("Read")?.outputSchema).toBeDefined();
     expect(byName.get("Read")?.capability).toContain("Read");
     expect(byName.get("Read")?.description).toBe(SOURCE_DERIVED_READ_SHORT_DESCRIPTION);
@@ -426,8 +365,7 @@ describe("tool contract declarations", () => {
     );
     expect(byName.get("ExitPlanMode")?.description).not.toContain("yolo");
     expect(byName.get("ExitPlanMode")?.description).toMatch(/\n$/u);
-    expect(byName.get("SendMessage")?.permission?.sideEffectScope).toBe("session");
-    expect(byName.get("SendMessage")?.description).toContain("local agent");
+    expect(byName.get("send_message")?.permission?.sideEffectScope).toBe("session");
     expect(byName.get("Write")?.permission?.permission).toBe("edit");
     expect(byName.get("Write")?.description).toContain("Writes a file to the local filesystem");
     const applyPatch = byName.get("ApplyPatch");
@@ -472,212 +410,6 @@ describe("tool contract declarations", () => {
         expect(workflowSchema.properties?.[field]?.description).toEqual(expect.any(String));
       }
     }
-  });
-
-  it("keeps local-agent runtime fields out of provider-visible Agent output schema", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, {
-      includeAgent: true,
-    });
-
-    const byName = new Map(registry.toContracts().map((tool) => [tool.name, tool]));
-    const agentOutputSchema = byName.get("Agent")?.outputSchema as any;
-    const asyncSchema = (agentOutputSchema?.oneOf ?? agentOutputSchema?.anyOf)?.find(
-      (candidate: any) => candidate?.properties?.status?.const === "async_launched",
-    );
-    const providerOutputSchema = JSON.stringify(asyncSchema);
-
-    expect(providerOutputSchema).toContain("canReadOutputFile");
-    expect(providerOutputSchema).not.toContain("isAsync");
-    expect(providerOutputSchema).not.toContain("agentType");
-    expect(providerOutputSchema).not.toContain("childSessionId");
-    expect(providerOutputSchema).not.toContain("backgroundTaskId");
-  });
-
-  it("formats Agent tool results with local-agent continuation guidance", () => {
-    const asyncContent = String(
-      agentToolEntry.formatModelContent?.({
-        status: "async_launched",
-        isAsync: true,
-        agentId: "agent_async",
-        agentType: "Explore",
-        description: "scan cache",
-        prompt: "scan cache boundaries",
-        childSessionId: "sess_child",
-        backgroundTaskId: "agent_async",
-        outputFile: "/tmp/agent_async/output.txt",
-        canReadOutputFile: true,
-      }),
-    );
-
-    expect(asyncContent).toContain("Async agent launched successfully.");
-    expect(asyncContent).toContain(
-      "agentId: agent_async (internal ID - do not mention to user. Use SendMessage with to: 'agent_async' to continue this agent.)",
-    );
-    expect(asyncContent).toContain("The agent is working in the background.");
-    expect(asyncContent).toContain("output_file: /tmp/agent_async/output.txt");
-    expect(asyncContent).toContain("Do NOT Read or tail this file via the shell tool");
-    expect(asyncContent).not.toContain("Agent Explore task");
-
-    const completedContent = String(
-      agentToolEntry.formatModelContent?.({
-        status: "completed",
-        agentId: "agent_done",
-        agentType: "code-reviewer",
-        description: "review diff",
-        prompt: "review the diff",
-        content: [{ type: "text", text: "Found one issue." }],
-        totalToolUseCount: 2,
-        totalDurationMs: 33,
-        totalTokens: 11,
-      }),
-    );
-
-    expect(completedContent).toContain("Found one issue.");
-    expect(completedContent).toContain(
-      "agentId: agent_done (use SendMessage with to: 'agent_done' to continue this agent)",
-    );
-    expect(completedContent).toContain("<usage>subagent_tokens: 11");
-    expect(completedContent).toContain("tool_uses: 2");
-    expect(completedContent).toContain("duration_ms: 33</usage>");
-  });
-
-  it("omits subagent token usage when Agent completed usage is unavailable", () => {
-    const completedContent = String(
-      agentToolEntry.formatModelContent?.({
-        status: "completed",
-        agentId: "agent_done",
-        agentType: "code-reviewer",
-        description: "review diff",
-        prompt: "review the diff",
-        content: [{ type: "text", text: "Found one issue." }],
-        totalToolUseCount: 2,
-        totalDurationMs: 33,
-      }),
-    );
-
-    expect(completedContent).toContain("Found one issue.");
-    expect(completedContent).toContain("agentId: agent_done");
-    expect(completedContent).not.toContain("subagent_tokens");
-    expect(completedContent).toContain("<usage>tool_uses: 2");
-    expect(completedContent).toContain("duration_ms: 33</usage>");
-  });
-
-  it("uses a no-output placeholder when Agent completed content is empty", () => {
-    const completedContent = String(
-      agentToolEntry.formatModelContent?.({
-        status: "completed",
-        agentId: "agent_done",
-        agentType: "code-reviewer",
-        description: "review diff",
-        prompt: "review the diff",
-        content: [{ type: "text", text: "" }],
-        totalToolUseCount: 0,
-        totalDurationMs: 33,
-      }),
-    );
-
-    expect(completedContent).toMatch(/^\(Subagent completed but returned no output\.\)\n/);
-    expect(completedContent).toContain("agentId: agent_done");
-    expect(completedContent).toContain("<usage>tool_uses: 0");
-  });
-
-  it("derives Agent output-file readability from the parent provider-visible tool surface", async () => {
-    const launches: Array<Record<string, unknown>> = [];
-    const baseContext = {
-      abortSignal: new AbortController().signal,
-      sessionId: "sess_parent",
-      toolCallId: "toolu_agent",
-      traceId: "trace_parent",
-      workingDirectory: "/workspace",
-      workspaceRoot: "/workspace",
-      subagentPort: {
-        async launch(request: Record<string, unknown>) {
-          launches.push(request);
-          return {
-            status: "async_launched",
-            isAsync: true,
-            agentId: "agent_async",
-            agentType: "Explore",
-            description: "scan cache",
-            prompt: "scan cache",
-            childSessionId: "sess_child",
-            backgroundTaskId: "agent_async",
-            outputFile: "/tmp/agent_async/output.txt",
-            canReadOutputFile: request.callerCanReadOutputFile === true,
-          };
-        },
-      },
-    };
-
-    await agentToolEntry.handler(
-      {
-        description: "scan cache",
-        prompt: "scan cache",
-        run_in_background: true,
-      },
-      {
-        ...baseContext,
-        providerVisibleToolNames: ["Agent", "SendMessage"],
-      } as any,
-    );
-    await agentToolEntry.handler(
-      {
-        description: "scan cache",
-        prompt: "scan cache",
-        run_in_background: true,
-      },
-      {
-        ...baseContext,
-        providerVisibleToolNames: ["Agent", "Read"],
-      } as any,
-    );
-
-    expect(launches[0]?.callerCanReadOutputFile).toBe(false);
-    expect(launches[1]?.callerCanReadOutputFile).toBe(true);
-  });
-
-  it("passes the active Loop Model to an Agent child that has no execution override", async () => {
-    const launchOptions: Array<Record<string, unknown> | undefined> = [];
-    const activeModel = {
-      providerId: "provider-a",
-      modelId: "model-a",
-      properties: {},
-      optionSpecs: {},
-      options: {},
-    };
-
-    await agentToolEntry.handler(
-      {
-        description: "review current loop",
-        prompt: "inherit the parent model",
-      },
-      {
-        abortSignal: new AbortController().signal,
-        model: activeModel,
-        sessionId: "sess_parent",
-        toolCallId: "toolu_agent_model",
-        traceId: "trace_parent",
-        workingDirectory: "/workspace",
-        workspaceRoot: "/workspace",
-        subagentPort: {
-          async launch(_request: unknown, options: Record<string, unknown> | undefined) {
-            launchOptions.push(options);
-            return {
-              status: "completed",
-              agentId: "agent_model",
-              agentType: "general-purpose",
-              prompt: "inherit the parent model",
-              content: [{ type: "text", text: "done" }],
-              totalDurationMs: 1,
-              totalToolUseCount: 0,
-            };
-          },
-        },
-      } as any,
-    );
-
-    expect(launchOptions).toEqual([expect.objectContaining({ model: activeModel })]);
   });
 
   it("formats local-agent task notifications with the provider-visible XML shape", () => {
@@ -777,38 +509,10 @@ describe("tool contract declarations", () => {
     );
   });
 
-  it("keeps local-agent runtime fields out of provider-visible SendMessage output schema", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, {
-      includeSendMessage: true,
-    });
-
-    const byName = new Map(registry.toContracts().map((tool) => [tool.name, tool]));
-    const providerOutputSchema = JSON.stringify(byName.get("SendMessage")?.outputSchema);
-
-    expect(providerOutputSchema).toContain("success");
-    expect(providerOutputSchema).toContain("message");
-    expect(providerOutputSchema).not.toContain("status");
-    expect(providerOutputSchema).not.toContain("messageId");
-    expect(providerOutputSchema).not.toContain("delivery");
-    expect(providerOutputSchema).not.toContain("agentId");
-    expect(providerOutputSchema).not.toContain("taskId");
-
-    expect(
-      sendMessageToolEntry.formatModelContent?.({
-        status: "success",
-        messageId: "msg_1",
-        delivery: "queued",
-        agentId: "agent_1",
-        message: "Message queued for delivery to agent_1 at its next tool round.",
-      }),
-    ).toBe("Message queued for delivery to agent_1 at its next tool round.");
-  });
-
   it("aligns P0 tool prompt semantic guidance", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
+      includeCollaboration: true,
       includeSkill: true,
       includeWorkflow: true,
     });
@@ -836,7 +540,7 @@ describe("tool contract declarations", () => {
     expect(enterPlanDescription).toContain("ExitPlanMode");
     expect(enterPlanDescription).toContain("REQUIRES user approval");
     expect(enterPlanDescription).toContain(
-      "Pure research/exploration tasks (use the Agent tool instead)",
+      "Pure research/exploration tasks (use the spawn_agent tool instead)",
     );
     expect(enterPlanDescription).not.toContain("with explore agent instead");
 
@@ -858,7 +562,7 @@ describe("tool contract declarations", () => {
   it("keeps Skill naming and loading guidance", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
+      includeCollaboration: true,
       includeSkill: true,
       includeWorkflow: true,
     });
@@ -879,7 +583,7 @@ describe("tool contract declarations", () => {
   it("projects preview guidance and direct Explore search instructions", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
+      includeCollaboration: true,
       includeSkill: true,
       includeWorkflow: true,
     });
@@ -931,94 +635,14 @@ describe("tool contract declarations", () => {
     }
   });
 
-  it("only exposes Agent when a subagent port is configured", () => {
-    const defaultRegistry = createToolRegistry();
-    registerBuiltInTools(defaultRegistry);
-
-    const agentRegistry = createToolRegistry();
-    registerBuiltInTools(agentRegistry, { includeAgent: true });
-
-    expect(defaultRegistry.has("Agent")).toBe(false);
-    expect(defaultRegistry.has("Task")).toBe(false);
-    expect(agentRegistry.has("Agent")).toBe(true);
-    expect(agentRegistry.has("Task")).toBe(true);
-    expect(agentRegistry.toContracts().map((tool) => tool.name)).toContain("Agent");
-    expect(agentRegistry.toContracts().map((tool) => tool.name)).not.toContain("Task");
-    expect(agentRegistry.get("Task")?.handler).toBe(agentRegistry.get("Agent")?.handler);
-    expect(agentRegistry.get("Task")?.inputSchema).toBe(agentRegistry.get("Agent")?.inputSchema);
-    expect(agentRegistry.get("Task")?.permission?.permission).toBe("subagent");
-    expect(agentRegistry.get("Agent")?.metadata.concurrentSafe).toBe(true);
-    expect(agentRegistry.get("Task")?.metadata.concurrentSafe).toBe(true);
-    expect(agentRegistry.get("Agent")?.metadata.timeoutMs).toBeUndefined();
-    expect(agentRegistry.get("Task")?.metadata.timeoutMs).toBeUndefined();
-    expect(agentRegistry.get("Agent")?.timeout).toEqual({ kind: "none" });
-    expect(agentRegistry.get("Task")?.timeout).toEqual({ kind: "none" });
-    expect(agentRegistry.get("Agent")?.metadata.description).toContain(
-      "`run_in_background: true` runs the agent asynchronously",
-    );
-    expect(agentRegistry.get("Agent")?.metadata.description).not.toContain("currently runs inline");
-  });
-
-  it("only exposes SendMessage when subagent messaging is configured", () => {
-    const defaultRegistry = createToolRegistry();
-    registerBuiltInTools(defaultRegistry);
-
-    const subagentRegistry = createToolRegistry();
-    registerBuiltInTools(subagentRegistry, { includeSendMessage: true });
-
-    expect(defaultRegistry.has("SendMessage")).toBe(false);
-    expect(subagentRegistry.has("SendMessage")).toBe(true);
-  });
-
-  it("only exposes RespondToCoordinator with its child control capability", () => {
-    const defaultRegistry = createToolRegistry();
-    registerBuiltInTools(defaultRegistry);
-
-    const childRegistry = createToolRegistry();
-    registerBuiltInTools(childRegistry, { includeRespondToCoordinator: true });
-
-    const disallowedRegistry = createToolRegistry();
-    registerBuiltInTools(disallowedRegistry, {
-      disallowedTools: ["RespondToCoordinator"],
-      includeRespondToCoordinator: true,
-    });
-
-    expect(defaultRegistry.has("RespondToCoordinator")).toBe(false);
-    expect(disallowedRegistry.has("RespondToCoordinator")).toBe(false);
-
-    const entry = childRegistry.get("RespondToCoordinator");
-    expect(entry?.metadata).toMatchObject({
-      allowedInPlanMode: true,
-      concurrentSafe: true,
-      needsApproval: false,
-      readOnly: false,
-      sideEffectScope: "session",
-    });
-    expect(Object.keys(entry?.inputSchema.properties ?? {})).toEqual(["summary", "message"]);
-    expect(Object.keys(entry?.outputSchema.properties ?? {})).toEqual(["success", "message"]);
-
-    const description = childRegistry
-      .toContracts()
-      .find((tool) => tool.name === "RespondToCoordinator")?.description;
-    expect(description).toContain("Message from coordinator:");
-    expect(description).toContain("do not use assistant text as the reply");
-    expect(description).toContain("Continue the current task");
-    expect(
-      defaultRegistry
-        .toContracts()
-        .map((tool) => tool.description)
-        .join("\n"),
-    ).not.toContain("RespondToCoordinator");
-  });
-
   it("exposes Glob and Grep in the direct search branch", () => {
     const mainRegistry = createToolRegistry();
-    registerBuiltInTools(mainRegistry, { includeAgent: true });
+    registerBuiltInTools(mainRegistry, { includeCollaboration: true });
 
     const mainAllowlistRegistry = createToolRegistry();
     registerBuiltInTools(mainAllowlistRegistry, { allowedTools: ["Read", "Glob", "Grep"] });
 
-    expect(mainRegistry.has("Agent")).toBe(true);
+    expect(mainRegistry.has("spawn_agent")).toBe(true);
     expect(mainRegistry.has("Glob")).toBe(true);
     expect(mainRegistry.has("Grep")).toBe(true);
     expect(mainAllowlistRegistry.list()).toEqual(["Read", "Glob", "Grep"]);
@@ -1027,7 +651,7 @@ describe("tool contract declarations", () => {
   it("does not expose explicitly disallowed built-in tools", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
+      includeCollaboration: true,
       disallowedTools: ["TodoWrite", "Bash"],
     });
 
@@ -1041,7 +665,7 @@ describe("tool contract declarations", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
       embeddedSearchEnabled: true,
-      includeAgent: true,
+      includeCollaboration: true,
     });
 
     const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
@@ -1065,14 +689,6 @@ describe("tool contract declarations", () => {
         "- Commit or push only when the user asks. If on the default branch, branch first.",
       ].join("\n"),
     );
-
-    const agentDescription = byName.get("Agent")?.description ?? "";
-    expect(agentDescription).not.toContain("Tools: Glob, Grep");
-    expect(agentDescription).toContain(
-      "Available agent types are listed in <system-reminder> messages in the conversation.",
-    );
-    expect(agentDescription).not.toContain("(Tools:");
-    expect(agentDescription).not.toContain("<system-reminder>\n");
 
     const enterPlanDescription = byName.get("EnterPlanMode")?.description ?? "";
     expect(enterPlanDescription).toContain("using `find`/Glob, `grep`/Grep, and Read");
@@ -1100,75 +716,10 @@ describe("tool contract declarations", () => {
     expect(explorePrompt).not.toContain("Use Grep for searching file contents with regex");
   });
 
-  it("keeps the supported Agent and Bash provider-visible input schema descriptions", () => {
-    const registry = createToolRegistry();
-    registerBuiltInTools(registry, { includeAgent: true });
-
-    const byName = new Map(registry.toContracts().map((contract) => [contract.name, contract]));
-    const agentInput = byName.get("Agent")?.inputSchema as any;
-    const bashInput = byName.get("Bash")?.inputSchema as any;
-
-    expect(agentInput.properties.description.description).toBe(
-      "A short (3-5 word) description of the task",
-    );
-    expect(agentInput.properties.prompt.description).toBe("The task for the agent to perform");
-    expect(agentInput.properties.subagent_type.description).toBe(
-      "The type of specialized agent to use for this task",
-    );
-    expect(agentInput.properties.run_in_background.description).toBe(
-      "Set to true to run this agent in the background. You will be notified when it completes.",
-    );
-    expect(agentInput.properties.subagent_type.enum).toBeUndefined();
-    expect(agentInput.properties).not.toHaveProperty("model");
-
-    expect(bashInput.properties.command.description).toBe("The command to execute");
-    expect(bashInput.properties.timeout.description).toBe(
-      "Optional timeout in milliseconds (max 600000)",
-    );
-    expect(bashInput.properties.description.description).toBe(
-      [
-        'Clear, concise description of what this command does in active voice. Never use words like "complex" or "risk" in the description - just describe what it does.',
-        "",
-        "For simple commands (git, npm, standard CLI tools), keep it brief (5-10 words):",
-        '- ls → "List files in current directory"',
-        '- git status → "Show working tree status"',
-        '- npm install → "Install package dependencies"',
-        "",
-        "For commands that are harder to parse at a glance (piped commands, obscure flags, etc.), add enough context to clarify what it does:",
-        '- find . -name "*.tmp" -exec rm {} \\; → "Find and delete all .tmp files recursively"',
-        '- git reset --hard origin/main → "Discard all local changes and match remote main"',
-        "- curl -s url | jq '.data[]' → \"Fetch JSON from URL and extract data array elements\"",
-      ].join("\n"),
-    );
-    expect(bashInput.properties.run_in_background.description).toBe(
-      "Set to true to run this command in the background.",
-    );
-    expect(bashInput.properties.dangerouslyDisableSandbox.description).toBe(
-      "Set this to true to dangerously override sandbox mode and run commands without sandboxing.",
-    );
-  });
-
-  it("drops the legacy Agent model field at the runtime input boundary", () => {
-    const parsed = AgentInputSchema.parse({
-      description: "Inspect runtime",
-      model: "haiku",
-      prompt: "Find the model selection path.",
-      subagent_type: "Explore",
-    });
-
-    // 修复原因：历史会话可能诱导模型继续生成旧字段；字段可以留在 transcript，
-    // 但进入本次工具执行时必须被丢弃，不能覆盖当前 Agent profile。
-    expect(parsed).toEqual({
-      description: "Inspect runtime",
-      prompt: "Find the model selection path.",
-      subagent_type: "Explore",
-    });
-  });
-
   it("aligns provider-visible hard schema diffs for P-12", () => {
     const registry = createToolRegistry();
     registerBuiltInTools(registry, {
-      includeAgent: true,
+      includeCollaboration: true,
     });
 
     const contracts = registry.toContracts();

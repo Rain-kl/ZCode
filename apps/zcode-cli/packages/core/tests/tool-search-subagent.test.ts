@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { createSessionId, type Model, type ModelRequest } from "@zcode/contracts";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
@@ -31,11 +31,12 @@ it.each([
             toolCalls: [
               {
                 id: "spawn",
-                name: "Agent",
+                name: "spawn_agent",
                 input: {
-                  description: "Search scoped tools",
-                  prompt: "Discover WebFetch",
-                  subagent_type: explore ? "Explore" : "researcher",
+                  task_name: "spawn",
+                  fork_turns: "none",
+                  message: "Discover WebFetch",
+                  agent_type: explore ? "Explore" : "researcher",
                 },
               },
             ],
@@ -98,7 +99,7 @@ it.each([
     );
     try {
       await runtime.executeTurn("Run the researcher.");
-      expect(childRequests.length).toBe(childEnabled ? 2 : 1);
+      await vi.waitFor(() => expect(childRequests.length).toBe(childEnabled ? 2 : 1));
       expect(childRequests[0]?.toolSearchEnabled).toBe(childEnabled && !local);
       expect(childRequests[0]?.tools?.some((tool) => tool.name === "ToolSearch")).toBe(
         childEnabled,

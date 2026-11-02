@@ -6,7 +6,6 @@ import {
 import type {
   ExecutionPort,
   DynamicWorkflowRunSnapshot,
-  SubagentTaskSnapshot,
   WorkflowTaskSnapshot,
 } from "@zcode/contracts";
 import {
@@ -22,7 +21,6 @@ import { serializeWorkflowArtifact } from "./workflow-artifact.js";
 
 type BackgroundTaskSnapshot =
   | NonNullable<Awaited<ReturnType<NonNullable<ExecutionPort["getBackgroundTask"]>>>>
-  | SubagentTaskSnapshot
   | WorkflowTaskSnapshot
   // workflow run 的快照沿用 WorkflowTaskSnapshot 的形状但把 output 放宽成 unknown（产物由脚本
   // 的顶层返回值决定），所以它不是 WorkflowTaskSnapshot 的子类型，必须单列一支。
@@ -54,7 +52,8 @@ export function registerRuntimeBackgroundTask(
   const taskType = runtimeTaskTypeForToolCall(toolCall);
   if (!taskType || !deps.runtimeTaskRegistry) return;
   const existing = deps.runtimeTaskRegistry.get(taskId);
-  const description = runtimeTaskDescription(toolCall, output) ?? defaultRuntimeTaskDescription(taskType);
+  const description =
+    runtimeTaskDescription(toolCall, output) ?? defaultRuntimeTaskDescription(taskType);
   const outputFile = backgroundTaskOutputMetadata(output).outputFile;
   // 同进程 cancel 终态 → 未重启即 resume（dwf 的 resume 重臂，
   // v4 命令路径与工具路径在 trackBackgroundTask 汇合同病）时，既有条目携带上一轮 claim 的
@@ -130,8 +129,7 @@ export function updateRuntimeBackgroundTask(
       : {
           ...current,
           completedAt: runtimeTaskCompletedAt(status, snapshot) ?? current.completedAt,
-          description:
-            runtimeTaskDescription(toolCall, undefined, snapshot) ?? current.description,
+          description: runtimeTaskDescription(toolCall, undefined, snapshot) ?? current.description,
           error: runtimeTaskError(snapshot) ?? current.error,
           exitCode: runtimeTaskExitCode(snapshot) ?? current.exitCode,
           isBackgrounded: true,

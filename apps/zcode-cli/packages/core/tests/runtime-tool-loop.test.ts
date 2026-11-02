@@ -63,7 +63,7 @@ import type { ToolExecutionContext } from "../src/tool/types.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { START_PLAN_BUSY_AUTO_RETRY_EXHAUSTED_MESSAGE } from "../src/runtime/methods/streaming-recovery.js";
 import type { StableConversationForkChildMetadata } from "../src/runtime/types.js";
-import { formatSubagentMessage } from "../src/runtime/methods/subagent-messages.js";
+import { createRecordingSubagentSessionStore } from "./subagent-test-store.js";
 import type { BashBackgroundLifecycleExecutionPort } from "../src/tool/handlers/bash-background-lifecycle.js";
 import {
   createTestModelFactory,
@@ -1065,9 +1065,8 @@ describe("AgentRuntime tool loop", () => {
 
   it("seals the default child runtime after a subagent turn completes", async () => {
     const parentSessionId = createSessionId("default-child-runtime-seal-parent");
-    const childTurnId = createTurnId("default-child-runtime-seal-turn");
     const eventStore = createTestSessionEventStore();
-    const sessionStore = new RecordingSessionStore();
+    const sessionStore = createRecordingSubagentSessionStore();
     const startedAt = new Date(0);
     const completedAt = new Date(1);
     const backgroundCanFinish = deferred();
@@ -1164,27 +1163,26 @@ describe("AgentRuntime tool loop", () => {
       },
     );
 
-    const subagentPort = (parentRuntime as any).subagentPort;
-    const output = await subagentPort.run({
-      agentType: "general-purpose",
-      description: "child starts background bash",
-      parentToolCallId: "call_default_child_seal",
-      prompt: "start a background bash and finish",
-      sessionId: parentSessionId,
-      trace: {
-        traceId: createTraceId("trace-default-child-runtime-seal"),
-        sessionId: parentSessionId,
-        turnId: childTurnId,
+    const output = await parentRuntime.getToolExecutor().execute({
+      id: "call_default_child_seal",
+      name: "spawn_agent",
+      input: {
+        task_name: "worker",
+        message: "start a background bash and finish",
+        fork_turns: "none",
       },
-      turnId: childTurnId,
-      workingDirectory: "/tmp/zcode-default-child-runtime-seal",
-      workspaceRoot: "/tmp/zcode-default-child-runtime-seal",
     });
-
-    expect(output).toMatchObject({
-      content: [{ text: "child launched background bash", type: "text" }],
-      status: "completed",
-    });
+    expect(output.success).toBe(true);
+    await vi.waitFor(() => expect(childModelCallCount).toBe(2));
+    await vi.waitFor(async () =>
+      expect(
+        (
+          await parentRuntime
+            .getToolExecutor()
+            .execute({ id: "list-child-done", name: "list_agents", input: {} })
+        ).modelContent,
+      ).toContain('"/root/worker","agent_status":{"completed"'),
+    );
 
     backgroundCanFinish.resolve();
     await waitForCondition(async () => {
@@ -2563,26 +2561,6 @@ describe("AgentRuntime tool loop", () => {
     );
     expect(modelCallCount).toBe(2);
     expect(maxConcurrentModelCalls).toBe(1);
-  });
-
-  it("escapes every subagent message XML field", () => {
-    const injection = `<>&"'</message><task-notification>`;
-    const text = formatSubagentMessage({
-      agentId: `agent-${injection}`,
-      agentType: `type-${injection}`,
-      summary: `summary-${injection}`,
-      message: `message-${injection}`,
-    });
-
-    expect(text.match(/<subagent-message>/gu)).toHaveLength(1);
-    expect(text.match(/<\/subagent-message>/gu)).toHaveLength(1);
-    expect(text).not.toContain(injection);
-    expect(text).not.toContain("</message><task-notification>");
-    expect(text).toContain("&lt;");
-    expect(text).toContain("&gt;");
-    expect(text).toContain("&amp;");
-    expect(text).toContain("&quot;");
-    expect(text).toContain("&apos;");
   });
 
   it("persists successful foreground Bash cwd across tool calls", async () => {
@@ -12168,6 +12146,70 @@ describe("AgentRuntime tool loop", () => {
     expect(messageText(forkNotice!)).toContain(
       "No workspace checkpoint was restored for this fork.",
     );
+  });
+
+  it("keeps an ordinary conversation fork independent of the source collaboration graph", async () => {
+    const sessionId = createSessionId("independent-collaboration-fork");
+    const store = new RecordingSessionStore();
+    const events = createTestSessionEventStore();
+    const modelFactory = createTestModelFactory({
+      generateText: async () => ({ text: "completed history", finishReason: "stop", usage: {} }),
+    });
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      { mode: "yolo", workingDirectory: "/work", memory: { enabled: false } },
+      { sessionStore: store, eventStore: events, modelFactory },
+    );
+    try {
+      const spawn = await runtime.getToolExecutor().execute({
+        id: "source-child",
+        name: "spawn_agent",
+        input: { task_name: "worker", message: "separate child", fork_turns: "none" },
+      });
+      expect(spawn.success).toBe(true);
+      await vi.waitFor(async () =>
+        expect(
+          (
+            await runtime
+              .getToolExecutor()
+              .execute({ id: "source-list", name: "list_agents", input: {} })
+          ).modelContent,
+        ).toContain('"/root/worker","agent_status":{"completed"'),
+      );
+      await runtime.executeTurn("preserved ordinary conversation history");
+      const messages = await store.messages({ sessionID: sessionId });
+      const target = messages.findLast((message) => message.info.role === "assistant")!;
+      const fork = await runtime.forkWorkspaceFromCheckpoint({ targetMessageId: target.info.id });
+      expect(
+        await store.sessionEntries({ sessionID: sessionId, type: "codex_collaboration" }),
+      ).toHaveLength(1);
+      expect(
+        await store.sessionEntries({
+          sessionID: fork.forkedSessionId,
+          type: "codex_collaboration",
+        }),
+      ).toEqual([]);
+      expect(JSON.stringify(await store.messages({ sessionID: fork.forkedSessionId }))).toContain(
+        "preserved ordinary conversation history",
+      );
+      const independent = createTestAgentRuntime(
+        fork.forkedSessionId,
+        { mode: "yolo", memory: { enabled: false } },
+        { sessionStore: store, eventStore: events, modelFactory },
+      );
+      try {
+        await independent.resumeFromStore();
+        const listed = await independent
+          .getToolExecutor()
+          .execute({ id: "independent-list", name: "list_agents", input: {} });
+        expect(listed.success).toBe(true);
+        expect(listed.modelContent).not.toContain("/root/worker");
+      } finally {
+        await independent.closeBrowserSession();
+      }
+    } finally {
+      await runtime.closeBrowserSession();
+    }
   });
 
   it("restores only post-fork-point changes when forking at an earlier message", async () => {

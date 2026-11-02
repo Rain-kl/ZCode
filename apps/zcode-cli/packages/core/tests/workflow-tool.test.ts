@@ -18,7 +18,7 @@ import { createToolRegistry } from "../src/tool/registry.js";
 describe("Workflow tool", () => {
   it("keeps Workflow out of built-in registration even when orchestration is configured", () => {
     const defaultRegistry = createToolRegistry();
-    registerBuiltInTools(defaultRegistry, { includeAgent: true });
+    registerBuiltInTools(defaultRegistry, { includeCollaboration: true });
     expect(defaultRegistry.has("Workflow")).toBe(false);
 
     const workflowRegistry = createToolRegistry();

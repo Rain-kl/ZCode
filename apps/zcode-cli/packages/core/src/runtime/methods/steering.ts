@@ -162,6 +162,9 @@ export async function steerTurn(
       : undefined,
   );
   activeTurn.pendingInputs.push(pendingInput);
+  // FORK(codex-collaboration): 用户 steer 唤醒 wait，不取消独立 child。
+  if (!request.inputPresentation || request.inputPresentation === "user_steer")
+    this.collaboration?.userInputAccepted();
   // 用户亲手 steer 进来的话（协调者 / 信箱 / 工具跟进也走这里，它们不算）：与 prompt 一样，给每个
   // 欠着决定的 run 一对新的提醒。
   if (request.inputPresentation === "user_steer") this.workflowBlockedReminder?.userSpoke();

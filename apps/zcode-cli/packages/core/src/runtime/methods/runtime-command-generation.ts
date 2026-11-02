@@ -7,11 +7,7 @@ export function isStaleBranchRuntimeCommand(
   runtime: AgentRuntimeInternal,
   command: RuntimeCommand,
 ): boolean {
-  if (
-    command.mode !== "task-notification" &&
-    command.mode !== "subagent-message" &&
-    command.mode !== "control-only-turn"
-  ) {
+  if (command.mode !== "task-notification" && command.mode !== "control-only-turn") {
     return false;
   }
   if (command.branchGeneration === runtime.branchGeneration) return false;

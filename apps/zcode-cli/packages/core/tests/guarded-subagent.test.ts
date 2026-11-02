@@ -11,14 +11,9 @@ import { createTestModelFactory } from "./test-runtime-model.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 
 describe("guarded real subagent ingress", () => {
-  it.each([
-    ["Explore", false],
-    ["general-purpose", false],
-    ["custom", false],
-    ["general-purpose", true],
-  ] as const)(
-    "%s routes a real pending request to its parent (background=%s)",
-    async (agentType, background) => {
+  it.each(["Explore", "general-purpose", "custom"] as const)(
+    "%s routes a real pending request to its parent",
+    async (agentType) => {
       const requests: PermissionBrokerRequest[] = [];
       const execute = vi.fn(async () => {
         throw new Error("Must not execute");
@@ -66,9 +61,7 @@ describe("guarded real subagent ingress", () => {
           },
           modelFactory: createTestModelFactory({
             async generateText(request, observation) {
-              const child =
-                (observation.invocationContext?.metadata as { querySource?: string })
-                  ?.querySource === "subagent";
+              const child = observation.invocationContext?.traceContext?.sessionId !== sessionId;
               const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
               if (child) childModelRequests.push(JSON.stringify(request));
               if (child && ++childCalls === 1)
@@ -88,12 +81,12 @@ describe("guarded real subagent ingress", () => {
                   toolCalls: [
                     {
                       id: "guarded-agent",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "test",
-                        prompt: "test",
-                        subagent_type: agentType,
-                        run_in_background: background,
+                        task_name: "worker",
+                        message: "test",
+                        agent_type: agentType,
+                        fork_turns: "none",
                       },
                     },
                   ],
@@ -137,6 +130,7 @@ describe("guarded real subagent ingress", () => {
       expect(broker.listPendingRequests()).toEqual([]);
       expect(execute).not.toHaveBeenCalled();
       unsubscribe();
+      await runtime.closeBrowserSession();
     },
   );
 });

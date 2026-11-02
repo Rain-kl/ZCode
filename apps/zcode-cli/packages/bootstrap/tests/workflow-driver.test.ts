@@ -748,7 +748,7 @@ describe("workflow driver — 转录截断（会话种子）", () => {
             systemPrompt: persona.system ?? "You are a workflow actor.",
             mode: "yolo",
             taskType: "workflow_child",
-            subagents: { enabled: false },
+            subagents: {},
             ...workflowActorToolPolicy(persona),
           },
           {

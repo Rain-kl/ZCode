@@ -26,6 +26,8 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
   }
 
   registerBuiltInTools(runtime.registry, {
+    // FORK(codex-collaboration): 分支刷新保持同一协作能力和计划提示。
+    includeCollaboration: runtime.collaboration !== undefined,
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     embeddedSearchEnabled,

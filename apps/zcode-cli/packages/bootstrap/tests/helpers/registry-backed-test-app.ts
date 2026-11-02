@@ -189,6 +189,7 @@ async function* streamResult(result: Promise<ModelResult>): AsyncIterable<ModelE
     yield { id: "bootstrap-test-text", text: resolved.text, type: "text_delta" };
     yield { id: "bootstrap-test-text", type: "text_end" };
   }
+  for (const toolCall of resolved.toolCalls ?? []) yield { type: "tool_call", toolCall };
   yield {
     finishReason: resolved.finishReason,
     type: "finish",

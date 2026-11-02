@@ -146,7 +146,6 @@ export function createScriptWorkflowAgentRuntime(input: {
       // 父 Shell 在首条输入才解析，子会话须继承已初始化的会话快照。
       bashShellSelection: input.deps.runtime.getSessionShellSelection(),
       parentSessionId: input.deps.sessionId,
-      subagents: { enabled: false },
       taskType: "workflow_child",
       // actor 只存在于一次 run 之下，天然「已激活」（launch.md「On demand: activation」Children 段）：
       // 不继承父会话的按需标志，否则 spread 会把 onDemand 带进来而子会话里没有任何激活入口。
@@ -156,6 +155,8 @@ export function createScriptWorkflowAgentRuntime(input: {
       ...input.configOverrides,
     },
     {
+      // FORK(codex-collaboration): script workflow 有独立调度寿命，不能暗中创建另一棵协作树。
+      createCollaborationBinding: () => undefined,
       ...createRuntimeDeps(input.deps, input.traceContext, input.childSessionId, {
         // 对外交互端口只能由父 runtime 铸造：子会话不是客户端认识的身份。
         // 这里过去直接用 `appOptions.providerRuntimeHeadersPort` /

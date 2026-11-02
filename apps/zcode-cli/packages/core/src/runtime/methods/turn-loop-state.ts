@@ -15,7 +15,7 @@ import type {
   TurnId,
 } from "../deps.js";
 import type { ActiveTurnSteeringState } from "../types.js";
-import type { ModelToolContract, SubagentRunOptions } from "@zcode/contracts";
+import type { ModelToolContract, ChildModelExecutionOverride } from "@zcode/contracts";
 import type { DrainedPendingInputDiagnostics, ModelExecutionContext } from "../types.js";
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
@@ -112,7 +112,7 @@ export interface RegularTurnLoopState {
   /** 仅加速卡过期回退使用的启动快照；不用于闲时换票。 */
   highspeedFallbackSelection?: ModelSelection;
   /** Core Server 的前台 child Selection override；优先于 profile 与父模型继承。 */
-  subagentModelOverride?: SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: ChildModelExecutionOverride;
   modelStepCount: number;
   /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
   historyRoundCount: number;

@@ -34,7 +34,7 @@ describe("runMemoryAgentLoop", () => {
     const tools = Object.freeze([
       tool("Read", true, "none"),
       tool("Write", false, "workspace"),
-      tool("Agent", false, "session"),
+      tool("spawn_agent", false, "session"),
     ]) satisfies readonly ModelToolContract[];
     const requests: MemoryAgentModelRequest[] = [];
     const executeTool = vi.fn(async (call) => executionResult(call.id, call.name, "written"));
@@ -328,7 +328,7 @@ describe("evaluateMemoryAgentToolPolicy", () => {
     tool("Bash", false, "workspace"),
     tool("Write", false, "workspace"),
     tool("Edit", false, "workspace"),
-    tool("Agent", false, "session"),
+    tool("spawn_agent", false, "session"),
     tool("WebFetch", true, "network"),
     tool("mcp__server__lookup", true, "network"),
     tool("OtherReadOnly", true, "none"),
@@ -369,7 +369,9 @@ describe("evaluateMemoryAgentToolPolicy", () => {
     expect(
       decide("Bash", { command: "touch /workspace/file" }, [tool("Bash", true, "none")]),
     ).toMatchObject({ allowed: false });
-    expect(decide("Agent", {}, [tool("Agent", true, "none")])).toMatchObject({ allowed: false });
+    expect(decide("spawn_agent", {}, [tool("spawn_agent", true, "none")])).toMatchObject({
+      allowed: false,
+    });
     expect(
       decide("mcp__server__lookup", {}, [tool("mcp__server__lookup", true, "none")]),
     ).toMatchObject({ allowed: false });
@@ -424,7 +426,7 @@ describe("evaluateMemoryAgentToolPolicy", () => {
 
   it.each([
     ["unregistered", "Unknown", {}],
-    ["Agent", "Agent", {}],
+    ["spawn_agent", "spawn_agent", {}],
     ["network tool", "WebFetch", { url: "https://example.com" }],
     ["MCP tool", "mcp__server__lookup", {}],
     ["unlisted read-only tool", "OtherReadOnly", {}],

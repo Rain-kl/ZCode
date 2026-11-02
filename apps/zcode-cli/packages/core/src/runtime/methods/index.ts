@@ -47,7 +47,6 @@ import {
   sealBackgroundTaskNotifications,
 } from "./background-notifications.js";
 import { drainPendingRuntimeCommandsForActiveLoop } from "./runtime-command-active-loop.js";
-import { enqueueSubagentMessage } from "./subagent-messages.js";
 import {
   acquireForegroundPromotionLease,
   drainRuntimeCommandQueue,
@@ -77,7 +76,6 @@ import {
   setQueueAutoDrain,
 } from "./steering.js";
 import { discardPersistedPendingSteerInputs } from "./steering.js";
-import { createDefaultSubagentPort } from "./subagent.js";
 import { ensureContextInitialized, getSkillCatalog } from "./context.js";
 import { createContextBuilderFromSnapshot } from "./context.js";
 import { loadProjectMemoryRoot } from "./context.js";
@@ -262,7 +260,6 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.releaseForegroundPromotionLease = releaseForegroundPromotionLease;
   proto.stopActiveForegroundExecution = stopActiveForegroundExecution;
   proto.enqueueBackgroundTaskNotification = enqueueBackgroundTaskNotification;
-  proto.enqueueSubagentMessage = enqueueSubagentMessage;
   proto.drainPendingRuntimeCommandsForActiveLoop = drainPendingRuntimeCommandsForActiveLoop;
   proto.sealBackgroundTaskNotifications = sealBackgroundTaskNotifications;
   proto.discardPendingInput = discardPendingInput;
@@ -282,7 +279,6 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.discardPersistedPendingSteerInputs = discardPersistedPendingSteerInputs;
   proto.discardHeldPendingInputById = discardHeldPendingInputById;
   proto.clearAllPendingInputs = clearAllPendingInputs;
-  proto.createDefaultSubagentPort = createDefaultSubagentPort;
   proto.ensureContextInitialized = ensureContextInitialized;
   proto.getSkillCatalog = getSkillCatalog;
   proto.createContextBuilderFromSnapshot = createContextBuilderFromSnapshot;

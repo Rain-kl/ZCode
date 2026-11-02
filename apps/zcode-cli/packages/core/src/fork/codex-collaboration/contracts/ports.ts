@@ -11,6 +11,8 @@ export interface TurnAdmission {
 }
 export interface CollaborationRuntime {
   installMailbox(): Promise<void>;
+  /** Read-only activity owned by the driver after durable ACK, before model consumption. */
+  hasUnreadMessages(): boolean;
   /** ACK transfers ownership durably; repeated message IDs must be idempotent. */
   deliver(message: CollaborationMessage): Promise<{ messageId: string }>;
   /** A resumed turn keeps the existing transcript. No model IO before run(). */

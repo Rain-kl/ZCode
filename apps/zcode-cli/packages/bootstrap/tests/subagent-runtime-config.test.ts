@@ -156,11 +156,12 @@ describe("subagent initialization source", () => {
                     toolCalls: [
                       {
                         id: "source_agent",
-                        name: "Agent",
+                        name: "spawn_agent",
                         input: {
-                          description: "Review",
-                          prompt: "Review",
-                          subagent_type: "reviewer",
+                          task_name: "source_agent",
+                          fork_turns: "none",
+                          message: "Review",
+                          agent_type: "reviewer",
                         },
                       },
                     ],
@@ -192,12 +193,13 @@ describe("subagent initialization source", () => {
         readHost.mockResolvedValue(hostConfig("NEXT_PROFILE"));
         await app.submitPrompt("Please delegate the review");
         expect(readHost).toHaveBeenCalledTimes(source === "host" ? 2 : 0);
-        expect(requests).toHaveLength(1);
+        await vi.waitFor(() => expect(requests).toHaveLength(1));
         expect(JSON.stringify(requests[0])).toContain(
           source === "host" ? "NEXT_PROFILE" : "DISK_PROFILE",
         );
         expect(pluginLoader).toHaveBeenCalledTimes(1);
-        expect((await readdir(join(storage, "cli", "agents"))).length).toBeGreaterThan(0);
+        // 新 child 使用 canonical session store；不再创建旧 runner 的 CLI agents 输出目录。
+        expect(await readdir(join(storage, "cli"))).not.toContain("agents");
         const diagnostics = await readDiagnostics();
         expect(diagnostics).toMatchObject(
           Array.from({ length: source === "host" ? 0 : 1 }, () => expectedDiagnostic),

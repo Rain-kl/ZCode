@@ -14,7 +14,7 @@ const STANDARD_TIMEOUT_MS = 30_000;
 const WAIT_TIMEOUT_MS = 3_610_000;
 const DESCRIPTIONS: Record<CollaborationToolName, string> = {
   spawn_agent:
-    'Spawn a child task and return its canonical task_name after durable acceptance. task_name uses lowercase letters, digits and underscores. Full-history forks inherit model and reasoning effort; use fork_turns="none" for explicitly authorized overrides. agent_type must name an available profile. Child execution continues after this tool returns.',
+    'Spawn a child task and return its canonical task_name after durable acceptance. task_name uses lowercase letters, digits and underscores. Full-history forks inherit model and reasoning effort; use fork_turns="none" for explicitly authorized overrides. agent_type must name an available profile. Available agent types are listed in <system-reminder>. Child execution continues after this tool returns.',
   send_message:
     "Send a message to another agent in the same tree without starting an idle agent. Use its task name or canonical path. Messages are consumed at safe model/tool boundaries.",
   followup_task:
@@ -59,6 +59,7 @@ export function createCollaborationToolEntries(): ToolEntry[] {
         sideEffectScope: readOnly ? "none" : "session",
         riskLevel: "low",
         needsApproval: false,
+        allowedInPlanMode: true,
       },
       inputSchema: CollaborationToolJsonSchemas[name].input,
       outputSchema: CollaborationToolJsonSchemas[name].output,
@@ -71,6 +72,21 @@ export function createCollaborationToolEntries(): ToolEntry[] {
           toolCallId: context.toolCallId,
           signal: context.abortSignal,
           traceContext: context.traceContext,
+          recordIdentity: context.recordCollaborationIdentity,
+          ...(context.model
+            ? {
+                modelSelection: {
+                  providerId: context.model.providerId,
+                  modelId: context.model.modelId,
+                  ...(context.model.options.reasoningLevel
+                    ? { options: { reasoningLevel: context.model.options.reasoningLevel } }
+                    : {}),
+                },
+              }
+            : {}),
+          ...(context.subagentModelOverride
+            ? { executionOverride: context.subagentModelOverride }
+            : {}),
         };
         switch (name) {
           case "spawn_agent":

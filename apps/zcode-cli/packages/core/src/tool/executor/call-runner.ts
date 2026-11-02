@@ -473,6 +473,8 @@ async function executeToolCallImpl(
             await deps.emitEvent(event);
           };
     let readFileStateMetadata: ToolExecutionResult["readFileStateMetadata"];
+    // FORK(codex-collaboration): 身份仅走标准结果metadata，不污染模型输出。
+    let collaboration: ToolExecutionResult["collaboration"];
     let skillTelemetryMetadata: SkillTelemetryMetadata | undefined;
     let failureStage: "handler" | "serialize" | "post_hook" = "handler";
 
@@ -513,10 +515,11 @@ async function executeToolCallImpl(
           ...(deps.nativeSearchEnhancementsEnabled === false ? { findAndGrepEnabled: false } : {}),
         },
         skillPort: deps.skillPort,
-        subagentPort: deps.subagentPort,
         // FORK(codex-collaboration): handler 仅得到当前调用者绑定的有限接口。
         collaborationPort: deps.collaborationPort,
-        coordinatorResponsePort: deps.coordinatorResponsePort,
+        recordCollaborationIdentity: (identity) => {
+          collaboration = identity;
+        },
         workflowSubmitPort: deps.workflowSubmitPort,
         workflowEscalatePort: deps.workflowEscalatePort,
         artifactStore: deps.artifactStore,
@@ -635,6 +638,8 @@ async function executeToolCallImpl(
           display,
           modelContent: finalModelContent,
           ...(readFileStateMetadata ? { readFileStateMetadata } : {}),
+          // FORK(codex-collaboration): settlement 统一持久化，adapter 不直接写 pending ToolPart。
+          ...(collaboration ? { collaboration } : {}),
           performance: perf,
           serialization,
           durationMs,

@@ -3,7 +3,6 @@ import {
   CREATE_WORKFLOW_TOOL_NAME,
   FILL_WORKFLOW_HOLE_TOOL_NAME,
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
-  RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
 } from "@zcode/contracts";
@@ -109,14 +108,6 @@ function appendChildControlTool(
 ): readonly string[] | undefined {
   if (!allowlist) {
     return allowlist;
-  }
-
-  if (config.taskType === "subagent_child") {
-    if (allowlist.includes(RESPOND_TO_COORDINATOR_TOOL_NAME)) {
-      return allowlist;
-    }
-    // Explore 会在 runtime 注册前再次求工具交集，child 控制工具必须在最终结果补回。
-    return [...allowlist, RESPOND_TO_COORDINATOR_TOOL_NAME];
   }
 
   // workflow child 没有 allowlist 收窄（persona 无工具档位，工具面只有减法，见

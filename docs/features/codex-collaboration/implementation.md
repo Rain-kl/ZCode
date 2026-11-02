@@ -340,3 +340,61 @@ flush也在原enqueue通道重试，清理与admission互斥，不递归等待�
 纯settings校验提取为无状态helper；fake driver迁到core/test/fork-codex-collaboration并登记同一managed
 模块，避免测试文件超过800行，不新增调度owner。3个新场景先RED，另补关闭后abort reject/迟到completion的无异步错误与generation保护验证，最终3文件53/53 GREEN；
 core typecheck、模块lint、架构0违规与diff check通过。未运行冗余根全局检查，未改真实runtime或E2E。
+
+### Task 3b：真实 prepared runtime、邮箱与生命周期接线（待独立审查）
+
+`core/src/fork/codex-collaboration-runtime` 将六工具绑定到同一 root controller，child 复用标准
+reserved prompt command：prepare 先创建/恢复 session，installMailbox 安装 durable sink，admit
+保存 raw task 并预留 turn，root accepted 持久化之后才 run。保存的 root 身份/配置先于 controller
+恢复；child 从自己的 ModelSelection 与版本化 profile/AGENTS entry 恢复，不因父模型/profile变化换身份。
+普通无协作 root turn 不要求可选 session-entry 写端口；第一次实际工具调用严格检查持久能力。
+
+旧 runner、SubagentPort/CoordinatorResponsePort、旧输入输出 schema 和 registry writable message owner
+已删除。旧四工具直调返回未知工具；不设别名或隐藏适配。旧 features.subagent/subagents.enabled 不再控制
+新工具；内部 script workflow 用既有有限 binding factory 明确隔离，保持自身调度边界。
+TaskOutput/TaskStop 保留 Bash/workflow；原生 child Stop 调用同一 controller.interrupt。
+
+消息 raw+private provenance 持久成功才 ACK；provider 出口投影 assistant 信封。wait 在既有订阅之后
+检查 controller 邮箱及 driver 的只读 hasUnreadMessages，修复 provider in-flight 时早到邮件已 ACK、
+随后 wait 丢失通知的问题，不增加轮询或消息 owner。parent steer 只唤醒所选 wait，不能取消已接受 child。
+权限等待与显式 message wait 通过实际 runtime 验证没有旧 inactivity watchdog。
+
+fork all 继承已闭合历史、剔除当前 active tool batch；持久与 memory-only 分支均验证工具配对与无重放。
+普通 UI/session fork 不复制协作 root entry；复制的 private receipt 保留来源但不作为新根邮箱去重事实。
+模型/权限/MCP/skills/memory/AGENTS/CUA 装配复用既有策略，fresh child permission service 不继承活动授权。
+执行期 background deny 拒绝启动新异步 run；running followup 仍可交付，不撤销已接受执行。
+
+生命周期和 completed ToolPart private metadata 均为 controller snapshot 派生，包含 opaque childSessionId、
+原始 parentToolCallId、path/generation/profile/保存模型。accepted 与结果之间的崩溃窗口通过公开
+readCollaborationRootEntry/readCollaborationRelation/relationFromSnapshot 查询；不从 spawn ACK 推断完成。
+冷终态不重复追加事件；投影失败可重试且成功 append 才确认 receipt。parent 卸载时沿真实 parentSessionId
+发布后代终态，新 prepare 明确失败要求恢复实际 parent，不能借 root 历史/权限冒充 parent。
+关闭 await controller.dispose→projection，再交给宿主关闭共享资源；普通 root 完成不关闭 child。
+child 终态封住后台 Bash 自动唤醒，followup 准入才重开，防止 idle child 绕过 controller 自动另起模型轮。
+
+实际验证（2026-11-02）：
+
+- CLI 默认 Vitest 选中 30 个相关文件，388/388 GREEN；精确列表保存在同批 Agent Note 的分组映射。
+  新 adapter tests 覆盖 admission 顺序、same-session cold recovery、损坏历史、saved model/profile、
+  mailbox queue/trigger、早到邮件 wait、steer+permission/message等待、nested unload/projection、shutdown。
+- controller `src/fork/codex-collaboration/*.test.ts` 使用专用 include 实际执行，3文件53/53 GREEN；
+  默认 CLI include 不包含 src，未把被过滤的路径当作已运行测试。
+- `runtime-tool-loop.test.ts` 定向执行 child Bash notification seal 与普通独立 fork 两项，2/2 GREEN；
+  同文件其余158项未运行。保留后台 Bash/workflow 的实际 executor/control tests 在388项中。
+- prompt-trajectory `record.test.ts` 通过实际 tsx + node:test 执行，5/5 GREEN，删除旧 enabled 夹具约定。
+- 子目录 typecheck 32/32、根 `pnpm typecheck`、根 `pnpm lint`（102 warnings/0 errors）、
+  新模块 scoped lint、`pnpm architecture:check --changed`（0违规）、移除守卫及 diff check 通过。
+- 全 CLI lint 实际执行：3个 max-lines errors、71 warnings；分别为未改的 adapters/fs/index.ts(1642)、
+  bootstrap/zcode-protocol-v4/product-projection.ts(5132)，以及本次删旧逻辑后仍超限的
+  core/tool/executor/background-tasks.ts(942)。未将全 CLI lint 记为通过。
+- 另跑 tool-contracts/off-peak-tool：37通过、4失败，断言仍要求已被现有 webfetch-direct-return 删除的
+  prompt/旧描述与被 offpeak-removal 删除的注册入口。WebSearch 独立套件9通过、4失败：两个旧渠道描述/
+  supportsNativeWebSearch暴露断言，与现有 search-providers 合同冲突；两项自定义 main stream 桩主动抛错，
+  与现有 nonstream-via-stream 合同冲突。本次只迁移其旧协作引用，不恢复无关产品行为。
+
+真实 HTTP OpenAI Chat Completions 的空字符串 tool_result 与 assistant provenance 证据见独立
+`a33b8953` 四项协议验收；root 使用稳定生产源码重建9个依赖任务后再次4/4 GREEN（13.73s）。
+范围为三个模型恢复场景与一个 send_message wire 场景，fixture 不等于生产启动包装器或六工具GUI全生命周期。
+本批不把 executor 间接断言当作 provider wire 证明。Anthropic 原生 wire、
+客户端冷 drilldown/TUI/mobile、生产包装器完整交互由后续 Task4 验证；本记录不宣称整体迁移完成。
+完整顺序合同见 [runtime-integration](runtime-integration.md)。

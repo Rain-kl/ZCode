@@ -8,7 +8,6 @@ import {
   LIST_WORKFLOW_RUNS_TOOL_NAME,
   FILL_WORKFLOW_HOLE_TOOL_NAME,
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
-  RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
 } from "@zcode/contracts";
@@ -30,30 +29,30 @@ function config(patch: Partial<AgentRuntimeConfig>): AgentRuntimeConfig {
 }
 
 describe("resolveBuiltInToolAllowlist", () => {
-  it("keeps RespondToCoordinator after the Explore child intersection", () => {
+  it("does not inject retired child controls after the Explore child intersection", () => {
     expect(
       resolveBuiltInToolAllowlist(
         config({
           taskType: "subagent_child",
           toolset: "explore",
-          toolAllowlist: [...EXPLORE_AGENT_ALLOWED_TOOLS, RESPOND_TO_COORDINATOR_TOOL_NAME],
+          toolAllowlist: [...EXPLORE_AGENT_ALLOWED_TOOLS],
         }),
       ),
-    ).toContain(RESPOND_TO_COORDINATOR_TOOL_NAME);
+    ).toEqual([...EXPLORE_AGENT_ALLOWED_TOOLS]);
   });
 
-  it("does not add RespondToCoordinator to a main Explore runtime", () => {
+  it("rejects a retired control from the main Explore allowlist", () => {
     expect(
       resolveBuiltInToolAllowlist(
         config({
           toolset: "explore",
-          toolAllowlist: [...EXPLORE_AGENT_ALLOWED_TOOLS, RESPOND_TO_COORDINATOR_TOOL_NAME],
+          toolAllowlist: [...EXPLORE_AGENT_ALLOWED_TOOLS, "RespondToCoordinator"],
         }),
       ),
-    ).not.toContain(RESPOND_TO_COORDINATOR_TOOL_NAME);
+    ).not.toContain("RespondToCoordinator");
   });
 
-  it("adds RespondToCoordinator to a custom child allowlist", () => {
+  it("keeps a custom child allowlist exact without hidden controls", () => {
     expect(
       resolveBuiltInToolAllowlist(
         config({
@@ -62,7 +61,7 @@ describe("resolveBuiltInToolAllowlist", () => {
           toolAllowlist: ["Read"],
         }),
       ),
-    ).toEqual(["Read", RESPOND_TO_COORDINATOR_TOOL_NAME]);
+    ).toEqual(["Read"]);
   });
 
   it("keeps an unrestricted general child allowlist unrestricted", () => {
@@ -309,34 +308,14 @@ describe("AgentRuntime：分支刷新后灰度门仍然成立", () => {
   });
 });
 
-// 灰度门不止管注册面，也管**描述**（docs/dynamic-workflow/launch.md「Gray release」）：
-// Agent / Task 的 provider 描述里有一条「用户点名工作流时 CreateWorkflow 是强制的」，
-// 关闭时那个工具不在注册表里，留着这句话只会把模型指向一个不存在的工具。
-// 两个注册入口共用 options.includeDynamicWorkflow，所以分支刷新后的描述也必须一致。
-describe("Agent / Task 描述随灰度门增删工作流那一行", () => {
-  function descriptionsOf(options: { includeDynamicWorkflow?: boolean }): {
-    agent: string;
-    task: string;
-  } {
+// 六工具的描述不再依赖已删除 Agent/Task 的工作流指令。
+describe("collaboration descriptions remain truthful for every workflow gate", () => {
+  it.each([false, true, undefined])("dynamic workflow gate=%s", (includeDynamicWorkflow) => {
     const registry = createToolRegistry();
-    registerBuiltInTools(registry, { includeAgent: true, ...options });
-    const agent = registry.get("Agent")?.metadata.description ?? "";
-    const task = registry.get("Task")?.metadata.description ?? "";
-    return { agent, task };
-  }
-
-  it("关闭时 Agent 与 Task 的描述都不再提 CreateWorkflow", () => {
-    const { agent, task } = descriptionsOf({ includeDynamicWorkflow: false });
-    expect(agent).not.toContain("CreateWorkflow");
-    expect(task).not.toContain("CreateWorkflow");
-    // 反向断言：只去掉那一行，描述本体还在。
-    expect(agent).toContain("Launch a new agent");
-    expect(task).toContain("Claude Code-compatible alias");
-  });
-
-  it.each([{ includeDynamicWorkflow: true }, {}])("开启或缺席时那一行保留：%j", (options) => {
-    const { agent, task } = descriptionsOf(options);
-    expect(agent).toContain("CreateWorkflow");
-    expect(task).toContain("CreateWorkflow");
+    registerBuiltInTools(registry, { includeCollaboration: true, includeDynamicWorkflow });
+    expect(registry.has("Agent")).toBe(false);
+    expect(registry.has("Task")).toBe(false);
+    expect(registry.get("spawn_agent")?.metadata.description).toContain("Spawn a child task");
+    expect(registry.get("spawn_agent")?.metadata.description).not.toContain("CreateWorkflow");
   });
 });

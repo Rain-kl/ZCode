@@ -52,7 +52,7 @@ describe("subagent tool event projection", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -62,11 +62,12 @@ describe("subagent tool event projection", () => {
                   toolCalls: [
                     {
                       id: "call_parent_agent",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Ask from child",
-                        prompt: "Ask the user which path to take.",
-                        subagent_type: "general-purpose",
+                        task_name: "call_parent_agent",
+                        fork_turns: "none",
+                        message: "Ask the user which path to take.",
+                        agent_type: "general-purpose",
                       },
                     },
                   ],
@@ -138,7 +139,7 @@ describe("subagent tool event projection", () => {
       toolName: "AskUserQuestion",
       origin: {
         kind: "subagent",
-        childSessionId: expect.stringContaining("sess_subagent_agent_"),
+        childSessionId: expect.any(String),
         parentSessionId: sessionId,
         parentToolCallId: "call_parent_agent",
       },
@@ -158,7 +159,7 @@ describe("subagent tool event projection", () => {
       toolName: "AskUserQuestion",
       origin: {
         kind: "subagent",
-        childSessionId: expect.stringContaining("sess_subagent_agent_"),
+        childSessionId: expect.any(String),
         parentSessionId: sessionId,
         parentToolCallId: "call_parent_agent",
       },
@@ -204,7 +205,7 @@ describe("subagent tool event projection", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -214,11 +215,12 @@ describe("subagent tool event projection", () => {
                   toolCalls: [
                     {
                       id: "call_explore",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Read project readme",
-                        prompt: "Read README.md and summarize it.",
-                        subagent_type: "Explore",
+                        task_name: "call_explore",
+                        fork_turns: "none",
+                        message: "Read README.md and summarize it.",
+                        agent_type: "Explore",
                       },
                     },
                   ],
@@ -279,7 +281,7 @@ describe("subagent tool event projection", () => {
         | { agentId?: string }
         | undefined
     )?.agentId;
-    expect(spawnedAgentId).toMatch(/^agent_/u);
+    expect(spawnedAgentId).toEqual(expect.any(String));
     const childSessionId = parentEvents
       .map((event) => event.payload as Record<string, unknown>)
       .find((payload) => typeof payload.childSessionId === "string")?.childSessionId as
@@ -309,12 +311,12 @@ describe("subagent tool event projection", () => {
       agentId: spawnedAgentId,
       childSessionId,
       childToolCallId: "call_child_read",
-      description: "Read project readme",
+      description: "/root/call_explore",
       parentToolCallId: "call_explore",
       source: "subagent",
       toolName: "Read",
     });
-    expect(mirroredScheduled?.payload).not.toHaveProperty("background");
+    expect(mirroredScheduled?.payload).toHaveProperty("background", true);
     expect((mirroredScheduled?.payload as any).toolCallId).not.toBe("call_child_read");
     expect((mirroredResult?.payload as any).toolCallId).toBe(
       (mirroredScheduled?.payload as any).toolCallId,
@@ -330,7 +332,7 @@ describe("subagent tool event projection", () => {
     expect(persistedParentReadEvents).toEqual([]);
   });
 
-  it("marks child tool events emitted after foreground auto-background with current provenance", async () => {
+  it("marks independently running child tool events with current background provenance", async () => {
     const sessionId = createSessionId("runtime-auto-background-subagent-tool-events");
     const eventStore = createTestSessionEventStore();
     const liveEvents: SessionEvent[] = [];
@@ -347,7 +349,6 @@ describe("subagent tool event projection", () => {
           providerId: createModelProviderId("provider-test"),
           modelId: createModelId("parent-model"),
         },
-        subagents: { autoBackgroundMs: 1 },
         workingDirectory: "/workspace/project",
       },
       {
@@ -358,7 +359,7 @@ describe("subagent tool event projection", () => {
         modelFactory: createTestModelFactory({
           async generateText(request: any) {
             const toolNames = (request.tools ?? []).map((tool: any) => tool.name);
-            if (toolNames.includes("Agent")) {
+            if (toolNames.includes("spawn_agent")) {
               parentCallCount++;
               if (parentCallCount === 1) {
                 return {
@@ -368,11 +369,12 @@ describe("subagent tool event projection", () => {
                   toolCalls: [
                     {
                       id: "call_auto_background_agent",
-                      name: "Agent",
+                      name: "spawn_agent",
                       input: {
-                        description: "Read after moving to background",
-                        prompt: "Wait, then read README.md.",
-                        subagent_type: "Explore",
+                        task_name: "call_auto_background_agent",
+                        fork_turns: "none",
+                        message: "Wait, then read README.md.",
+                        agent_type: "Explore",
                       },
                     },
                   ],
@@ -420,13 +422,13 @@ describe("subagent tool event projection", () => {
     const unsubscribe = runtime.subscribeEvents({
       onSessionEvent: (event) => {
         liveEvents.push(event);
-        if (event.type === SessionEventType.BackgroundTaskCompleted) {
+        if (event.type === SessionEventType.SubagentStopped) {
           backgroundCompletion.resolve();
         }
       },
     });
     try {
-      await runtime.executeTurn("Launch a foreground child that will move to background.");
+      await runtime.executeTurn("Launch an independent child.");
       childMayEmitTool.resolve();
       await Promise.race([
         backgroundCompletion.promise,

@@ -34,6 +34,7 @@ export function fixture(config: Partial<ControllerOptions> = {}) {
   let writeFailure = false;
   let prepareGate: Promise<void> | undefined;
   const runtime = (identity: AgentIdentity): CollaborationRuntime => ({
+    hasUnreadMessages: () => false,
     async installMailbox() {
       events.push(`sink:${identity.path}`);
     },

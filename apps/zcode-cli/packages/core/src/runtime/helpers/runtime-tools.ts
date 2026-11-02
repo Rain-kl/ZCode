@@ -58,6 +58,8 @@ function registerRuntimeBuiltInTools(
   const nodeReplEnabled = runtime.config.runtimeFeatures?.nodeRepl === true;
   const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   registerBuiltInTools(runtime.registry, {
+    // FORK(codex-collaboration): 实际绑定在场才注册六工具。
+    includeCollaboration: runtime.collaboration !== undefined,
     ...(options.silentDuplicateWarnings ? { silentDuplicateWarnings: true } : {}),
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
@@ -188,8 +190,8 @@ function createRuntimeToolExecutor(
     embeddedSearchBackend: runtime.config.embeddedSearchBackend,
     nativeSearchEnhancementsEnabled: runtime.config.nativeSearchEnhancementsEnabled,
     skillPort: deps.skillPort,
-    subagentPort: runtime.subagentPort,
-    coordinatorResponsePort: deps.coordinatorResponsePort,
+    // FORK(codex-collaboration): 使用当前 caller 绑定的同一根树端口。
+    collaborationPort: runtime.collaboration?.port,
     workflowSubmitPort: deps.workflowSubmitPort,
     workflowEscalatePort: deps.workflowEscalatePort,
     artifactStore: deps.artifactStore,

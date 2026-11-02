@@ -3,8 +3,9 @@ import { type RuntimeAttachmentEntry, type RuntimeMessageEntry } from "../agent/
 import type { AgentDefinitionsSnapshot } from "./definitions.js";
 import { formatAgentProfileForPrompt } from "./profile.js";
 
-const INITIAL_HEADING = "Available agent types for the Agent tool:";
-const ADDED_HEADING = "New agent types are now available for the Agent tool:";
+// FORK(codex-collaboration): 当前 profile 公告只指导新模型工具。
+const INITIAL_HEADING = "Available agent types for the spawn_agent tool:";
+const ADDED_HEADING = "New agent types are now available for the spawn_agent tool:";
 const REMOVED_HEADING = "The following agent types are no longer available:";
 const AMBIENT_CONTEXT_NOTE =
   "This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.";
@@ -17,7 +18,8 @@ export function collectAgentListingAttachment(input: {
   tools: readonly { name: string }[];
   embeddedSearchEnabled?: boolean;
 }): RuntimeAttachmentEntry | undefined {
-  if (!input.tools.some((tool) => tool.name === "Agent")) return undefined;
+  // FORK(codex-collaboration): 深度/权限关闭 spawn 时不得承诺可派生能力。
+  if (!input.tools.some((tool) => tool.name === "spawn_agent")) return undefined;
   const announced = new Set<string>();
   for (const entry of input.entries) {
     if (entry.kind !== "attachment" || entry.metadata.source !== "agent_listing_delta") continue;

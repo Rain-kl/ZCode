@@ -213,7 +213,44 @@ export async function runRegularTurnLoop(
     }
     // （2026-09-12）：原"回合开始注入 plugin_ui_state reminder"已删除，插件给模型的信息
     // 一律走 ui/update-model-context。
-    const providerEntries = [...state.turnRequestState.entries];
+    // FORK(codex-collaboration): 邮箱只在安全模型边界交付，角色由本轮实际工具能力渲染。
+    const collaboration = await this.collaboration?.beforeModel(tools);
+    if (collaboration?.entries.length) {
+      const known = new Set(
+        state.turnRequestState.entries
+          .map((entry) => entry.metadata?.collaboration?.messageId)
+          .filter(Boolean),
+      );
+      const incoming = collaboration.entries.filter(
+        (entry) => !known.has(entry.metadata?.collaboration?.messageId),
+      );
+      state.turnRequestState.entries = [...state.turnRequestState.entries, ...incoming];
+    }
+    const firstSystem = state.turnRequestState.entries.findIndex(
+      (entry) => entry.kind !== "attachment" && entry.message.role === "system",
+    );
+    const providerEntries = collaboration
+      ? firstSystem >= 0
+        ? state.turnRequestState.entries.map((entry, index) => {
+            if (index !== firstSystem || entry.kind === "attachment") return entry;
+            const original = entry.message.content;
+            const content =
+              typeof original === "string"
+                ? `${original}\n\n${collaboration.role}`
+                : [...original, { type: "text" as const, text: collaboration.role }];
+            return { ...entry, message: { ...entry.message, content } };
+          })
+        : [
+            {
+              message: {
+                role: "system" as const,
+                content: collaboration.role,
+                cacheControl: { type: "ephemeral" as const },
+              },
+            },
+            ...state.turnRequestState.entries,
+          ]
+      : state.turnRequestState.entries;
     // Dream 可能在同一 turn 的首个模型请求期间完成；每次 attachment collection 都检查，
     // 才能把一次性更新放进紧随其后的模型请求，而不是延迟到下一次用户输入。
     const memoryUpdate = outputTokenRecoveryActive

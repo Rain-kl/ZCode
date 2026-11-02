@@ -13,7 +13,6 @@ import type {
   SessionEvent,
   SessionEventSink,
   SkillLoadOutcome,
-  SubagentPort,
   TodoItem,
   SessionGoal,
   McpConnectionSnapshot,
@@ -43,7 +42,6 @@ import type {
   ActiveTurnKind,
   ActiveTurnSteeringState,
   AgentRuntimeConfig,
-  AgentRuntimeDeps,
   ContextUsageCategory,
   ContextUsageConfidence,
   ContextUsageMetric,
@@ -53,7 +51,6 @@ import type {
   ContinueActiveTargetLoopOptions,
   DrainedPendingInputDiagnostics,
   ForegroundPromotionLeaseMode,
-  EnqueueSubagentMessageInput,
   ResumeSessionOptions,
   ResumeSessionResult,
   RunModelTextRequestOptions,
@@ -170,7 +167,6 @@ export interface AgentRuntimeCoreMethods {
     toolName?: string;
     traceContext: TraceContext;
   }): void;
-  enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;
   drainPendingRuntimeCommandsForActiveLoop(): Promise<{
     backgroundSubagentResultConsumed: boolean;
     workflowResultConsumed: boolean;
@@ -250,7 +246,6 @@ export interface AgentRuntimeCoreMethods {
   ): Promise<boolean>;
   /** 清空全部排队输入（clearQueueAndSend 执行件），返回丢弃条数。 */
   clearAllPendingInputs(traceContext: TraceContext): Promise<number>;
-  createDefaultSubagentPort(deps: AgentRuntimeDeps): SubagentPort | undefined;
   getTools(model?: Model): ModelToolContract[];
   invalidateToolCache(): void;
   getToolRegistry(): ToolRegistry;

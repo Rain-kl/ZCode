@@ -29,7 +29,7 @@ describe("buildRecorderRuntimeConfig", () => {
     equal(runtimeConfig.modelStreaming, "off");
     deepStrictEqual(runtimeConfig.mcp, { enabled: false });
     deepStrictEqual(runtimeConfig.memory, { enabled: false });
-    deepStrictEqual(runtimeConfig.subagents, { enabled: false });
+    deepStrictEqual(runtimeConfig.subagents, undefined);
     deepStrictEqual(runtimeConfig.titleGeneration, { enabled: false });
   });
 
@@ -53,13 +53,13 @@ describe("buildRecorderRuntimeConfig", () => {
     equal(runtimeConfig.systemPrompt, "Custom prompt from fixture.");
   });
 
-  it("allows fixture runtime config to enable subagents for tool-call trajectory cases", () => {
+  it("preserves normalized collaboration settings for tool-call trajectory cases", () => {
     const runtimeConfig = buildRecorderRuntimeConfig({
       fixture: {
         name: "subagents",
         runtimeConfig: {
           subagents: {
-            enabled: true,
+            delegationMode: "explicit",
             maxTurns: 1,
           },
         },
@@ -70,7 +70,7 @@ describe("buildRecorderRuntimeConfig", () => {
     });
 
     deepStrictEqual(runtimeConfig.subagents, {
-      enabled: true,
+      delegationMode: "explicit",
       maxTurns: 1,
     });
   });

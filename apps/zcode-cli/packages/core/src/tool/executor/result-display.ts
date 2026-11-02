@@ -1,14 +1,10 @@
 import {
-  RESPOND_TO_COORDINATOR_TOOL_NAME,
-  RespondToCoordinatorOutputSchema,
   MCP_TOOL_DISPLAY_MAX_DESCRIPTION_CHARS,
   MCP_TOOL_DISPLAY_MAX_NAME_CHARS,
   CUA_TARGET_APP_DISPLAY_META_KEY,
   cuaTargetAppDisplaySchema,
   nodeReplCuaAppDisplaySchema,
   ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY,
-  SEND_MESSAGE_TOOL_NAME,
-  SendMessageOutputSchema,
   TASK_OUTPUT_DISPLAY_MAX_OUTPUT_CHARS,
   TASK_OUTPUT_DISPLAY_MAX_STATUS_CHARS,
   TASK_OUTPUT_TOOL_NAME,
@@ -43,7 +39,6 @@ import {
 
 const MAX_DISPLAY_DIFF_HUNKS = 8;
 const MAX_DISPLAY_DIFF_LINES = 160;
-const MAX_SEND_MESSAGE_DISPLAY_FIELD_BYTES = 4 * 1024;
 const MAX_TASK_STOP_DISPLAY_FIELD_BYTES = 16 * 1024;
 export const MAX_NODE_REPL_DISPLAY_IMAGE_BASE64_BYTES = 200 * 1024;
 const MAX_NODE_REPL_DISPLAY_IMAGES = 2;
@@ -201,26 +196,6 @@ export function createToolResultDisplay(
     return createMcpToolDisplay(options.mcp, output);
   }
 
-  if (toolName === SEND_MESSAGE_TOOL_NAME) {
-    const parsed = SendMessageOutputSchema.safeParse(output);
-    if (!parsed.success) return undefined;
-    // display 不经过 tool result budget，必须在进入实时事件和持久化 metadata 前单独限长。
-    const error =
-      parsed.data.error === undefined
-        ? undefined
-        : boundDisplayText(parsed.data.error, MAX_SEND_MESSAGE_DISPLAY_FIELD_BYTES).value;
-    const message =
-      parsed.data.message === undefined
-        ? undefined
-        : boundDisplayText(parsed.data.message, MAX_SEND_MESSAGE_DISPLAY_FIELD_BYTES).value;
-    return {
-      kind: "local_agent_message",
-      status: parsed.data.status,
-      ...(error !== undefined ? { error } : {}),
-      ...(message !== undefined ? { message } : {}),
-    };
-  }
-
   if (toolName === TASK_STOP_TOOL_NAME) {
     const parsed = TaskStopOutputSchema.safeParse(output);
     if (!parsed.success) return undefined;
@@ -261,15 +236,6 @@ export function createToolResultDisplay(
       ...(taskStatus ? { taskStatus } : {}),
       ...(hasOutput ? { output: fullOutput.slice(0, TASK_OUTPUT_DISPLAY_MAX_OUTPUT_CHARS) } : {}),
       ...(truncated ? { truncated: true } : {}),
-    };
-  }
-
-  if (toolName === RESPOND_TO_COORDINATOR_TOOL_NAME) {
-    const parsed = RespondToCoordinatorOutputSchema.safeParse(output);
-    if (!parsed.success) return undefined;
-    return {
-      kind: "respond_to_coordinator",
-      status: parsed.data.status,
     };
   }
 

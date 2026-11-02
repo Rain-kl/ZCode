@@ -12,7 +12,6 @@ import type {
   AgentTelemetryCausation,
   BackgroundResultOriginMeta,
   ContextUsageBreakdownItem,
-  CoordinatorResponsePort,
   ForkCommitBundle,
   ForkChildSessionMetadata,
   ModelRequestAuth,
@@ -86,7 +85,6 @@ import type {
   SkillPort,
   McpPort,
   McpServerConfig,
-  SubagentPort,
   ToolArtifactStorePort,
   ToolCallId,
   WorkflowPort,
@@ -154,13 +152,8 @@ export interface AgentRuntimeConfig {
     maxTotalAgents?: number;
     maxDepth?: number;
     maxLoadedChildren?: number;
-    enabled?: boolean;
-    // foreground subagent 没有任何 child 事件的最大静默时间；默认对齐模型流 idle timeout。
-    inactivityTimeoutMs?: number;
-    autoBackgroundMs?: number;
     backgroundBashMaxMs?: number;
     maxTurns?: number;
-    outputRootDir?: string;
     profiles?: readonly AgentProfile[];
     builtInModelSelectionOverrides?: Partial<Record<"general-purpose" | "Explore", ModelSelection>>;
   };
@@ -318,18 +311,6 @@ export interface PendingModelChangeTimeline {
   toModelLabel: string;
 }
 
-export interface EnqueueSubagentMessageInput {
-  responseId: string;
-  agentId: string;
-  agentType: string;
-  childSessionId: SessionId;
-  childToolCallId: string;
-  parentToolCallId?: string;
-  summary: string;
-  message: string;
-  traceContext: TraceContext;
-}
-
 export interface MemoryRuntimeConfig {
   cliStorageRoot?: string;
   enabled?: boolean;
@@ -341,6 +322,12 @@ export interface MemoryRuntimeConfig {
 }
 
 export interface AgentRuntimeDeps {
+  // FORK(codex-collaboration): child 只绑定同一根控制器，不创建独立调度池。
+  createCollaborationBinding?: (
+    runtime: import("./internal.js").AgentRuntimeInternal,
+  ) =>
+    | import("../fork/codex-collaboration-runtime/contract.js").RuntimeCollaborationBinding
+    | undefined;
   /** 只读目录入口；必须同步读取内存，不在请求收集阶段进行 I/O。 */
   getAgentDefinitions?: GetAgentDefinitions;
   /** 新父上下文读取一次；子执行不得继承此加载器。 */
@@ -374,8 +361,6 @@ export interface AgentRuntimeDeps {
   pdfDocumentPort?: PdfDocumentPort;
   skillPort?: SkillPort;
   mcpPort?: McpPort;
-  subagentPort?: SubagentPort;
-  coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果的端口；存在即作为 submit_result 工具的注册门。 */
   workflowSubmitPort?: WorkflowSubmitPort;
   /**
@@ -807,7 +792,7 @@ export interface ExecuteToolsOptions {
   signal?: AbortSignal;
   traceContext?: TraceContext;
   /** 仅透传给当前 turn 同步等待的 Agent child。 */
-  subagentModelOverride?: import("@zcode/contracts").SubagentRunOptions["modelOverride"];
+  subagentModelOverride?: import("@zcode/contracts").ChildModelExecutionOverride;
   model?: Model;
   onBatchStart?: (toolCallIds: string[]) => Promise<void>;
 }
