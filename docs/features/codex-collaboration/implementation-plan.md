@@ -99,7 +99,9 @@ list_agents(path_prefix?)
 wait_agent(timeout_ms?)
 ```
 
-默认工具面只宣传新工具；旧 Agent/Task/SendMessage 只做兼容入口，保留历史识别。
+默认工具面全面使用新工具。按2026-11-02用户指示，删除旧 Agent/Task/SendMessage/
+RespondToCoordinator 的注册、执行、搜索、别名、旧提示词与兼容调用；不因旧端口注入恢复旧工具。
+TaskOutput/TaskStop 仅保留非子代理功能。更新内置技能/示例及移除守卫，测试旧入口不可调用。
 ToolSearch、权限、结果限额和 hook 必须走现有链。新名字同步 fork/tool-modes。
 模型返回对齐 Codex：spawn `{task_name}`，消息成功空文本，interrupt `{previous_status}`，
 list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内部身份留在事件。
@@ -112,7 +114,8 @@ list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内�
   ZCode 角色合同无 developer，将宿主角色片段放 system section；协作消息在唯一 provider
   投影转换为 assistant envelope，并保存可冷恢复的私有来源，不扩大全局消息角色协议。
   接受须在持久化、sink 安装和任务 admission 后；投递须 ACK 才出箱，禁用 20×10ms 轮询补偿。
-- [ ] 保留旧会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
+- [ ] 验证新工具会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
+  清理旧 runner/独立 registry 子代理写入与消息执行路径，不新增旧历史兼容，不删除用户数据。
 - [ ] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
   独立规范/质量审查均通过。
 

@@ -30,6 +30,7 @@
 - **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
 - **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
+- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
 
 ### 持久协作控制器（2026-11-02）
 

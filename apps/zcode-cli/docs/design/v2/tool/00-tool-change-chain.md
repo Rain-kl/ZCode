@@ -8,8 +8,10 @@ send_message、followup_task、interrupt_agent、list_agents、wait_agent，完�
 
 实施时必须覆盖：模型可见 schema/描述和角色提示 → ToolSearch/权限/执行器 →
 根 runtime 协作控制器的任务 admission、邮箱和独立取消信号 → 子 session 持久化 →
-有序事件 → V4/TUI/Desktop/mobile 投影。旧 Agent/SendMessage 的兼容入口只能
-转发到同一所有者；TaskOutput/TaskStop 的 Bash/workflow 合同不变。
+有序事件 → V4/TUI/Desktop/mobile 投影。按2026-11-02用户新指示，废弃旧 Agent/Task/
+SendMessage/RespondToCoordinator，不保留注册、执行、隐藏兼容、搜索或别名入口；
+同步清理旧提示词、技能与示例，增加移除守卫。TaskOutput/TaskStop 仅保留 Bash/workflow
+等非子代理合同。本文后续旧入口说明属于迁移前事实，落地时须改成六工具的实际链路。
 重点验收 spawn 接受前后取消、wait 被 steer 唤醒而 child 继续、API 预算耗尽后的
 同身份 followup，以及已执行工具和已接受 spawn 在流恢复中不重复。
 
@@ -1837,3 +1839,12 @@ MCP isError 和历史 hydration 不触发创建。工具执行、权限、原始
 ### 文档插件多窗口视图修复（2026-10-16）
 
 MCP app-only report_view 增加可选 viewId，release_view 释放指定窗口；模型 get_view 可选 viewId，缺省且存在多个上报窗口时返回歧义与清单。状态唯一归属 DocumentOwner，不由页面决定其他窗口的视图；旧客户端缺省 viewId 仍走 legacy 槽。show_in_viewer 保持专用 surface 路由并明确工具描述。导入仍为 app-only workspace 副作用；串行 admission、10 分钟未活动过期与部分文件清扫归 importer，完成副本不清理。覆盖 schema 到真实 MCP/AppBridge 的多窗口回归。
+# Fork：Codex 协作六工具（Task3a）
+
+schema/调用方端口（contracts fork 公共入口）→ 六个 ToolEntry（core fork）→ 显式注册选项
+→ 既有权限/hook/executor/结果预算 → registry.toContracts → ToolSearch catalog。
+Task3b 完成实际 runtime 接线。最终全面使用六工具，删除旧 Agent/Task/SendMessage/
+RespondToCoordinator 的 provider 声明、搜索与直接执行；不保留隐藏工具、旧端口开关或别名转发。
+TaskOutput/TaskStop 的子代理分支删除，后台命令/工作流用途保留并验证；旧调用不新增兼容恢复。
+caller 与 toolCallId 来自执行上下文；spawn 的私有身份通过内部生命周期持久化，模型仅见 task_name。
+完整合同与状态映射：[tools-contract](../../../../../../../docs/features/codex-collaboration/tools-contract.md)。

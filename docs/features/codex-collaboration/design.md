@@ -228,15 +228,22 @@ deliver 必须确认消息所有权转移后才出箱；旧 runner 终态清理�
 因此不能继续把它当作邮箱所有者。旧 branchGeneration 继续保护 rewind，独立 run generation
 保护同一代理后续轮次，二者不能替代。
 
-## 4. 兼容与落地边界
+## 4. 全量切换与落地边界
 
 - fork 新能力集中到 core/adapters 各自的 `src/fork/codex-collaboration/`，
   新模块先声明 managed 架构边界与 contract；避免在既有大 runner 中继续堆分支。
 - 契约/schema 在 `@zcode/contracts` 公共入口导出；计时和 API IO 留在 adapters，
   生命周期 admission 在 core app 层；不让纯领域规则依赖 timer、文件或 provider SDK。
-- 旧 Agent/Task、SendMessage、RespondToCoordinator 仅用于历史识别和兼容调用适配，
-  统一接入新所有者。旧 SendMessage 仍按旧合同允许唤醒终态代理；新 send_message 不唤醒。
-  TaskOutput/TaskStop 对 Bash/workflow 的现有功能不变。
+- 2026-11-02 用户明确取消旧工具兼容要求。废弃旧子代理工具 Agent/Task、SendMessage、
+  RespondToCoordinator，移除注册、执行入口、别名转发、工具搜索、权限名映射和提示词中的旧用法；
+  全面使用六个新工具，不设置隐藏兼容入口，也不因注入旧端口而恢复旧模型工具。
+  对旧工具的直接调用明确报告工具不存在，不静默转成新工具。
+- TaskOutput/TaskStop 保留 Bash/workflow 等非子代理用途，删除其子代理查询/停止分支。
+  旧子代理 runner、registry 写入和消息执行路径在新 owner 接线后清理，不留下双轨调度。
+  现有会话与日志数据不删除、不迁移；不为旧调用增加专用恢复或呈现适配。
+  新工具的会话恢复、工具结果配对和下钻仍必须完整验证。
+- 同步移除示例、内置技能和当前功能文档中的旧工具指导，并通过 fork 移除守卫与工具目录
+  契约测试防止上游同步重新引入旧入口。守卫针对注册和调用行为，不能只检查旧文件是否存在。
 - ZCode Protocol V4、TUI 和 desktop 的子会话下钻、usage、权限请求和文件 checkpoint
   继续使用同一 childSessionId；新增状态字段经过 schema 校验后投影。
   desktop continuous 与 mobile replayable 都消费同一有序事件，恢复序号不能倒退。
