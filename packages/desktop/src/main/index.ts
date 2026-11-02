@@ -1,6 +1,8 @@
 import { subscribeBeforeRequest } from "./observeBeforeRequest.js";
 // FORK(local-mode): 业务启动前统一阻断未审核的上游连接。
 import "@zcode/shared/upstream-network-policy/node";
+// FORK(local-mode): 身份同步必须遵守与 ARMS 初始化相同的开关，否则会阻断首窗创建。
+import { FORK_LOCAL_MODE } from "@zcode/shared";
 import { installRequestSecurityDiagnostics } from "./request-security-edition/index.js";
 import { createLocalTtftExporter } from "./localTtftExporter.js";
 /* eslint-disable max-lines */
@@ -906,6 +908,8 @@ const rendererActionTraceBroker = createRendererActionTraceBroker({
 });
 let disposeRendererActionTraceIpc: (() => void) | undefined;
 const armsUserIdentitySync = createArmsUserIdentitySync({
+  // FORK(local-mode): 保留 refresh 调用点，但不能访问被明确禁用的 SDK。
+  enabled: !FORK_LOCAL_MODE,
   deviceMid,
   setUser: (user) => armsRum.setConfig("user", user),
 });

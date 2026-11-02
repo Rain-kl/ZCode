@@ -43,3 +43,9 @@
 - 上游新增的 Coding Plan 云账号/额度 UI、服务和 Account Config 同步用例不适用于此产品路径，已从新增测试集中清理；保留 App Usage、本地时间轴和通用 provider 测试。
 - 上游新增的账号选择迁移与 Start Plan 选择用例同样依赖已隐藏的智谱 Coding Plan provider，移除这两组用例，并调整 provider facade/runtime 断言以覆盖本地模式的隐藏行为。
 - 验证：受影响测试组 358/358 通过；静态检查与最终全量 Vitest 状态写入同步提交说明。
+
+## 2026-11-02：补齐禁用 ARMS 后的身份同步边界
+
+完成协作功能桌面验收时，启动堆栈证实 Main 在 local-mode 跳过 SDK init 后仍 setConfig(user)，
+导致首窗前异常。由 Main 将同一 fork 开关注入身份同步，禁用时不写 SDK；去重事实只在写入成功后更新。
+两例测试先红后绿，既有 init/browser 禁用测试保留。该修改不启用任何遥测连接。

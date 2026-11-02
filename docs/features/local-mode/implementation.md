@@ -73,3 +73,14 @@
 - 未逐项点击验证：状态项在 conflict/error 两态下的菜单项（「处理冲突…」「重试同步」）连线已实现，仅有未配置态的实测证据。
 - 远端包内 `provider_config.json` 的 `apiKey` 仍是明文（设计 12.1 已确认接受）；上传前加密是后续可选项。
 - 未做上传前加密、未做增量合并、未同步 MCP/skills/agents（设计第 2 节非目标）。
+
+## 2026-11-02：禁用遥测的启动修复
+
+桌面隔离回放取到 `Config not initialized`：local-mode 跳过 ARMS 初始化，但 Main
+首次 `armsUserIdentitySync.refresh()` 仍调用 `armsRum.setConfig`，首窗创建链因此提前拒绝。
+修复在 Main 注入同一个 `!FORK_LOCAL_MODE`，身份同步在禁用时不访问 SDK；成功写入后才记去重，
+避免失败写入阻止后续重试。没有恢复遥测或绕过上游网络门禁。
+
+先更新设计，再补两例失败回归（禁用不调用 SDK、写入失败后重试）；实现后
+`armsUserIdentity`、`appARMSBootstrap`、`armsBrowserInit` 定向测试通过。桌面 GUI 回放结果
+随 codex-collaboration 最终验收记录，不能用单测代替 GUI 通过。
