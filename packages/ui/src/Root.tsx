@@ -24,11 +24,7 @@ import {
   // FORK(local-mode): 本地模式开关；见 FEATURES.md 的 local-mode 条目
   isCloudAccountSurfaceEnabled,
 } from "@zcode/shared";
-// FORK(local-mode): 首屏 WebDAV 引导与冲突弹窗
-import {
-  FirstRunWebdavScreen,
-  useForkWebdavFirstRunGate,
-} from "@/fork/local-mode/FirstRunWebdavScreen.js";
+// FORK(local-mode): 可选同步不能阻塞首屏；仅保留已有同步冲突处理，见 FEATURES.md 的 local-mode 条目。
 import { ForkWebdavConflictDialog } from "@/fork/local-mode/ForkWebdavConflictDialog.js";
 import { TooltipProvider } from "@/components/ui/tooltip.js";
 import { Button } from "@/components/ui/button.js";
@@ -1255,9 +1251,6 @@ function RootInner({
     setWelcomeScreenOpenReason("provider-request");
   }, [loginEntryRequest]);
 
-  // FORK(local-mode): 未配置 WebDAV 且未跳过时，首屏显示 WebDAV 引导
-  const forkFirstRunGate = useForkWebdavFirstRunGate();
-
   // 登录入口不依赖会话；保持引用稳定，避免草稿更新穿透侧栏 memo。
   const handleOpenLoginEntry = useCallback(() => {
     // FORK(local-mode): 本地模式不开放云账号登录入口
@@ -1516,16 +1509,6 @@ function RootInner({
             之前阻塞恢复 tab / 初始 workspace 注入时重新渲染纯文字“加载中...”，所以启动被拆成两套 loading。
             这里复用同一套 SVG 启动画面，只把文案保留到 aria-label，保证视觉始终连续且不牺牲可访问性。 */}
         <RootStartupLoading label={loadingLabel} />
-      </RootShell>
-    );
-  }
-
-  // FORK(local-mode): 本地模式首屏显示 WebDAV 引导（可跳过）
-  if (forkFirstRunGate.visible) {
-    return (
-      <RootShell>
-        {rootModelSelectionErrorNode}
-        <FirstRunWebdavScreen onDone={forkFirstRunGate.dismiss} />
       </RootShell>
     );
   }

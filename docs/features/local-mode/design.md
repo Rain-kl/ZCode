@@ -19,7 +19,7 @@
 1. 移除云账号登录体系的所有入口（首屏引导、登录页、手动登录、账号状态展示），并停用后台账号链路（静默会话恢复、token 刷新、账号 provider 下发）。**入口屏蔽，不删除代码**。
 2. 移除模型设置里预置的智谱提供商（Z.ai / BigModel 预设卡片与 Coding Plan 系列行），仅保留自定义提供商路径。
 3. 移除左下角的「连接使用 / 升级」入口。
-4. 首屏登录替换为「使用 WebDAV 登录」（可跳过）；登录后配置同步到远端；**设置 → 基础设置 → 同步**里管理 WebDAV（开启自动同步、云端备份、云端恢复、备份列表的恢复与删除）；已配置时左下角显示「WebDAV 已连接」。远端以**时间命名的 zip 备份包**保存历史，可恢复任意一个节点。
+4. 首次启动直接进入正常应用，不显示 WebDAV 配置引导；WebDAV 为可选能力，用户主动配置后同步到远端；**设置 → 基础设置 → 同步**里管理 WebDAV（开启自动同步、云端备份、云端恢复、备份列表的恢复与删除）；已配置时左下角显示「WebDAV 已连接」。远端以**时间命名的 zip 备份包**保存历史，可恢复任意一个节点。
 
 ## 2. 非目标
 
@@ -48,7 +48,7 @@
 | 位置                                       | 内容                                                                                               | 说明                                  |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | `packages/shared/src/fork/flags.ts`        | 集中开关常量（`FORK_LOCAL_MODE` 等）                                                               | 新文件；UI 与 host 共用，避免两处漂移 |
-| `packages/ui/src/fork/local-mode/**`       | 首屏 WebDAV 登录卡、设置页「同步」面板、冲突弹窗、左下角状态项、`useForkWebdav` hook、入口屏蔽判定 | 新目录；React 实现                    |
+| `packages/ui/src/fork/local-mode/**`       | 设置页「同步」面板、冲突弹窗、左下角状态项、`useForkWebdav` hook、入口屏蔽判定 | 新目录；React 实现                    |
 | `packages/desktop/src/host/fork/webdav/**` | WebDAV 客户端、zip 打包/解包、备份与恢复引擎、状态文件读写、服务接口与描述符                       | 新目录；host 侧实现                   |
 | 上游接线                                   | 15 个文件，逐处 `FORK(local-mode)` 标记                                                            | 见第 7 节                             |
 
@@ -64,7 +64,7 @@
 | 入口                       | 位置                                                                           | 屏蔽方式                                                           |
 | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | 首屏首次引导（要求登录）   | `packages/ui/src/lib/rootStartupGate.ts:43`                                    | `shouldEnableProviderAvailabilityLoginEntryGuard()` 返回 `false`   |
-| 登录页渲染                 | `packages/ui/src/Root.tsx:982`                                                 | 开关开启时改渲染 fork 首屏/不渲染 `WelcomeScreen`                  |
+| 登录页渲染                 | `packages/ui/src/Root.tsx:982`                                                 | 开关开启时不渲染 `WelcomeScreen`，不以 WebDAV 替代                  |
 | 手动登录入口               | `Root.tsx:870`、`:962`、`:1059`                                                | 开关开启时不注入 `onLogin` 回调                                    |
 | 侧栏登录/登出菜单项        | `packages/ui/src/WorkspaceSidebarFooter.tsx:352`                               | 开关开启时不渲染这两个菜单项                                       |
 | 会话过期提示               | `Root.tsx:205`、`packages/ui/src/root/useRootOAuthEffects.ts:203`              | 开关开启时不消费过期标记                                           |
@@ -182,7 +182,7 @@ WebDAV 引擎（`packages/desktop/src/host/fork/webdav/**`）不含任何业务�
 
 - 恢复流程：选择包 → 确认框（说明覆盖范围 + 恢复前自动备份本地）→ 应用 → 刷新状态与设置视图。
 - 删除流程：确认框 → **直接删除远端对象**（不做本地回收站；已与用户确认，保持简单可预期）→ 刷新列表。
-- 未配置 WebDAV 时，该栏目显示配置表单（URL / 用户名 / 密码 / 远端目录 / 测试连接 / 登录），与首屏登录卡共用同一组件。
+- 未配置 WebDAV 时，该栏目显示配置表单（URL / 用户名 / 密码 / 远端目录 / 测试连接 / 登录），使用设置页专用连接表单，不显示跳过按钮。
 
 ### 6.7 左下角状态项
 
@@ -201,7 +201,7 @@ WebDAV 引擎（`packages/desktop/src/host/fork/webdav/**`）不含任何业务�
 | 文件                                                           | 位置                                                       | 改动                                                                                            |
 | -------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages/ui/src/lib/rootStartupGate.ts`                       | `:43`                                                      | 返回 fork 开关                                                                                  |
-| `packages/ui/src/Root.tsx`                                     | `:205`、`:870`、`:962`、`:982`、`:1059` + 冲突弹窗挂载     | 首屏替换、屏蔽手动登录、挂载冲突弹窗                                                            |
+| `packages/ui/src/Root.tsx`                                     | `:205`、`:870`、`:962`、`:982`、`:1059` + 冲突弹窗挂载     | 不挂载 WebDAV 首屏、屏蔽手动登录、挂载冲突弹窗                                                            |
 | `packages/ui/src/WorkspaceSidebarFooter.tsx`                   | `:138`、`:346`、`:352`                                     | 隐藏用量/升级/登录项，插入 WebDAV 状态项                                                        |
 | `packages/shared/src/index.ts`                                 | 公开入口                                                   | 导出 `fork/flags.js`（UI 与 host 共用开关）                                                     |
 | `packages/ui/src/lib/settingsNavigation.ts`                    | `SettingsSectionId` 联合类型                               | 新增 `configSync`                                                                               |
@@ -284,3 +284,30 @@ interface IForkWebdavService {
 5. **首次启动空状态**：跳过且未配置任何提供商时，依赖上游「无可用提供商」的既有表现；实现时实测该空态是否可理解，不可理解则在 fork 首屏加提示（不改上游）。
 6. **`provider_config.json` 外部写入**：依赖既有 1s 轮询传播；若上游取消该轮询，fork 侧补一次显式重载（按标记点处理）。
 7. **恢复与删除的破坏性**：恢复是整份覆盖，已通过「恢复前自动备份 + 确认框」降低风险，不做逐项合并；删除是**直接删除远端对象**（仅确认框，无本地回收站——已与用户确认）。
+
+## 2026-11-03：移除首次启动 WebDAV 配置引导
+
+用户要求：首次打开应用不再要求配置 WebDAV。变更层级为 presentation/validation，仅移除 UI 启动门禁，不改同步服务或持久化协议。
+
+| 场景/状态 | 入口与所有者 | 预期与提交副作用 | 验证 |
+| --- | --- | --- | --- |
+| 全新本地配置，未配置 WebDAV，firstRunSkipped 为 false/缺省 | Root 正常启动分支 | 不显示 WebDAV 引导、不写 skip、不调用 configure | Root 接线契约 + 干净 HOME 桌面 E2E |
+| 已配置、已跳过或断开后重启 | 同一 Root 分支 | WebDAV 状态不参与首屏路由；已有其他引导不变 | 接线契约，不新增状态分支 |
+| 主动打开设置 → 同步 | ConfigSyncPanel / WebdavConnectionForm；host 服务拥有配置 | 连接测试、配置、备份恢复仍经原 hook；表单不再有首次引导专用 skip | 渲染回归 + 桌面 E2E |
+| 已配置且冲突/失败 | host 引擎 / ForkWebdavConflictDialog / footer | 自动同步、冲突处理、错误展示和状态项保持原样 | 保留挂载契约与既有服务测试 |
+| 普通 Web/手机/远控缺少服务 | 同一 Root / 原 capability hook | 不依赖 WebDAV 服务启动；设置仍显示不支持 | 入口缺席契约；无协议改动 |
+
+删除专用首屏组件及 hook、Root import/hook/提前返回分支、表单的 onSkip 参数与按钮。
+不引入永远 false 的开关，不在启动时调用 updateSettings({ firstRunSkipped: true }) 掩盖入口。
+历史 firstRunSkipped 服务字段/状态文件保持兼容，已有凭据与远端数据不迁移、不清理。
+旧首屏翻译键不再被运行时代码引用；两份 locale 当前有无关施工，本次不扩大改动。
+
+```text
+启动 -> Root 原有启动检查 -> 正常应用 / 原有其他引导
+用户打开同步设置 -> useForkWebdav -> 原 host 配置/同步服务 -> 原状态文件/凭据
+已配置同步发生冲突 -> 原状态事件 -> 原冲突弹窗（不受此次移除影响）
+```
+
+移除守卫登记首屏文件缺席、Root 不得重新调用专用门禁且冲突弹窗与设置面板必须保留，
+防止上游合并静默恢复启动阻塞。新桌面 E2E 作为 settings/manual-review/pending 候选，不自动晋升正式套件。
+未执行真实 GUI 或安装包验证时，implementation 必须明确标注，不能用接线断言冒充 E2E 通过。

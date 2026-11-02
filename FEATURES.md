@@ -66,13 +66,13 @@
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。
 
-- **状态**：四期全部实现（2026-09-28）：入口屏蔽、WebDAV 备份内核、设置页「同步」栏目、首屏引导/冲突弹窗/左下角状态项
+- **状态**：四期全部实现（2026-09-28）：入口屏蔽、WebDAV 备份内核、设置页「同步」栏目、冲突弹窗/左下角状态项（首次启动引导已于 2026-11-03 移除）
 - **需求背景**：本项目不接入上游 ZCode 云账号体系，需要把「登录 ZCode 账号」从产品面移除（仅保留自定义提供商），并提供一条用户自管的配置同步通道，便于多机共享界面配置与自定义提供商。
 - **修改内容**：
   1. 屏蔽云账号全部入口（首屏登录引导、登录页、侧栏登录/登出、会话过期与账号断连提示），并停用后台账号链路（启动静默会话恢复、账号 provider 下发与刷新）。入口屏蔽，不删除代码。
   2. 模型设置里不再展示预置的智谱提供商（Z.ai / BigModel 预设卡片与 Coding Plan 系列行）；「添加提供商」的自定义路径与模板保留。
   3. 移除左下角「连接使用 / 升级」入口，该位置改为 WebDAV 连接状态。
-  4. 首屏登录替换为「使用 WebDAV 登录」（可跳过）；远端以**时间命名的 zip 备份包**保存配置历史（`setting.json` 白名单字段 + `provider_config.json`），本地变更防抖 2 分钟后自动上传，保留最近 N 份（默认 20，可配）；双侧都有改动时弹窗询问「用远端最新恢复 / 以本地为准备份 / 稍后」。
+  4. 首次启动直接进入正常应用，WebDAV 按需在设置里配置；远端以**时间命名的 zip 备份包**保存配置历史（`setting.json` 白名单字段 + `provider_config.json`），本地变更防抖 2 分钟后自动上传，保留最近 N 份（默认 20，可配）；双侧都有改动时弹窗询问「用远端最新恢复 / 以本地为准备份 / 稍后」。
   5. 设置 → 基础设置 → 同步：WebDAV 连接配置与状态、开启自动同步、保留份数、云端备份、云端恢复、远端备份包列表（可恢复任意节点、可删除任意包）。
 - **修改文件**：
   - 已实现（第①期）：新增 `packages/shared/src/fork/flags.ts`、`packages/shared/test/forkLocalMode.test.ts`、`docs/features/local-mode/**`、`.agents/notes/local-mode/**`；上游接线 `packages/shared/src/index.ts`、`packages/ui/src/lib/rootStartupGate.ts`、`packages/ui/src/Root.tsx`、`packages/ui/src/WorkspaceSidebarFooter.tsx`、`packages/ui/src/root/useRootOAuthEffects.ts`、`packages/ui/src/root/useAccountConnectionLossNotification.ts`、`packages/ui/src/settings/model-provider-section/constants.ts`、`packages/ui/src/settings/ModelProviderSection.tsx`、`packages/services/src/zcode-agent/zcodeAgentService.ts`（共 9 个上游文件，20 处 `FORK(local-mode)` 标记）。
@@ -83,6 +83,13 @@
 - **实现文档**：`docs/features/local-mode/implementation.md`（文件清单、上游接线 20 个文件/42 处标记、验证证据、与设计的偏差）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件为 `packages/ui/src/lib/rootStartupGate.ts`、`packages/ui/src/WorkspaceSidebarFooter.tsx`、`packages/services/src/usage-stats/usageStatsService.ts`。上游方案允许 provider 空状态触发登录，并开放奖励/登录/登出与 Coding Plan 云额度请求；本 fork 方案隐藏云账号入口并停用云额度链路。保留本 fork 语义，同时合入远控根页 guard、仅在云账号界面启用时显示奖励入口，并保留本地 App Usage 快照。同步中移除上游新增、依赖云账号或 Coding Plan 入口/云额度的用例：`packages/ui/test/modelProviderCodingPlan.test.ts`、`packages/services/test/usageStatsService.test.ts`、`packages/desktop/test/hostRemoteWorkspaceServices.test.ts`、`packages/services/test/usageStatsAccountAccess.test.ts`、`packages/services/test/zcodeAgentService.providerRegistry.test.ts`、`packages/ui/test/accountConnectionLossNotification.test.ts`、`packages/ui/test/rewardsMenuIcon.test.ts`、`packages/ui/test/rootAccountRefreshLifecycle.test.ts`、`packages/ui/test/providerFamilyConnectionVisibility.test.ts`、`packages/provider-node/test/reasoning-level-migration.test.ts`、`packages/provider-node/test/start-plan-selection.test.ts`；更新 `packages/provider/test/facades.test.ts` 与 `packages/services/test/providerRuntime.test.ts`，明确隐藏智谱账号 provider 的选择视图。继续保留 App Usage、本地时间轴及通用 provider 覆盖。
+
+### 移除首次启动 WebDAV 引导（2026-11-03）
+
+- **需求与行为**：首次打开不再被同步配置拦住；删除 Root 的首屏门禁与专用页面，不伪造跳过状态。设置 → 同步、已有自动同步、冲突弹窗与 footer 状态保留。
+- **修改文件与标记**：`packages/ui/src/Root.tsx`（保留冲突导入的 `FORK(local-mode)`）、删除 `fork/local-mode/FirstRunWebdavScreen.tsx`、精简 `WebdavConnectionForm.tsx`，就近回归与 settings 待审 E2E。
+- **移除守卫**：`scripts/fork-removal-rules.mjs` 登记首屏文件缺席、Root 门禁符号缺席与同步/冲突接线保留；历史 firstRunSkipped 继续兼容读取。
+- **文档**：[design](docs/features/local-mode/design.md#2026-11-03移除首次启动-webdav-配置引导)、[implementation](docs/features/local-mode/implementation.md#2026-11-03首次启动不再要求-webdav)。验证状态见 implementation，不宣称未执行的桌面 E2E 已通过。
 
 ### 功能增强：是否注入动态提示词 / skills 清单（2026-09-29）
 

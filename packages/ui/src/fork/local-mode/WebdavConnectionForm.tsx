@@ -1,7 +1,7 @@
 /**
- * WebDAV 连接表单：设置页「同步」栏目与首屏引导共用（设计 6.5「与首屏登录卡共用同一组件」）。
+ * WebDAV 连接表单：仅在用户主动打开设置页「同步」栏目时使用。
  *
- * 只负责表单与连接动作；是否显示跳过按钮由调用方决定。
+ * 只负责表单与连接动作，不参与首次启动门禁。
  */
 import { useState } from "react";
 import { FORK_WEBDAV_DEFAULT_DIRECTORY, type ForkWebdavCredentials } from "@zcode/shared";
@@ -12,10 +12,8 @@ import type { ForkWebdavController } from "@/fork/local-mode/useForkWebdav.js";
 
 export function WebdavConnectionForm({
   controller,
-  onSkip,
 }: {
   controller: ForkWebdavController;
-  onSkip?: () => void;
 }) {
   const { intl } = useZCodeIntl();
   const [form, setForm] = useState<ForkWebdavCredentials>({
@@ -77,11 +75,6 @@ export function WebdavConnectionForm({
         >
           {intl.formatMessage({ id: "settings.configSync.signIn" })}
         </Button>
-        {onSkip ? (
-          <Button type="button" variant="ghost" disabled={controller.busy} onClick={onSkip}>
-            {intl.formatMessage({ id: "settings.configSync.firstRun.skip" })}
-          </Button>
-        ) : null}
       </div>
       {testResult ? <p className="text-ui-base text-foreground-subtle">{testResult}</p> : null}
     </div>

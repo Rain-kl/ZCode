@@ -17,7 +17,7 @@
 | `.../local-snapshot.ts`                                                                   | 18 个白名单字段投影、远端快照应用                                                                                                                                                                                                   |
 | `.../sync-engine.ts`                                                                      | 四分支状态机、去重、保留清理、恢复前备份、`allowUpload` 防抖门                                                                                                                                                                      |
 | `.../service.ts` / `index.ts`                                                             | 装配：远端解析、60s 轮询、2 分钟上传防抖、文件锁（含陈旧锁回收）、状态广播                                                                                                                                                          |
-| `packages/ui/src/fork/local-mode/**`                                                      | `useForkWebdav`（服务访问与订阅）、`WebdavConnectionForm`（面板/首屏共用）、`ConfigSyncPanel`（设置栏目）、`FirstRunWebdavScreen`（首屏 + 门禁 hook）、`ForkWebdavConflictDialog` + `conflictDialogBus`、`ForkWebdavStatusMenuItem` |
+| `packages/ui/src/fork/local-mode/**`                                                      | `useForkWebdav`（服务访问与订阅）、`WebdavConnectionForm`（设置面板）、`ConfigSyncPanel`（设置栏目）、`ForkWebdavConflictDialog` + `conflictDialogBus`、`ForkWebdavStatusMenuItem` |
 | `packages/desktop/test/forkWebdav*.test.ts`、`packages/shared/test/forkLocalMode.test.ts` | 内核单测（zip 往返、假 WebDAV 服务端、状态机全分支、保留清理、锁、白名单投影、开关过滤）                                                                                                                                            |
 
 ## 2. 上游接线点（全部带 `FORK(local-mode)` 标记，共 21 个文件、43 处）
@@ -30,7 +30,7 @@
 | `packages/desktop/src/host/index.ts`                                                                                        | 晚注册点注册服务并 `start()`（注入 settingService / credentialService / 网络 transport / configDir）       |
 | `packages/services/src/zcode-agent/zcodeAgentService.ts`                                                                    | 停账号 provider 下发                                                                                       |
 | `packages/ui/src/lib/rootStartupGate.ts`                                                                                    | 关闭云账号登录启动门禁                                                                                     |
-| `packages/ui/src/Root.tsx`                                                                                                  | 首屏 WebDAV 门禁分支、屏蔽手动登录与会话过期、挂载冲突弹窗                                                 |
+| `packages/ui/src/Root.tsx`                                                                                                  | 移除首屏 WebDAV 门禁、屏蔽手动登录与会话过期、保留冲突弹窗                                                 |
 | `packages/ui/src/WorkspaceSidebarFooter.tsx`                                                                                | 隐藏登录/登出；插入 WebDAV 状态项（升级项在 `WorkspaceSidebarFooterUsageSummary.tsx` 内按开关隐藏）        |
 | `packages/ui/src/root/useRootOAuthEffects.ts`、`useAccountConnectionLossNotification.ts`                                    | 停静默恢复、JWT 失效广播、断连提醒                                                                         |
 | `packages/ui/src/settings/model-provider-section/constants.ts`、`ModelProviderSection.tsx`、`useModelProviderNavigation.ts` | 过滤智谱预置/套餐行、禁用套餐深链、跳过空分组标题                                                          |
@@ -88,3 +88,13 @@
 后续 GUI 启动继续暴露同一根因的 properties 写入口：稳定性、资源、网络配置仍 setConfig。
 三处均在保留本地诊断上下文后，按同一个 `FORK_LOCAL_MODE` 提前返回；分别补启用/禁用合同。
 新增三例先观察到禁用状态仍调用 SDK 的失败，修复后连同身份/init/browser 回归共6文件106例通过。
+
+## 2026-11-03：首次启动不再要求 WebDAV
+
+- Root 移除首屏 import、门禁 hook 与提前返回，删除专用页面。设置连接表单移除仅供首屏使用的 onSkip；保留连接动作及原服务。
+- 状态唯一所有者仍是 host，UI 不伪造 configured/firstRunSkipped，不写凭据或同步基准。
+- `scripts/fork-removal-rules.mjs` 的 local-mode 项登记移除不变量；FEATURES 更新现行行为。
+- 验证计划：先跑新回归观察旧 Root/页面/skip 仍存在导致失败，再执行相关 Root、同步表单回归、类型/Lint/架构/移除守卫。
+- 桌面交互候选：`packages/desktop/test/e2e/settings/manual-review/pending/webdav-optional-startup.test.ts`。
+  干净 HOME 启动不点 WebDAV 跳过，进入应用，再打开同步设置见连接表单；GUI/安装包实际结果待验证后记录。
+- 提交时用户明确要求「不用验证，直接提交」，因此不追加验证；本次不宣称完整门禁或桌面 E2E 已通过。

@@ -93,10 +93,20 @@ export const REGISTRY = [
   },
   {
     featureId: "local-mode",
-    absentFiles: [],
+    absentFiles: [
+      {
+        path: "packages/ui/src/fork/local-mode/FirstRunWebdavScreen.tsx",
+        reason: "首次启动不再要求 WebDAV，禁止恢复专用首屏与门禁 hook",
+      },
+    ],
     absentPatterns: [],
     requiredFiles: [],
     absentPatternsInFile: [
+      {
+        path: "packages/ui/src/Root.tsx",
+        pattern: /\bFirstRunWebdavScreen\b|\buseForkWebdavFirstRunGate\b|\bforkFirstRunGate\b/,
+        reason: "可选的 WebDAV 配置不能替换正常首屏或参与启动路由",
+      },
       {
         path: "packages/ui/src/Root.tsx",
         pattern: /<MarketingTouchProvider\b/,
@@ -104,6 +114,16 @@ export const REGISTRY = [
       },
     ],
     requiredPatterns: [
+      {
+        path: "packages/ui/src/Root.tsx",
+        pattern: /<ForkWebdavConflictDialog\s*\/>/,
+        reason: "移除首屏不得同时移除已配置同步的冲突处理",
+      },
+      {
+        path: "packages/ui/src/SettingsPage.tsx",
+        pattern: /<ConfigSyncPanel\b/,
+        reason: "同步仍可由用户在设置中主动配置",
+      },
       {
         path: "packages/services/src/node.ts",
         pattern:
