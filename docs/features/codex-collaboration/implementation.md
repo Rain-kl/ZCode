@@ -283,3 +283,10 @@ start在清理前abort独立signal，复合错误通过带阶段上下文的Coll
 RED：9种损坏状态/generation组合及2个复合失败用例全部失败（共11例）；GREEN：两文件47/47通过。
 回归明确断言没有discard历史、第二次release使用同一真实handle、abort已发生、flush先cancel再release。
 专项类型、架构与lint验证记录随修正提交；未改Task3/runtime或桌面E2E。
+
+### Task 2 spec rereview：重试卸载完成投影
+
+flush 的释放重试曾只删除 pending 标记，仍把已释放句柄留在 loaded，导致list残留且followup复用失效runtime。
+现在正常release与flush成功重试共用completeRelease：删除pending和loaded，并发布派生投影。
+重试资源记录继续携带原discard，新增回归断言接受会话两次释放均为false、邮箱和历史保留，
+list/投影移除后followup重新prepare原childSessionId。该例先RED（list仍有child），最终48/48 GREEN。

@@ -297,8 +297,11 @@ class Controller implements CollaborationController {
         { cause },
       );
     }
-    this.cleanupPending.delete(agent.agentId);
-    this.loaded.delete(agent.agentId);
+    this.completeRelease(agent.agentId);
+  }
+  private completeRelease(agentId: string): void {
+    this.cleanupPending.delete(agentId);
+    this.loaded.delete(agentId);
     this.publish();
   }
   private settings(request: SpawnRequest, caller: AgentRecord): AgentSettings {
@@ -753,12 +756,12 @@ class Controller implements CollaborationController {
       } catch (cause) {
         throw new CollaborationError(
           "RUNTIME_FAILED",
-          "Cannot retry unaccepted runtime cleanup",
+          "Cannot retry collaboration runtime cleanup",
           { agentId, phase: "cleanup-retry" },
           { cause },
         );
       }
-      this.cleanupPending.delete(agentId);
+      this.completeRelease(agentId);
     }
   }
   dispose(): Promise<void> {

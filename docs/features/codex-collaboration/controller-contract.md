@@ -64,3 +64,5 @@ Task 3 必须实现真实 session entry adapter 与 durable message ACK，并移
 - 没有 accepted 记录的 child 只能是 `idle + generation=0` 的接受前占位。running、terminal 或非零 generation 缺失接受记录属于损坏快照，必须在任何 discard 清理前拒绝，不能把历史当作未接受会话删除。
 - installMailbox 与 release 同时失败时，结构化 prepare 错误必须同时保留原失败与清理失败，并保存原 runtime 句柄用于下一次清理；恢复已接受会话时禁止 discard。
 - 接受保存/取消检查失败后，独立 run signal 必须被 abort；admission.cancel 失败不能覆盖原触发错误。保留未完成 admission 清理，flush 先重试 cancel，再释放相应 runtime，禁止在未完成清理的 runtime 上启动新轮次。
+
+- flush 重试 runtime.release 成功后必须执行与正常卸载相同的 loaded 删除和投影通知；身份、accepted 记录、邮箱与会话历史保持。重试保留原 discard 选项，已接受会话只能 discard:false。后续 followup 必须重新 prepare 原 childSessionId，不能复用已经 release 的句柄。

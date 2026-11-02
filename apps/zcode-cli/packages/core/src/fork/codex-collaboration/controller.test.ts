@@ -724,4 +724,45 @@ describe("root-owned collaboration controller", () => {
     expect(f.events.slice(-2)).toEqual(["cancel:/root/worker", "release:/root/worker:true"]);
     expect(f.snapshot().agents).toHaveLength(1);
   });
+  it("unloads a retried release in list/projection and prepares the original session on followup", async () => {
+    const f = await setup();
+    const child = await f.controller.spawn(f.spawn);
+    f.turns[0].result.resolve({ status: "completed", text: "first answer" });
+    await f.controller.flush();
+    await f.controller.send("root-id", child.agentId, "retained idle message");
+    const historyBefore = [...f.histories.get(child.childSessionId)!];
+    const projectedPaths: string[][] = [];
+    const unsubscribe = f.controller.subscribe(() => {
+      projectedPaths.push(f.controller.list("root-id").map((agent) => agent.path));
+    });
+    const release = f.options.runtime.release;
+    const discardOptions: boolean[] = [];
+    f.options.runtime.release = async (...args) => {
+      discardOptions.push(args[2].discard);
+      if (discardOptions.length === 1) throw new Error("first unload failed");
+      await release(...args);
+    };
+    await expect(f.controller.unload("root-id", child.agentId)).rejects.toMatchObject({
+      code: "RUNTIME_FAILED",
+    });
+    expect(f.controller.list("root-id").map((agent) => agent.path)).toContain(child.path);
+    await f.controller.flush();
+    expect(discardOptions).toEqual([false, false]);
+    expect(f.controller.list("root-id").map((agent) => agent.path)).toEqual(["/root"]);
+    expect(projectedPaths.at(-1)).toEqual(["/root"]);
+    expect(f.controller.get("root-id", child.agentId).mailbox[0].text).toBe(
+      "retained idle message",
+    );
+    expect(f.histories.get(child.childSessionId)).toEqual(historyBefore);
+    await f.controller.followup("root-id", child.agentId, "continue same history");
+    expect(f.events.filter((event) => event.startsWith("prepare:/root/worker"))).toEqual([
+      "prepare:/root/worker:false",
+      "prepare:/root/worker:true",
+    ]);
+    expect(f.turns[1].identity.childSessionId).toBe(child.childSessionId);
+    expect(f.histories.get(child.childSessionId)!.slice(0, historyBefore.length)).toEqual(
+      historyBefore,
+    );
+    unsubscribe();
+  });
 });
