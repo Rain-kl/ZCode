@@ -152,3 +152,45 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
   避免 electron-updater 内部对 prerelease 的判断与 channel 分叉。
 - 强更相关的 shared/services 死代码（`getForceUpdateConfig` 等）在设计中列为「非目标」，
   实现时一并删除：它们的唯一消费方就是被删掉的强更 gate，留着会变成无引用的 RPC 面。
+
+## 6. 配套 Source Server GitHub 发布（2026-11-02）
+
+### 落地位置与接线
+
+- `main/fork/github-update/feed.ts` 复用本项目仓库身份，提供完整版本的 `server-v<VERSION>` 下载根。
+- `main/remoteCdn.ts` 仅替换生产默认源；显式覆盖、构建期源覆盖、test 内网源和开发态 mock-cdn 仍保留。
+- `packages/server/src/remote/remoteAssetCdn.ts` 识别 GitHub Release 的平铺资产路径，不追加版本子目录。
+- `host/sourceServerReleaseResolver.ts` 沿用原解析/下载/缓存/校验，清单错误保留各源上下文与 cause；
+  展示层仍遵守 URL 脱敏合同，HTTP 状态和解析/网络错误可见。上游接线标记均为 `github-update`。
+- `.github/workflows/release.yml` 的 `build-source-server` 消费 resolve 的同一版本，复用四平台 staging，
+  校验完整 descriptor/归档，并在 Ubuntu 执行 Linux x64 归档的 `bin/zcode --version` 冒烟。
+- `scripts/ci/source-server-release.mjs` 负责验证、已发布包复用和 draft 发布。独立 Server 发布完成后
+  才更新桌面 Release；不移动 tag，不覆盖已公开归档。重跑优先复用原包，避免 tar 时间戳漂移。
+- `cleanup-prerelease-tags.yml` 保留 `server-v*`，桌面 canary 指针清理不接触 Server 资产。
+
+### 回归与依赖契约
+
+测试先于实现：原 GitHub 路径拼接、默认源与错误上下文共 6 项失败；发布脚本测试因模块缺失失败。
+随后实现并验证：
+
+- 6 文件 60 项 Vitest 通过：默认下载源、时区无关/完整版本隔离、Desktop 环境策略、Host 接线、
+  resolver、CDN URL 合同与既有 Server 归档收集。
+- 13 项 Node 发布测试通过：四平台集合、descriptor/归档版本、尺寸、SHA、缺包与包内 manifest，
+  draft 顺序、只读重跑、内容冲突、鉴权失败不伪装 404、CI 依赖与清理守卫。
+- 14 项既有 GitHub 更新源和 electron-updater 依赖契约通过。
+- `pnpm typecheck` 通过；`pnpm lint` 通过（102 个现有 warning，0 error）。
+- `pnpm --filter @zcode/server-cli build` 通过，实际执行 `dist/server-cli.js --version` 输出 `3.17.162`。
+- 两个 workflow 的 actionlint 检查通过；桌面 artifact pattern 实测只选择 mac-arm64/win-x64，排除 Server。
+- `pnpm fork:check-removals` 通过。当前工作区架构检查失败于并行协作 runtime 的循环依赖与
+  `runtime/off-peak/runtime.ts`、`subagent/listing.ts` 的受管登记；未改这些文件或降低门禁。
+
+上游若改变发布 descriptor 文件名、归档名/目标集合、相对 URL 形状、包内 manifest 的版本/目标字段，
+这些断言应失败，要求显式调整适配；不能以可选兜底或宽松版本回退隐藏契约变更。
+
+### 未验证与交付边界
+
+- 尚未运行托管 GitHub Actions、上传真实 Server Release 或发布新的桌面 canary。
+- 本地只验证 Server bundle 构建/版本入口与测试归档；未在本地跑四平台完整生产 staging，
+  未执行 Linux/macOS ARM/Intel 的全部原生运行验收。CI 包校验不是所有平台运行验证的替代。
+- 未连接、安装或重启用户远程设备；需在新发布下载完成后，以真实 SSH 新设备安装验收闭环。
+- 旧桌面安装包仍含旧下载源，不会因本次源码修改自动修复；需要安装包含本次接线的新桌面包。

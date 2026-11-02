@@ -138,3 +138,14 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
    国内网络可能不稳定；electron-updater 没有多源回退。需要时依赖系统代理或镜像。
 6. **移除强更 gate 后没有 kill switch**。旧版本出严重问题时只能靠用户主动检查更新，
    不能再强制下线。若将来需要，建议改成「只提示不阻断」或在读取 Release 正文时解析最低版本要求。
+
+## 配套远程 Server 下载（2026-11-02）
+
+桌面自动更新仍消费 stable/latest 或 canary-build 指针；远程 Server 必须锁定当前完整版本，默认从
+`https://github.com/Rain-kl/ZCode/releases/download/server-v<VERSION>/source-server-release.json`
+读取既有 descriptor，归档相对 URL 位于同一 Release。不能消费 latest/canary-build 的 Server，
+也不能去掉 dev 后缀请求上游 CDN：二者都会破坏同版本源码与运行时的一致性。
+
+沿用 `fork/github-update/feed.ts` 的仓库身份常量与既有资源解析器，不创建第二套安装、校验或缓存逻辑。
+下载源显式覆盖、test 环境与开发态本地构建策略不变。CI 所有权、事件顺序、保留/重跑合同及验收见
+[桌面发布 spec](../../specs/desktop-release.md#2026-11-02-配套-source-server-发布)。

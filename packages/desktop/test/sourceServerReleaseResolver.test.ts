@@ -231,10 +231,29 @@ describe("Source Server release resolver", () => {
         { fetch: remoteAssetFetch },
       ),
     ).rejects.toMatchObject({
-      message: "Unable to resolve Source Server release descriptor",
-      cause: expect.objectContaining({ message: "proxy unavailable" }),
+      message: expect.stringContaining("proxy unavailable"),
+      cause: expect.objectContaining({
+        cause: expect.objectContaining({ message: "proxy unavailable" }),
+      }),
     });
     expect(remoteAssetFetch).toHaveBeenCalled();
     expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it("GitHub descriptor 404 保留 HTTP 状态，URL 遵循连接日志脱敏边界", async () => {
+    const base = `https://github.com/Rain-kl/ZCode/releases/download/server-v${ZCODE_VERSION}`;
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("missing", { status: 404 }));
+    await expect(
+      resolveSourceServerReleaseAsset(probe, { remoteCdnBaseUrls: [base] }, target, {
+        fetch: fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("HTTP 404"),
+      cause: expect.objectContaining({
+        message: expect.stringContaining(`${base}/source-server-release.json: HTTP 404`),
+      }),
+      code: "remote-download-failed",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

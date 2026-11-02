@@ -6,7 +6,7 @@ import {
 } from "../src/main/remoteCdn.js";
 
 describe("remoteCdn", () => {
-  it("中文且东八区时应优先国内 CDN", () => {
+  it("中文环境也从 GitHub 下载完整版本对应的 Server", () => {
     expect(
       shouldPreferDomesticRemoteCdn({
         locale: "zh-CN",
@@ -20,13 +20,10 @@ describe("remoteCdn", () => {
         timeZone: "Asia/Shanghai",
         version: "0.0.0-test",
       }),
-    ).toEqual([
-      "https://cdn.codegeex.cn/zcode/electron/releases/0.0.0-test",
-      "https://cdn-zcode.z.ai/zcode/electron/releases/0.0.0-test",
-    ]);
+    ).toEqual(["https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test"]);
   });
 
-  it("非中文或非东八区时应优先海外 CDN", () => {
+  it("语言和时区不改变版本锁定的 GitHub Server 下载源", () => {
     expect(
       shouldPreferDomesticRemoteCdn({
         locale: "en-US",
@@ -46,10 +43,15 @@ describe("remoteCdn", () => {
         timeZone: "America/Los_Angeles",
         version: "0.0.0-test",
       }),
-    ).toEqual([
-      "https://cdn-zcode.z.ai/zcode/electron/releases/0.0.0-test",
-      "https://cdn.codegeex.cn/zcode/electron/releases/0.0.0-test",
-    ]);
+    ).toEqual(["https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test"]);
+  });
+
+  it("canary 不消费可变指针，旧客户端仍锁定旧版本", () => {
+    for (const version of ["3.17.162-dev.084c4811", "3.17.162-dev.12345678", "3.17.162"]) {
+      expect(resolveRemoteCdnBaseUrls({ env: "production", version })).toEqual([
+        `https://github.com/Rain-kl/ZCode/releases/download/server-v${version}`,
+      ]);
+    }
   });
 
   it("东八区判断应按 UTC 偏移而不是固定城市名单", () => {
@@ -66,9 +68,7 @@ describe("remoteCdn", () => {
         timeZone: "Asia/Shanghai",
         version: "0.0.0-test",
       }),
-    ).toEqual([
-      "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
-    ]);
+    ).toEqual(["http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test"]);
   });
 
   it("显式覆盖 CDN 基址时不再按产品环境选择默认值", () => {

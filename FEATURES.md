@@ -193,6 +193,17 @@
 
 ## GitHub 更新通道 (github-update)
 
+### 远程 Server 从 GitHub 配套发布（2026-11-02）
+
+- **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
+  远程资源默认改为本仓库 `server-v<完整版本>` GitHub Release，复用原 descriptor、缓存、大小和 SHA-256 校验；
+  不跟随可变的 canary-build 指针，后续 canary 不破坏旧客户端安装。显式源覆盖和开发本地产物策略保留。
+- **修改文件与标记**：`packages/desktop/src/main/{remoteCdn.ts,fork/github-update/feed.ts}`、
+  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`；
+  上游接线使用 `FORK(github-update)`，下载失败携带 URL 与具体错误。
+- **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
+  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 
 - **状态**：已实现（2026-09-28），未打包验收（见实现文档 §4）

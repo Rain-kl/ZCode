@@ -2,9 +2,23 @@ import { describe, expect, it } from "vitest";
 import {
   buildComponentArtifactUrlCandidates,
   buildReleaseAssetUrlCandidates,
+  buildReleaseBaseCandidates,
 } from "@zcode/server/remote/remoteAssetCdn.js";
 
 describe("remoteAssetCdn URL encoding", () => {
+  it("GitHub Release 资产直接位于 tag 下，不再拼接版本目录", () => {
+    const base = "https://github.com/Rain-kl/ZCode/releases/download/server-v3.17.162-dev.12345678";
+    expect(buildReleaseBaseCandidates([base], "3.17.162-dev.12345678")).toEqual([base]);
+    expect(
+      buildReleaseAssetUrlCandidates(buildReleaseBaseCandidates([base], "3.17.162-dev.12345678"), [
+        "source-server-release.json",
+      ]),
+    ).toEqual([`${base}/source-server-release.json`]);
+    expect(buildReleaseBaseCandidates(["https://cdn.example.com/releases"], "1.0.0")).toEqual([
+      "https://cdn.example.com/releases/1.0.0",
+      "https://cdn.example.com/releases",
+    ]);
+  });
   it("组件路径包含 '+' 时应编码为 %2B", () => {
     const urls = buildComponentArtifactUrlCandidates(
       ["https://cdn.example.com/zcode/electron/releases/1.3.0"],

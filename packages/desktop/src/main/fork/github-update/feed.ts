@@ -28,6 +28,11 @@ export const FORK_GITHUB_UPDATE_PREVIEW_CHANNEL = "dev";
 
 export const FORK_GITHUB_UPDATE_ORIGIN = "https://github.com";
 
+/** Server 与客户端完整版本绑定，不能跟随可变的桌面更新指针。 */
+export function resolveForkGithubServerReleaseBaseUrl(version: string): string {
+  return `${FORK_GITHUB_UPDATE_ORIGIN}/${FORK_GITHUB_UPDATE_OWNER}/${FORK_GITHUB_UPDATE_REPO}/releases/download/server-v${encodeURIComponent(version)}`;
+}
+
 export interface ForkGithubUpdateFeed {
   provider: "generic";
   url: string;
@@ -88,9 +93,7 @@ export function resolveForkGithubUpdateBaseUrl(options: {
 }
 
 /** stable 用默认 channel 文件（`latest.yml`），因此返回 null 而不是空串。 */
-export function resolveForkGithubUpdateChannel(
-  channel: ElectronReleaseChannel,
-): string | null {
+export function resolveForkGithubUpdateChannel(channel: ElectronReleaseChannel): string | null {
   return isForkPreviewUpdateChannel(channel) ? FORK_GITHUB_UPDATE_PREVIEW_CHANNEL : null;
 }
 
