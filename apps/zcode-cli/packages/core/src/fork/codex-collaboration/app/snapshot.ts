@@ -140,6 +140,15 @@ export function parseCollaborationSnapshot(
     calls.add(JSON.stringify([entry.callerId, entry.callId]));
     acceptedAgents.add(entry.agentId);
   }
+  // 接受记录缺失不能当作安全清理依据；只有从未启动的占位才允许 discard。
+  for (const agent of value.agents) {
+    if (
+      agent !== root &&
+      !acceptedAgents.has(agent.agentId) &&
+      (agent.status !== "idle" || agent.generation !== 0)
+    )
+      invalid("missing accepted history");
+  }
   // The checked wire shape is cloned so callers cannot mutate the owner's snapshot.
   return structuredClone(value) as unknown as CollaborationSnapshot;
 }

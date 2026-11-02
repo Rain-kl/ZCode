@@ -58,3 +58,9 @@ Task 3 必须实现真实 session entry adapter 与 durable message ACK，并移
 - 父/idle 邮箱由宿主在安全边界调用 deliver；wait只通知活动、不替代消费。running send/followup 通过相同 durable ACK sink 交付。
 - interruption 会留下可冷恢复的 STATUS，不伪造 FINAL_ANSWER；同一 agent 的后续 generation 过滤迟到结果。
 - terminal 保存失败保留 completion 并经 flush 报错；持久层恢复后再次 flush 重试。清理失败用 AggregateError 同时保留原始失败与各清理失败，回收未接受的身份，并保留待重试资源。
+
+## Task 2 审查修正：拒绝危险恢复与保留清理证据
+
+- 没有 accepted 记录的 child 只能是 `idle + generation=0` 的接受前占位。running、terminal 或非零 generation 缺失接受记录属于损坏快照，必须在任何 discard 清理前拒绝，不能把历史当作未接受会话删除。
+- installMailbox 与 release 同时失败时，结构化 prepare 错误必须同时保留原失败与清理失败，并保存原 runtime 句柄用于下一次清理；恢复已接受会话时禁止 discard。
+- 接受保存/取消检查失败后，独立 run signal 必须被 abort；admission.cancel 失败不能覆盖原触发错误。保留未完成 admission 清理，flush 先重试 cancel，再释放相应 runtime，禁止在未完成清理的 runtime 上启动新轮次。

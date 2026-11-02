@@ -88,8 +88,9 @@ class Controller implements CollaborationController {
   private readonly backgroundErrors: unknown[] = [];
   private readonly cleanupPending = new Map<
     string,
-    { identity: AgentIdentity; runtime: CollaborationRuntime | undefined }
+    { identity: AgentIdentity; runtime: CollaborationRuntime | undefined; discard: boolean }
   >();
+  private readonly admissionCleanupPending = new Map<string, TurnAdmission>();
   private readonly pendingCompletions = new Map<
     string,
     { agentId: string; generation: number; result: RunResult }
@@ -236,8 +237,28 @@ class Controller implements CollaborationController {
       runtime = await this.options.runtime.prepare(identity(agent), { resume });
       await runtime.installMailbox();
     } catch (cause) {
-      if (runtime)
-        await this.options.runtime.release(identity(agent), runtime, { discard: !resume });
+      if (runtime) {
+        this.cleanupPending.set(agent.agentId, {
+          identity: identity(agent),
+          runtime,
+          discard: !resume,
+        });
+        try {
+          await this.release(agent, !resume);
+        } catch (cleanupError) {
+          throw new CollaborationError(
+            "RUNTIME_FAILED",
+            "Runtime prepare and cleanup failed",
+            { phase: "prepare", agentId: agent.agentId, childSessionId: agent.childSessionId },
+            {
+              cause: new AggregateError(
+                [cause, cleanupError],
+                "Mailbox installation and runtime release failed",
+              ),
+            },
+          );
+        }
+      }
       throw new CollaborationError(
         "RUNTIME_FAILED",
         "Cannot prepare collaboration runtime",
@@ -252,17 +273,23 @@ class Controller implements CollaborationController {
   }
   private async release(agent: AgentRecord, discard: boolean): Promise<void> {
     const loaded = this.loaded.get(agent.agentId);
-    if (!loaded && !discard) return;
+    const pending = this.cleanupPending.get(agent.agentId);
+    if (!loaded && !pending && !discard) return;
+    const cleanup = {
+      identity: identity(agent),
+      runtime: loaded?.runtime ?? pending?.runtime,
+      discard,
+    };
+    if (this.admissionCleanupPending.has(agent.agentId)) {
+      this.cleanupPending.set(agent.agentId, cleanup);
+      this.loaded.delete(agent.agentId);
+      return;
+    }
     try {
-      await this.options.runtime.release(identity(agent), loaded?.runtime, { discard });
+      await this.options.runtime.release(cleanup.identity, cleanup.runtime, { discard });
     } catch (cause) {
-      if (discard) {
-        this.cleanupPending.set(agent.agentId, {
-          identity: identity(agent),
-          runtime: loaded?.runtime,
-        });
-        this.loaded.delete(agent.agentId);
-      }
+      this.cleanupPending.set(agent.agentId, cleanup);
+      if (discard) this.loaded.delete(agent.agentId);
       throw new CollaborationError(
         "RUNTIME_FAILED",
         "Cannot release collaboration runtime",
@@ -270,6 +297,7 @@ class Controller implements CollaborationController {
         { cause },
       );
     }
+    this.cleanupPending.delete(agent.agentId);
     this.loaded.delete(agent.agentId);
     this.publish();
   }
@@ -430,6 +458,12 @@ class Controller implements CollaborationController {
     accepted?: { callerId: string; callId: string; fingerprint: string },
   ): Promise<void> {
     this.checkCapacity();
+    if (this.admissionCleanupPending.has(agent.agentId))
+      throw new CollaborationError(
+        "RUNTIME_FAILED",
+        "Previous admission cleanup is pending; flush before retrying",
+        { agentId: agent.agentId, phase: "admission-cleanup" },
+      );
     const loaded = await this.ensureLoaded(agent, resume);
     this.checkCancelled(callerSignal);
     // 所有旧消息先按 FIFO 交付；本轮 task 本身由 admit 持久接纳，不能重复注入。
@@ -462,8 +496,24 @@ class Controller implements CollaborationController {
       if (accepted) next.accepted.push({ ...accepted, agentId: agent.agentId });
       await this.save(next);
     } catch (cause) {
-      await admission.cancel();
+      // 清理失败也不能遗留活跃 signal，且不得覆盖触发保存失败的原始错误。
       abort.abort(cause);
+      try {
+        await admission.cancel();
+      } catch (cleanupError) {
+        this.admissionCleanupPending.set(agent.agentId, admission);
+        throw new CollaborationError(
+          cause instanceof CollaborationError ? cause.code : "RUNTIME_FAILED",
+          "Task acceptance and admission cleanup failed",
+          { phase: "admission-cleanup", agentId: agent.agentId, generation },
+          {
+            cause: new AggregateError(
+              [cause, cleanupError],
+              "Acceptance and admission cancellation failed",
+            ),
+          },
+        );
+      }
       throw cause;
     }
     loaded.abort = abort;
@@ -682,9 +732,24 @@ class Controller implements CollaborationController {
     if (this.backgroundErrors.length) throw this.backgroundErrors.shift();
     for (const pending of Array.from(this.pendingCompletions.values()))
       await this.finish(pending.agentId, pending.generation, pending.result);
+    for (const [agentId, admission] of this.admissionCleanupPending) {
+      try {
+        await admission.cancel();
+      } catch (cause) {
+        throw new CollaborationError(
+          "RUNTIME_FAILED",
+          "Cannot retry admission cleanup",
+          { agentId, phase: "admission-cleanup-retry" },
+          { cause },
+        );
+      }
+      this.admissionCleanupPending.delete(agentId);
+    }
     for (const [agentId, pending] of this.cleanupPending) {
       try {
-        await this.options.runtime.release(pending.identity, pending.runtime, { discard: true });
+        await this.options.runtime.release(pending.identity, pending.runtime, {
+          discard: pending.discard,
+        });
       } catch (cause) {
         throw new CollaborationError(
           "RUNTIME_FAILED",

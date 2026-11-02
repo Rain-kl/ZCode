@@ -271,3 +271,15 @@ Task 2 不修改旧registry或真实runtime接线，不宣称六工具、实际�
 Task 3 必须为prepared prompt补齐“先admit持久任务，接受后run”的真实执行器接口；旧admitPrompt会立即
 驱动CommandInbox，不能直接冒充该边界。真实deliver要按messageId持久去重并在安全边界转换消息来源。
 CLI默认Vitest glob不含src测试，本轮以专用include配置运行，不能把默认测试成功冒充本模块覆盖。
+
+### Task 2 spec review：恢复数据与复合清理失败
+
+审查确认：缺失accepted记录的running/terminal身份曾被当作临时占位，冷恢复可能错误discard；
+installMailbox之后的release异常、接受保存之后的admission.cancel异常也会覆盖最初失败。
+现先拒绝非idle/generation0的无接受记录身份，再做恢复清理；prepare保留原runtime句柄及释放选项，
+start在清理前abort独立signal，复合错误通过带阶段上下文的CollaborationError和AggregateError保留。
+失败cancel由flush先重试，完成后才释放未接受runtime，避免删除仍有未释放admission的会话。
+
+RED：9种损坏状态/generation组合及2个复合失败用例全部失败（共11例）；GREEN：两文件47/47通过。
+回归明确断言没有discard历史、第二次release使用同一真实handle、abort已发生、flush先cancel再release。
+专项类型、架构与lint验证记录随修正提交；未改Task3/runtime或桌面E2E。

@@ -617,4 +617,111 @@ describe("root-owned collaboration controller", () => {
     expect(nested.path).toBe("/root/worker/worker");
     expect(f.turns).toHaveLength(2);
   });
+  it.each([
+    ["running", 1],
+    ["completed", 1],
+    ["errored", 1],
+    ["interrupted", 1],
+    ["idle", 1],
+    ["running", 0],
+    ["completed", 0],
+    ["errored", 0],
+    ["interrupted", 0],
+  ])(
+    "rejects missing accepted history for %s generation %s before discard",
+    async (status, generation) => {
+      const f = await setup();
+      const child = await f.controller.spawn(f.spawn);
+      const snapshot = f.snapshot();
+      snapshot.accepted = [];
+      snapshot.agents[1].status = status as CollaborationSnapshot["agents"][number]["status"];
+      snapshot.agents[1].generation = Number(generation);
+      f.setSnapshot(snapshot);
+      const release = f.options.runtime.release;
+      let discarded = false;
+      f.options.runtime.release = async (...args) => {
+        discarded = true;
+        return release(...args);
+      };
+      await expect(createCollaborationController(f.options)).rejects.toMatchObject({
+        code: "INVALID_SNAPSHOT",
+      });
+      expect(discarded).toBe(false);
+      expect(f.histories.has(child.childSessionId)).toBe(true);
+    },
+  );
+  it("retains mailbox installation and release failures, then retries the actual runtime handle", async () => {
+    const f = await setup();
+    const originalPrepare = f.options.runtime.prepare;
+    const originalRelease = f.options.runtime.release;
+    const installError = new Error("mailbox install failed");
+    const releaseError = new Error("first runtime release failed");
+    let prepared: CollaborationRuntime | undefined;
+    const released: (CollaborationRuntime | undefined)[] = [];
+    f.options.runtime.prepare = async (...args) => {
+      prepared = await originalPrepare(...args);
+      prepared.installMailbox = async () => {
+        throw installError;
+      };
+      return prepared;
+    };
+    f.options.runtime.release = async (...args) => {
+      released.push(args[1]);
+      if (released.length === 1) throw releaseError;
+      await originalRelease(...args);
+    };
+    await expect(f.controller.spawn(f.spawn)).rejects.toMatchObject({
+      code: "RUNTIME_FAILED",
+      context: { phase: "prepare" },
+      cause: { errors: [installError, { cause: releaseError }] },
+    });
+    expect(released).toEqual([prepared, prepared]);
+    expect(f.snapshot().agents).toHaveLength(1);
+    expect(f.turns).toHaveLength(0);
+    await f.controller.flush();
+    expect(released).toHaveLength(2);
+  });
+  it("aborts and preserves both save/cancel failures, then flush retries cancel before releasing", async () => {
+    const f = await setup();
+    const originalPrepare = f.options.runtime.prepare;
+    const originalWrite = f.options.storage!.write;
+    const cancelError = new Error("admission cancellation failed");
+    const saveError = new Error("accepted save failed");
+    let signal: AbortSignal | undefined;
+    let cancels = 0;
+    f.options.runtime.prepare = async (...args) => {
+      const runtime = await originalPrepare(...args);
+      const admit = runtime.admit;
+      runtime.admit = async (request) => {
+        signal = request.signal;
+        const admission = await admit(request);
+        return {
+          run: admission.run,
+          async cancel() {
+            cancels++;
+            if (cancels === 1) throw cancelError;
+            await admission.cancel();
+          },
+        };
+      };
+      return runtime;
+    };
+    f.options.storage!.write = async (snapshot) => {
+      if (snapshot.accepted.length) throw saveError;
+      await originalWrite(snapshot);
+    };
+    await expect(f.controller.spawn(f.spawn)).rejects.toMatchObject({
+      code: "STORAGE_FAILED",
+      context: { phase: "admission-cleanup" },
+      cause: { errors: [{ cause: saveError }, cancelError] },
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(cancels).toBe(1);
+    expect(f.turns).toHaveLength(0);
+    expect(f.events.some((event) => event.startsWith("release:/root/worker"))).toBe(false);
+    await f.controller.flush();
+    expect(cancels).toBe(2);
+    expect(f.events.slice(-2)).toEqual(["cancel:/root/worker", "release:/root/worker:true"]);
+    expect(f.snapshot().agents).toHaveLength(1);
+  });
 });

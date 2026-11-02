@@ -38,3 +38,11 @@ is injected through finite ports; no provider, filesystem or registry dependency
 
 Acceptance order, race cases, remaining integration work and cross-client
 boundaries: `docs/features/codex-collaboration/controller-contract.md`.
+
+Review invariants: only idle/generation-zero identities without an accepted call
+may be discarded during cold recovery. Other missing acceptance records are
+corruption, rejected before any driver cleanup. Runtime release and admission
+cancel must support idempotent retries. Acceptance failure aborts the independent
+signal even if cancel fails. A failed cancel retains its admission; flush retries
+cancel before releasing its runtime. Preparation failures retain both the mailbox
+installation error and release error, together with the actual handle for retry.
