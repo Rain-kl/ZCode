@@ -101,7 +101,11 @@ export function connectViaWebSocket(
 
 export function connectViaProtocol(
   protocol: IMessagePassingProtocol,
-  options: { windowProjectDirectory?: boolean; signal?: AbortSignal } = {},
+  options: {
+    windowProjectDirectory?: boolean;
+    windowControllerService?: boolean;
+    signal?: AbortSignal;
+  } = {},
 ): IServiceAccessor {
   const client = new ChannelClient(protocol);
   // bridge 只释放传输时，旧 RPC 会永久等待，发送前已 claim 的草稿也无法进入失败恢复。

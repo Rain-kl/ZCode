@@ -37,7 +37,7 @@
 | CWA18 | logs -f 切换历史到实时，轮转/Core 重启，Ctrl+C                         | 无漏/重复；跟新日志；退出跟踪不停止服务                     | partial：新文件首行跟读单测；真实轮转/Ctrl+C 未跑           |
 | CWA19 | 真实 Server 主动连接公网 Cloudflare，手机 390px/宽屏登录选项目并聊天   | 无入站端口/Tunnel；Relay 登录不等待官方 OAuth；真实模型回复 | partial：本地 workerd + 真实 Core + 390px 浏览器进入工作区；模型/公网未跑 |
 | CWA20 | 真实 Agent 权限/提问、断网发生在命令接纳 ACK 前后                       | 原 owner 裁决；恢复对账不重复执行；错误分层                  | not-run                                                     |
-| CWA21 | bootstrap/项目 root 列表、Core 在 router 订阅前发送 Initialize、local bridge、伪造 trusted-host、headless 操作 | 早到 Core 帧按序交付；同 Core replayable RPC；旧代 frame 拒绝；缺能力明确反馈 | partial：真实 WebSocket 早到 Initialize 与 setting RPC roundtrip、Connector 定向测试和真实 bootstrap；其余故障注入未跑 |
+| CWA21 | bootstrap/项目 root 列表、Core 在 router 订阅前发送 Initialize、local bridge、新建项目目录浏览、伪造 trusted-host、headless 操作 | 早到 Core 帧按序交付；“此电脑”读取 Server 本机目录；可选 window-controller 不发请求；旧代 frame 拒绝；缺能力明确反馈 | partial：真实 WebSocket 早到 Initialize、setting RPC roundtrip、公网 local bridge 新建项目目录浏览；其余故障注入未跑 |
 | CWA22 | 1/6/8/16 MiB 消息、坏片/CRC/丢 ACK、慢接收/配额                        | 既有尺寸/重放边界成立；无持久正文或无界队列                 | not-run at Relay boundary；仅有 shared transport 既有测试   |
 | CWA23 | Server 下线后手机刷新、冷/热页面                                       | 沿用官方离线/配对流程，不宣称新增离线阅读；原缓存行为不改   | not-run：只做 source/契约审计                               |
 | CWA24 | 注入敏感占位符、JWT/token、密码与 RPC 正文到失败路径                   | 持久日志/前台/logs 都不泄露；保留错误上下文                 | partial：日志脱敏单测；全失败路径注入未跑                   |

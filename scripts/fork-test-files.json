@@ -24,6 +24,7 @@
   "packages/services/test/nodeApiClient.test.ts",
   "packages/services/test/providerBuiltinRefreshFailure.test.ts",
   "packages/services/test/providerRuntime.test.ts",
+  "packages/services/test/projectDirectoryLocalHost.test.ts",
   "packages/services/test/skillsService.test.ts",
   "packages/services/test/subagentRuntimeConfig.test.ts",
   "packages/services/test/usageStatsService.test.ts",

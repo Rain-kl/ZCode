@@ -31,6 +31,12 @@
 - **文件与标记**：`packages/fork-remote-connector/src/connector.ts` 与就近回归测试；独立 fork 包无需上游逐行标记。
 - **设计与落地**：[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 
+### Headless 项目目录与能力边界（2026-11-03）
+
+- **背景与行为**：手机新建项目时，“此电脑”指当前 Server；`local` 由 Server 解析为自身 owner host，目录浏览直接读取云主机文件系统。local bridge 不提供桌面 `window-controller`，客户端也不再向不存在的可选通道发请求。
+- **文件与标记**：`packages/services/src/project/index.ts`、`packages/client/src/remoteServiceAccess.ts`、Web remote bridge 接线与回归测试；上游文件使用 `FORK(cloud-web-access)`。
+- **设计与落地**：[设计](docs/features/cloud-web-access/design.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
 ### Server 安装路径与资源统一（2026-11-03）
 
 - **背景与行为**：一键安装与 SSH 自动安装共用 `~/.zcode/server`、`current.json`、稳定启动入口和既有生命周期/任务/降级保护，避免双版本树。迁移旧脚本拥有的 PATH 命令，保留旧文件与业务数据。补齐独立 Agent 所需的同次构建 provider 配置，整包与 agent-runtime 组件共用资源身份。
