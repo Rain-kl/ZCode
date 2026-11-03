@@ -181,7 +181,7 @@ jobs:
         run: pnpm test:unit:fork
 
       - name: Release workflow and publication contracts
-        run: node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs
+        run: node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs scripts/test/server-installer.test.mjs
 
       # 仓库当前 third-party/inventory.json 记录的 package.json 哈希与文件不一致（其余 2867 项输入一致），
       # 需要有人执行 `node scripts/licenses.mjs notices` 重新生成清单。因此这里只作提示，不阻塞发布。
