@@ -29,6 +29,8 @@ import {
   wrapSystemReminderForSource,
   type SystemReminderSource,
 } from "../../system-reminder/source.js";
+// FORK(codex-collaboration): 兼容协议需要在私有协作消息后恢复明确的模型继续边界；见 FEATURES.md 的 codex-collaboration 条目。
+import { COLLABORATION_CONTINUATION_BOUNDARY } from "../../fork/codex-collaboration-tools/module.js";
 
 export interface ProviderRequestMessageProjectionResult {
   messages: ModelInputMessage[];
@@ -111,6 +113,19 @@ export function buildProviderRequestMessages(input: {
     const entry = projectedEntries[projectedIndex];
     if (entry) sourceEntries[mergedIndex] = origins.representative(entry);
   }
+  // FORK-BEGIN(codex-collaboration)
+  // 修复原因：Codex Responses 能识别 assistant 协作信箱语义，但 Chat Completions 兼容模型会把
+  // 尾部 assistant 当成待续写前缀。只在 provider 投影末尾补一个不入库的边界，canonical
+  // history 仍保留真实的 assistant 来源，也不会把子代理消息冒充为用户授权。
+  const trailingSourceEntry = sourceEntries.at(-1);
+  if (
+    messages.at(-1)?.role === "assistant" &&
+    trailingSourceEntry?.metadata?.collaboration !== undefined
+  ) {
+    messages.push({ role: "user", content: COLLABORATION_CONTINUATION_BOUNDARY });
+    sourceEntries.push(undefined);
+  }
+  // FORK-END(codex-collaboration)
   const mappedLatestRealUserMessageIndex =
     latestRealUserMessageIndex >= 0 ? (mergeResult.indexMap[latestRealUserMessageIndex] ?? -1) : -1;
   // 纯文本 steer 并入 tool result 后不再是独立的用户消息；指向 tool 消息会让媒体预算

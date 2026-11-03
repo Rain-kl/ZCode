@@ -42,6 +42,9 @@ accepted graph 能恢复 accepted-before-tool-result crash gap，无需模型结
   agent type、fork turns、模型覆盖和 timeout 详情；list/wait 不落到默认 Stop renderer。
 - 只有 spawn 按原始 tool-call anchor 配对 child。tool result 完成只代表 accepted；配对摘要状态
   取真实 lifecycle row，下钻使用该 row 的 opaque childSessionId。
+- 配对 spawn 摘要的主动作仍是打开该 opaque childSessionId；参数详情使用独立 disclosure，
+  不能因主动作存在而禁用内容渲染。用户可在不离开父会话的情况下查看主代理实际发送的
+  `message`，展开详情不得触发下钻，主摘要下钻也不得隐式切换详情状态。
 - ProductProjection 保存可选 typed generation/agent/parent/path。重复事件、旧代或无代迟到终态
   不覆盖新运行；同代 terminal 不被 running 重开；相同 anchor 的不同 agent 明确诊断。
   followup 复用原 child 与创建 anchor，不增加 child UI item。
@@ -67,7 +70,15 @@ Agent Note。publisher → renderer store 的同序列测试参数化 continuous
 parent steer、丢帧 gap resync、同 child followup 和旧 generation；没有新 cache 或传输 owner。
 这些是协议/投影单测，不能冒充手机实机验证。
 
-桌面 Electron CSC01 由根任务维护 pending fixtures 和实际执行。本实现不改该 E2E 文件；
-已有多次实际 GREEN 使用各自构建快照，后续 production 的 cold boundary 修复由对应 UT 证明，
-最终新 bundle 的整体验收由根任务记录。独立协议 HTTP 恢复和关闭屏障也按根任务的实际证据登记。
-未运行全量 UT，未执行手机 GUI 验收，未 push。
+协作邮箱保持 Codex 的 assistant 信封身份。若本次请求最终投影以 durable collaboration 信封
+结束，Core 在 provider-only 尾部追加一条不含载荷的宿主继续边界，明确前一条是内部代理消息
+而非 assistant prefill。该边界不持久化、不显示、不更新 latest-real-user，也不根据输出文本猜测
+reasoning；provider 正确返回的 reasoning 仍由原有 reasoning 事件链折叠展示。普通模型正文即使
+很长也不得被启发式改判为思维链。
+
+桌面 Electron CSC01 已追加“先在父会话展开 spawn 详情、再下钻子会话”的候选断言。case-local
+fixture checker 通过；fresh renderer 与 Core 构建通过，但完整 Agent bundle 被未修改的
+`zcode-site-plugin` 无法解析 `@zcode/shared/zcodeEndpoint` 阻断。复用 bundle 的窗口回放又被
+Electron 44.7.0 缺少 Chromium mapping 阻断，因此本轮没有把 CSC01 记为 GREEN。已有多次实际
+GREEN 只代表各自旧构建快照。继续边界由 Core provider 投影回归验证，界面分流由 UI 契约测试
+验证；未运行全量 UT，未执行手机 GUI 验收，未 push。

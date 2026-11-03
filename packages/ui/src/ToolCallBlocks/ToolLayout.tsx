@@ -1,5 +1,8 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+} from "@/components/ui/collapsible.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { CheckIcon, CopyIcon } from "lucide-react";
@@ -10,12 +13,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip.js";
-import { ToolSummaryRow, type ToolSummaryAction } from "@/ToolCallBlocks/ToolSummaryRow.js";
+import {
+  ToolSummaryRow,
+  type ToolSummaryAction,
+} from "@/ToolCallBlocks/ToolSummaryRow.js";
 import { uiMemoryDiagnosticsRegistry } from "@/lib/memoryDiagnostics.js";
 
 const toolLayoutOpenState = new Map<string, boolean>();
 // 内存诊断计数器：该表按 toolId 只增不减，先落日志。
-uiMemoryDiagnosticsRegistry.register("toolLayout", () => ({ openState: toolLayoutOpenState.size }));
+uiMemoryDiagnosticsRegistry.register("toolLayout", () => ({
+  openState: toolLayoutOpenState.size,
+}));
 const TOOL_CONTENT_COLLAPSE_UNMOUNT_DELAY_MS = 300;
 const TOOL_CONTENT_SHELL_CLASSNAME = "text-popover-foreground outline-none";
 const TOOL_CONTENT_SPACING_CLASSNAME = "pt-2";
@@ -108,34 +116,43 @@ function ToolLayoutComponent({
   const [isOpen, setIsOpen] = useState(
     () => toolLayoutOpenState.get(resolvedPersistOpenKey) ?? false,
   );
-  const hasSummaryAction = summaryAction !== undefined;
-  const isExpanded = !hasSummaryAction && (forceOpen || (canToggle && isOpen));
+  // FORK(codex-collaboration): 子代理下钻动作与工具详情 disclosure 必须独立；见 FEATURES.md 的 codex-collaboration 条目。
+  const isExpanded = forceOpen || (canToggle && isOpen);
   const [shouldRenderContent, setShouldRenderContent] = useState(isExpanded);
   const [isFailureTooltipCopied, setIsFailureTooltipCopied] = useState(false);
   const failureTooltipCopyResetRef = useRef<number | null>(null);
   const contentUnmountDelayRef = useRef<number | null>(null);
   const hasAutoOpenedRef = useRef(false);
   const previousIsRunningRef = useRef(isRunning);
-  const shouldShowStatusLabel = (showStatusLabel || showFailureStatus) && statusLabel != null;
-  const shouldRenderResolvedContent = !hasSummaryAction && (isExpanded || shouldRenderContent);
+  const shouldShowStatusLabel =
+    (showStatusLabel || showFailureStatus) && statusLabel != null;
+  const shouldRenderResolvedContent = isExpanded || shouldRenderContent;
   const resolvedContent = shouldRenderResolvedContent
     ? (renderContent?.() ?? content ?? null)
     : null;
   const summaryPrimaryText =
-    isExpanded && expandedPrimaryText != null ? expandedPrimaryText : primaryText;
-  const summaryKindLabel = isExpanded && expandedKindLabel != null ? expandedKindLabel : kindLabel;
+    isExpanded && expandedPrimaryText != null
+      ? expandedPrimaryText
+      : primaryText;
+  const summaryKindLabel =
+    isExpanded && expandedKindLabel != null ? expandedKindLabel : kindLabel;
   const summaryKindDetail =
-    isExpanded && expandedKindDetail !== undefined ? expandedKindDetail : kindDetail;
+    isExpanded && expandedKindDetail !== undefined
+      ? expandedKindDetail
+      : kindDetail;
   const summarySecondaryText =
     isExpanded && expandedSecondaryText !== undefined
       ? expandedSecondaryText
       : isExpanded && hideSecondaryTextWhenOpen
         ? null
         : secondaryText;
-  const summaryTitle = isExpanded && expandedTitle !== undefined ? expandedTitle : title;
+  const summaryTitle =
+    isExpanded && expandedTitle !== undefined ? expandedTitle : title;
   const resolvedSummaryContentKey =
-    summaryContentKey ?? `${String(summaryTitle ?? "")}:${String(statusLabel ?? "")}`;
-  const shouldShowDiffCount = diffCount != null && !(isExpanded && hideDiffCountWhenOpen);
+    summaryContentKey ??
+    `${String(summaryTitle ?? "")}:${String(statusLabel ?? "")}`;
+  const shouldShowDiffCount =
+    diffCount != null && !(isExpanded && hideDiffCountWhenOpen);
   // toolcall 在流式期间数量多且持续更新，旋转 loading 图标会让
   // 动画长期占用渲染资源；运行态改由文案扫光和状态文字表达，图标保持静态。
   const summaryIcon = icon;
@@ -221,7 +238,10 @@ function ToolLayoutComponent({
   }, []);
 
   const handleCopyFailureTooltip = () => {
-    if (typeof statusTooltip !== "string" || statusTooltip.trim().length === 0) {
+    if (
+      typeof statusTooltip !== "string" ||
+      statusTooltip.trim().length === 0
+    ) {
       return;
     }
 
@@ -254,7 +274,8 @@ function ToolLayoutComponent({
                 <span className="line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap break-words">
                   {statusTooltip}
                 </span>
-                {typeof statusTooltip === "string" && statusTooltip.trim().length > 0 ? (
+                {typeof statusTooltip === "string" &&
+                statusTooltip.trim().length > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -301,11 +322,12 @@ function ToolLayoutComponent({
       statusWordNode
     );
 
+  // FORK(codex-collaboration): summaryAction 只负责下钻，不能再禁用详情状态与内容渲染；见 FEATURES.md 的 codex-collaboration 条目。
   return (
     <Collapsible
-      open={!hasSummaryAction && (forceOpen || (canToggle && isOpen))}
+      open={forceOpen || (canToggle && isOpen)}
       onOpenChange={(open) => {
-        if (hasSummaryAction || forceOpen) {
+        if (forceOpen) {
           return;
         }
         toolLayoutOpenState.set(resolvedPersistOpenKey, open);
@@ -339,22 +361,33 @@ function ToolLayoutComponent({
         statusNode={statusNode}
         title={summaryTitle}
         toggleAriaLabel={intl.formatMessage({
-          id: isExpanded ? "chat.toolCall.collapseDetails" : "chat.toolCall.expandDetails",
+          id: isExpanded
+            ? "chat.toolCall.collapseDetails"
+            : "chat.toolCall.expandDetails",
         })}
         toolId={toolId}
       />
-      {!hasSummaryAction && canToggle ? (
+      {/* FORK-BEGIN(codex-collaboration) */}
+      {canToggle ? (
         <CollapsibleContent className={TOOL_CONTENT_SHELL_CLASSNAME}>
           {/* padding 直接挂在高度动画节点上时，主体归零后仍会停在 8px，
               直到延迟卸载切换 display:none 才瞬间消失。放入内部后会被外层 overflow
               随动画高度连续裁切到 0，保留原间距且不改变 300ms 的测量保护。 */}
-          <div className={TOOL_CONTENT_SPACING_CLASSNAME}>{resolvedContent}</div>
+          <div className={TOOL_CONTENT_SPACING_CLASSNAME}>
+            {resolvedContent}
+          </div>
         </CollapsibleContent>
-      ) : !hasSummaryAction && forceOpen ? (
-        <div className={cn(TOOL_CONTENT_SHELL_CLASSNAME, TOOL_CONTENT_SPACING_CLASSNAME)}>
+      ) : forceOpen ? (
+        <div
+          className={cn(
+            TOOL_CONTENT_SHELL_CLASSNAME,
+            TOOL_CONTENT_SPACING_CLASSNAME,
+          )}
+        >
           {resolvedContent}
         </div>
       ) : null}
+      {/* FORK-END(codex-collaboration) */}
     </Collapsible>
   );
 }

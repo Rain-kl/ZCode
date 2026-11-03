@@ -1,6 +1,7 @@
 export { createCollaborationToolEntries } from "./tools.js";
 export {
   buildCollaborationRole,
+  COLLABORATION_CONTINUATION_BOUNDARY,
   formatCollaborationEnvelope,
   mapCollaborationStatus,
 } from "./prompts.js";

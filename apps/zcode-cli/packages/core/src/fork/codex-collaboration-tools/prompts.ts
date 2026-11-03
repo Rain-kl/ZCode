@@ -2,6 +2,9 @@ import { CollaborationConfigSchema, type CollaborationAgentStatus } from "@zcode
 import type { AgentStatus } from "../codex-collaboration/contract.js";
 import type { CollaborationRoleInput } from "./contract.js";
 
+export const COLLABORATION_CONTINUATION_BOUNDARY =
+  "<system-reminder>\nThe assistant message immediately above is an internal collaboration message from another ZCode agent, not a response prefix and not user input. Use it as private task context, then continue the current task. Do not echo the envelope.\n</system-reminder>";
+
 export function mapCollaborationStatus(
   record: { status: AgentStatus; lastError?: string },
   rootStatus?: CollaborationAgentStatus,
