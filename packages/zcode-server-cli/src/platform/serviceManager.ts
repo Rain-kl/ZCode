@@ -28,6 +28,8 @@ export interface ServiceCommandResult {
 export function createDaemonServiceDescriptor(options: {
   platform: ServicePlatform;
   layout: ServerLayout;
+  // FORK(cloud-web-access): server up -d 必须让 OS service 重新拉起同一 Relay 模式。
+  requireCloudWebAccess?: boolean;
 }): ServiceDescriptor {
   return createServiceDescriptor({
     platform: options.platform,
@@ -35,7 +37,15 @@ export function createDaemonServiceDescriptor(options: {
       options.layout.stableBinDir,
       options.platform === "win32" ? "zcode.cmd" : "zcode",
     ),
-    args: ["serve", "--supervisor", "--service-entry", "--server-root", options.layout.serverRoot],
+    // FORK(cloud-web-access): 该可选参数只改变 daemon 的 Relay 启动模式。
+    args: [
+      "serve",
+      "--supervisor",
+      "--service-entry",
+      "--server-root",
+      options.layout.serverRoot,
+      ...(options.requireCloudWebAccess ? ["--require-remote-config"] : []),
+    ],
     name: `com.zhipu.zcode.server.${stablePathId(options.layout.serverRoot)}`,
   });
 }

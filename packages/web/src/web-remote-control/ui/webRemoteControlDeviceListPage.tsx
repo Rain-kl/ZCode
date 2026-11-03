@@ -56,6 +56,8 @@ type DeviceListCopy = (typeof copyByLocale)["zh-CN"];
 const PROVIDER_LABELS: Record<WebRemoteControlDeviceListAccount["provider"], string> = {
   zai: "Z.ai",
   bigmodel: "BigModel",
+  // FORK(cloud-web-access): 自建账号在设备页明确显示为 Relay 身份。
+  "self-hosted": "Self-hosted Relay",
 };
 
 interface WebRemoteControlDeviceListPageProps {

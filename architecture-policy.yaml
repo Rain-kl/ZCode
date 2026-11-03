@@ -2,6 +2,24 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: fork-remote-connector
+    roots: [packages/fork-remote-connector/src]
+    managed: true
+    requires: [client, rpc, shared, web-remote-relay]
+    publicEntrypoints:
+      - packages/fork-remote-connector/src/contract.ts
+      - packages/fork-remote-connector/src/module.ts
+    layers: { contract: contract.ts, adapters: . }
+    owner: fork
+  - id: fork-remote-relay
+    roots: [packages/fork-remote-relay/src]
+    managed: true
+    requires: [shared, web-remote-relay]
+    publicEntrypoints:
+      - packages/fork-remote-relay/src/contract.ts
+      - packages/fork-remote-relay/src/module.ts
+    layers: { contract: contract.ts, adapters: . }
+    owner: fork
   - id: codex-collaboration-ui
     roots: [packages/ui/src/fork/codex-collaboration]
     managed: true
@@ -156,6 +174,16 @@ modules:
   - id: server
     roots: [packages/server/src]
     managed: false
+  - id: server-cloud-web-access
+    roots: [packages/zcode-server-cli/src/fork/cloud-web-access]
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/zcode-server-cli/src/fork/cloud-web-access/contract.ts
+      - packages/zcode-server-cli/src/fork/cloud-web-access/module.ts
+    layers: {contract: contract.ts, adapters: .}
+    layerOrder: [contract, adapters]
+    owner: fork
   - id: zcode-server-cli
     roots: [packages/zcode-server-cli/src]
     managed: false

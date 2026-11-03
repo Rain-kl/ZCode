@@ -7,23 +7,11 @@ import type {
 import type { WebRemoteControlRelayV2Device } from "@zcode/shared/web-remote-relay";
 import { parseWebRemoteControlExternalQrParams, type WebRemoteControlFailure } from "@zcode/shared";
 import { WebRemoteControlV2ConnectionError } from "@zcode/shared/web-remote-relay";
-import type { WebOAuthProviderId } from "#src/auth/browserOAuthCredentialRepo.js";
 import { groupWebRemoteControlDevices } from "#src/web-remote-control/domain/webRemoteControlDeviceGroups.js";
 import {
   readKnownDevices,
   rememberKnownDevices,
 } from "#src/web-remote-control/app/webRemoteControlKnownDevices.js";
-
-export function isWebRemoteControlOAuthCallback(url: URL): boolean {
-  return (
-    ["/remote/v4", "/remote/v4/"].includes(url.pathname) &&
-    url.searchParams.has("state") &&
-    // BigModel 使用 authCode；必须先进入既有回调校验，不能落回未登录门禁。
-    (url.searchParams.has("code") ||
-      url.searchParams.has("authCode") ||
-      url.searchParams.has("error"))
-  );
-}
 
 const LAST_DEVICE_KEY = "zcode-web-remote-last-device-sid";
 const LAST_DEVICE_MID_KEY = "zcode-web-remote-last-device-mid";
@@ -83,10 +71,7 @@ export class WebRemoteControlEntry {
   async start(): Promise<void> {
     this.reset();
     const url = new URL(this.options.getHref());
-    if (isWebRemoteControlOAuthCallback(url)) {
-      this.options.onView({ kind: "callback" });
-      return;
-    }
+    // FORK(cloud-web-access): /remote/v4 不再接收官方 OAuth 回调，任何查询参数都先经过 Relay 会话门禁。
     if (!this.options.auth.getZCodeJwtToken()) {
       this.options.onView({ kind: "login" });
       return;
@@ -320,12 +305,12 @@ export class WebRemoteControlEntry {
     });
   }
 
-  startLogin(provider?: WebOAuthProviderId): void {
-    this.options.auth.startLogin({
-      ...this.options.loginOptions,
-      ...(provider ? { provider } : {}),
-      appReturnTo: this.options.getHref(),
-    });
+  // FORK(cloud-web-access): 自建 Relay 使用同源账号密码登录，成功后复用既有设备 admission。
+  async startLogin(
+    credentials: Parameters<WebRemoteControlEntryOptions["auth"]["startLogin"]>[0],
+  ): Promise<void> {
+    await this.options.auth.startLogin(credentials);
+    await this.start();
   }
 
   async switchAccount(): Promise<void> {
