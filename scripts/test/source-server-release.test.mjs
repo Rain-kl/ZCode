@@ -28,6 +28,8 @@ async function fixture(t) {
       join(root, name, "manifest.json"),
       JSON.stringify({ product: "zcode-server", appVersion: version, target }),
     );
+    await mkdir(join(root, name, "runtime/provider"), { recursive: true });
+    await writeFile(join(root, name, "runtime/provider/zcode-builtin.json"), '{"fixture":true}\n');
     await exec("tar", ["-czf", join(dir, `${name}.tar.gz`), "-C", root, name]);
     const bytes = await readFile(join(dir, `${name}.tar.gz`));
     archives.push({
@@ -50,7 +52,7 @@ test("verify accepts all four content-verified targets", async (t) => {
   assert.equal((await verifySourceServerRelease(f.dir, version)).archives.length, 4);
 });
 
-for (const failure of ["version", "target", "size", "sha", "missing", "manifest"]) {
+for (const failure of ["version", "target", "size", "sha", "missing", "manifest", "provider"]) {
   test(`verify rejects ${failure} before publication`, async (t) => {
     const f = await fixture(t);
     const archive = f.descriptor.archives[0];
@@ -59,11 +61,14 @@ for (const failure of ["version", "target", "size", "sha", "missing", "manifest"
     if (failure === "size") archive.sizeBytes++;
     if (failure === "sha") archive.sha256 = "0".repeat(64);
     if (failure === "missing") await rm(join(f.dir, archive.fileName));
-    if (failure === "manifest") {
-      await writeFile(
-        join(f.root, "zcode-server-linux-x64/manifest.json"),
-        JSON.stringify({ product: "zcode-server", appVersion: "0.0.0", target: "linux-x64" }),
-      );
+    if (failure === "manifest" || failure === "provider") {
+      if (failure === "provider")
+        await rm(join(f.root, "zcode-server-linux-x64/runtime/provider/zcode-builtin.json"));
+      else
+        await writeFile(
+          join(f.root, "zcode-server-linux-x64/manifest.json"),
+          JSON.stringify({ product: "zcode-server", appVersion: "0.0.0", target: "linux-x64" }),
+        );
       await exec("tar", [
         "-czf",
         join(f.dir, archive.fileName),

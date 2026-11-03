@@ -4,13 +4,13 @@
 
 ## 1. 交付结构
 
-| 能力             | 实现位置                                                | 状态                                                           |
-| ---------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
-| Worker/DO Relay  | `packages/fork-remote-relay/**`                         | 已完成认证、设备/票据、V2 转发、静态页面和 workerd 测试         |
-| Server connector | `packages/fork-remote-connector/**`                     | 已完成 Core loopback、AppPayload bridge、代际和启动失败清理    |
-| Server 命令/配置 | `packages/zcode-server-cli/src/fork/cloud-web-access/**` | 已完成 connect、配置保存、持久日志、up/down/logs 接线          |
-| Web 登录入口     | `packages/web/src/web-remote-control/**` + `packages/ui` | 已完成 `/remote/v4` 同源账号密码登录和 Root 启动门控           |
-| 根工作流         | `package.json`、`architecture-policy.yaml`、测试清单    | 已接入 typecheck、架构边界和 fork 合同测试                     |
+| 能力             | 实现位置                                                 | 状态                                                        |
+| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| Worker/DO Relay  | `packages/fork-remote-relay/**`                          | 已完成认证、设备/票据、V2 转发、静态页面和 workerd 测试     |
+| Server connector | `packages/fork-remote-connector/**`                      | 已完成 Core loopback、AppPayload bridge、代际和启动失败清理 |
+| Server 命令/配置 | `packages/zcode-server-cli/src/fork/cloud-web-access/**` | 已完成 connect、配置保存、持久日志、up/down/logs 接线       |
+| Web 登录入口     | `packages/web/src/web-remote-control/**` + `packages/ui` | 已完成 `/remote/v4` 同源账号密码登录和 Root 启动门控        |
+| 根工作流         | `package.json`、`architecture-policy.yaml`、测试清单     | 已接入 typecheck、架构边界和 fork 合同测试                  |
 
 Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只保留组合根和入口适配，并用 `FORK(cloud-web-access)` 标出产品接线。配置和日志路径属于 Server 实例的 canonical root，不建立第二套 daemon 或数据目录。
 
@@ -99,3 +99,11 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 - 未验证真实模型、权限交互、断网恢复、手机后台和公网手机；
 - Worker 目前是单部署单租户，没有多租户、注册、账号管理、通知、离线数据库或 WebDAV 替换；
 - 生产部署必须先构建 Web，再设置认证 secrets；单独执行 `wrangler deploy` 不会生成可用账号。
+
+## 9. Server 安装路径与资源统一（2026-11-03）
+
+旧一键安装脚本在 `.local/share/zcode-server` 自行维护第二套运行包，而 SSH 用 `.zcode/server/current.json`；同一 CLI 可能与实际运行版本不同。脚本现只下载、校验和临时解压，再调用包内 `update --from-archive --server-root`，由既有 ReleaseInstaller/ReleaseManager 持有生命周期锁并维护不可变目录、完整性、pending/current 和稳定入口。PATH 包装器始终执行统一入口，绑定相同 root，SSH 切换版本后自动跟随。旧脚本入口迁移后保留原始文件，不复制或删除会话与凭据。
+
+用户反馈的 `无法定位 CLI ZCode Built-in Provider Config` 根因为 staging 只复制 `zcode.cjs` 而没有复制它旁边的 `provider/zcode-builtin.json`；`--version` 无需 provider，之前的版本检查未覆盖这一缺件。`packaging/stage.ts` 现在把 Agent dist 同次构建的配置复制到 `runtime/provider` 并纳入 agent-runtime 的 paths、哈希与组件归档。缺件在 staging、发布校验和安装前置检查时都明确失败；不靠用户下载零散配置修补。
+
+规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。不增加通用 Web server 的 `--web` 模式，远控仍使用 `zcode server connect/up` 与 Relay 网页。

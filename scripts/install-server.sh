@@ -49,15 +49,27 @@ def install_path(variable, default):
     return path.resolve()
 
 
-def check_command(command, releases):
+def has_marker(path, marker):
+    encoded = marker.encode("utf8")
+    with path.open("rb") as stream:
+        return stream.read(len(encoded)) == encoded
+
+
+def check_command(command, root):
+    if command == root / "bin/zcode":
+        return  # 直接使用既有稳定入口时不写 PATH 包装器。
     if command.is_symlink():
         target = command.resolve()
-        require(target.parent.parent == releases and target.name == ".installer-launcher"
-                and target.is_file()
-                and target.read_text().startswith("#!/bin/sh\n# zcode-server installer\n"),
+        legacy_releases = (Path.home() / ".local/share/zcode-server/releases").resolve()
+        legacy = (target.parent.parent == legacy_releases and target.name == ".installer-launcher"
+                  and target.is_file()
+                  and has_marker(target, "#!/bin/sh\n# zcode-server installer\n"))
+        require(target == root / "bin/zcode" or legacy,
                 "Refusing to replace unrelated command: " + str(command))
     else:
-        require(not command.exists(), "Refusing to replace existing command: " + str(command))
+        require(not command.exists() or (command.is_file() and has_marker(command,
+            "#!/bin/sh\n# zcode-server unified installer\n")),
+            "Refusing to replace existing command: " + str(command))
 
 
 def validate_archive(archive, name, version, target):
@@ -109,11 +121,14 @@ def main():
     arch = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(machine)
     require(arch is not None, "Unsupported CPU architecture: " + machine)
     target = ("linux" if system == "Linux" else "darwin") + "-" + arch
-    root = install_path("ZCODE_SERVER_INSTALL_DIR", Path.home() / ".local/share/zcode-server")
+    require(not os.environ.get("ZCODE_SERVER_INSTALL_DIR"),
+            "ZCODE_SERVER_INSTALL_DIR is no longer supported; use ZCODE_DATA_BASE_DIR (Server root: <base>/.zcode/server)")
+    root = install_path("ZCODE_DATA_BASE_DIR", Path.home()) / ".zcode/server"
+    root = root.resolve()
     bin_dir = install_path("ZCODE_SERVER_BIN_DIR", Path.home() / ".local/bin")
-    releases = root / "releases"
     command = bin_dir / "zcode"
-    check_command(command, releases)
+    stable = root / "bin/zcode"
+    check_command(command, root)
 
     with tempfile.TemporaryDirectory(prefix="zcode-server-download-") as temp:
         temp = Path(temp)
@@ -163,37 +178,42 @@ def main():
                 checksum.update(chunk)
         require(checksum.hexdigest() == digest, "Archive SHA256 mismatch: " + filename)
 
-        destination = releases / (version + "-" + target + "-" + digest)
-        launcher = destination / ".installer-launcher"
-        wrapper = "#!/bin/sh\n# zcode-server installer\nexec " + shlex.quote(str(destination / "bin/zcode")) + ' "$@"\n'
         with tarfile.open(archive_path, "r:gz") as archive:
             validate_archive(archive, name, version, target)
-            releases.mkdir(parents=True, exist_ok=True)
-            # 与最终目录同一文件系统；下载/验证失败不会触碰现有运行文件或命令。
-            with tempfile.TemporaryDirectory(prefix=".install-", dir=releases) as staging:
-                extract_archive(archive, staging)
-                unpacked = Path(staging) / name
-                for relative in ("bin/zcode", "runtime/node", "runtime/server-cli.js"):
-                    require((unpacked / relative).is_file(), "Missing packaged entry: " + relative)
-                for relative in ("bin/zcode", "runtime/node"):
-                    require(os.access(unpacked / relative, os.X_OK), "Packaged entry is not executable: " + relative)
-                (unpacked / ".installer-launcher").write_text(wrapper)
-                (unpacked / ".installer-launcher").chmod(0o755)
-                if destination.exists():
-                    require(launcher.is_file() and launcher.read_text() == wrapper,
-                            "Refusing to overwrite existing release directory: " + str(destination))
-                else:
-                    unpacked.rename(destination)
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        check_command(command, releases)
-        with tempfile.TemporaryDirectory(prefix=".zcode-link-", dir=bin_dir) as link_temp:
-            link = Path(link_temp) / "zcode"
-            link.symlink_to(launcher)
-            os.replace(link, command)
+            staging = temp / "bootstrap"
+            staging.mkdir()
+            extract_archive(archive, staging)
+        unpacked = staging / name
+        for relative in ("bin/zcode", "runtime/node", "runtime/server-cli.js", "runtime/provider/zcode-builtin.json"):
+            require((unpacked / relative).is_file(), "Missing packaged entry: " + relative
+                    + "; publish a complete Source Server release before retrying")
+        for relative in ("bin/zcode", "runtime/node"):
+            require(os.access(unpacked / relative, os.X_OK), "Packaged entry is not executable: " + relative)
+        # 复用 SSH 的唯一安装 owner：不自行发布版本目录、current 或完整性记录。
+        update_args = [str(unpacked / "bin/zcode"), "update", "--from-archive", str(archive_path),
+                       "--server-root", str(root), "--json"]
+        result = subprocess.run(update_args)
+        require(result.returncode == 0, "Server installation command failed (exit " + str(result.returncode)
+                + "): " + shlex.join(update_args))
+        require(stable.is_file(), "Server installation did not create stable launcher: " + str(stable))
+        if command != stable:
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            check_command(command, root)
+            stable_command = shlex.quote(str(stable))
+            wrapper = ('#!/bin/sh\n# zcode-server unified installer\n'
+                       'for arg in "$@"; do\n'
+                       '  if [ "$arg" = "--server-root" ]; then exec ' + stable_command + ' "$@"; fi\n'
+                       'done\nexec ' + stable_command + ' "$@" --server-root ' + shlex.quote(str(root)) + '\n')
+            with tempfile.TemporaryDirectory(prefix=".zcode-command-", dir=bin_dir) as command_temp:
+                staged_command = Path(command_temp) / "zcode"
+                staged_command.write_text(wrapper)
+                staged_command.chmod(0o755)
+                os.replace(staged_command, command)
 
     print("ZCode Server " + version + " installed: " + str(command))
     print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f")
-    print("For upgrades: stop the existing service with zcode server down before installing; start it again afterward.")
+    print("Server root: " + str(root) + " (shared with SSH installations)")
+    print("Running-task and downgrade checks follow the Server updater; no force options are used.")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print("Add to PATH: export PATH=" + shlex.quote(str(bin_dir)) + ':"$PATH"')
 
