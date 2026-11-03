@@ -62,6 +62,17 @@ function parseVersion(value: string): ParsedVersion {
   };
 }
 
+// FORK(github-update): dev 哈希没有时间顺序，开发渠道不能据此阻止 Source Server 连接。
+export function shouldEnforceSourceServerVersionCompatibility(
+  controller: CompatibilityManifest,
+): boolean {
+  try {
+    return parseVersion(controller.productVersion).prerelease[0]?.toLowerCase() !== "dev";
+  } catch {
+    return true;
+  }
+}
+
 function compareIdentifier(left: string, right: string): number {
   const leftNumeric = /^\d+$/u.test(left);
   const rightNumeric = /^\d+$/u.test(right);
@@ -106,6 +117,18 @@ export function evaluateSourceServerCompatibility(
   controller: CompatibilityManifest,
   server: CompatibilityManifest,
 ): SourceServerCompatibilityResult {
+  // FORK(github-update): dev 构建只校验握手合同，不比较不可排序的提交哈希版本。
+  if (!shouldEnforceSourceServerVersionCompatibility(controller)) {
+    return {
+      compatible: true,
+      updateAvailable: false,
+      newerEndpoint: "equal",
+      newerVersion: server.productVersion,
+      olderVersion: server.productVersion,
+      requiredMinimumVersion: server.minCompatibleVersion,
+    };
+  }
+
   const comparison = compareCompatibilityVersions(controller.productVersion, server.productVersion);
   const newerEndpoint = comparison > 0 ? "controller" : comparison < 0 ? "server" : "equal";
   const newer = comparison >= 0 ? controller : server;

@@ -139,6 +139,13 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 6. **移除强更 gate 后没有 kill switch**。旧版本出严重问题时只能靠用户主动检查更新，
    不能再强制下线。若将来需要，建议改成「只提示不阻断」或在读取 Release 正文时解析最低版本要求。
 
+## 2026-11-03 开发渠道 Source Server 版本门
+
+dev Desktop 的完整版本包含提交哈希，不能把哈希的字典序当作构建先后。开发渠道连接 Source Server 时
+不执行最低兼容版本比较，不因双方 `-dev.<sha>` 不同显示“必须升级”，连接状态保持正常；正式版 Desktop
+继续按 compatibility manifest 严格判定并可阻止连接。双方仍必须完成携带 compatibility manifest 的当前
+握手合同，旧版或不提供该合同的 Server 不会被放行。
+
 ## 2026-11-03 Windows 签名同步取舍
 
 用户明确选择：Windows 自动更新继续允许未签名安装包。上游 a60ba6a7 新增的强制 Authenticode

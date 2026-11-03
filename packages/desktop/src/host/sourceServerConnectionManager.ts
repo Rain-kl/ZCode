@@ -24,6 +24,7 @@ import {
   evaluateSourceServerCompatibility,
   isPublicZCodeErrorCode,
   normalizeRemoteConnectionError,
+  shouldEnforceSourceServerVersionCompatibility,
   stripRemoteTargetSecrets,
 } from "@zcode/shared";
 import type { IServiceAccessor } from "@zcode/services";
@@ -1192,7 +1193,9 @@ export class SourceServerConnectionManager {
         const installedVersion = probe.installedVersion?.trim() || "unknown";
         let compatibleInstalledVersion = false;
         try {
+          // FORK(github-update): dev Desktop 的哈希后缀不能作为 Source Server 最低版本门禁。
           compatibleInstalledVersion =
+            !shouldEnforceSourceServerVersionCompatibility(this.compatibilityManifest) ||
             compareCompatibilityVersions(
               installedVersion,
               this.compatibilityManifest.minCompatibleVersion,
