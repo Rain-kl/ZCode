@@ -9,6 +9,9 @@
 - 新工作区 `/Users/ryan/Code/Node/ZCode-cloud-web-access`，分支 `codex/cloud-web-access`。
 - 读取 `server` 受控上下文，确认是 legacy；新增模块必须独立登记，不能借其 legacy 状态绕过检查。
 - 已核实统一发行包 `zcode --web`、Server loopback/token/普通 WS scope，以及 Web 同源 bootstrap 路径。
+- 根 `pnpm lint` 通过：85 warnings / 0 errors。
+- 根 `pnpm typecheck` 实际失败（exit 2）：`packages/ui/src/previewPaneOfficeXlsxContent.tsx:176` 的 `onOpenLink` 不在已安装 `XlsxViewerProps` 中；`packages/desktop/src/main/pluginSandbox/host.ts:7` 的 Electron `ClipboardItem` 导出及 `:342` 参数类型不匹配。此次仅新增文档，产品源码与依赖均未修改，记录为开工基线失败；尚未调查这些错误的成因，不扩大本任务修复范围。
+- 新文档 `git diff --cached --check` 通过。功能回归与浏览器验收均未执行。
 
 ## 方案确认后的执行顺序
 
