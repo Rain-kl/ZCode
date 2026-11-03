@@ -203,7 +203,7 @@ export class AgentRuntime {
   private contextSourcePort?: ContextSourcePort;
   // FORK(identity-preset): 端口在 deps，故与 contextSourcePort 同处声明
   private identityPresetPort?: IdentityPresetPort;
-  // FORK(reload-command): 同上，/reload 复用同一份档位端口
+  // FORK(reload-command): 同上，/refresh 复用同一份档位端口
   private forkToolModePort?: ForkToolModePort;
   private skillPort?: SkillPort;
   private mcpPort?: McpPort;
@@ -347,7 +347,7 @@ export class AgentRuntime {
     this.contextSourcePort = deps.contextSourcePort;
     // FORK(identity-preset): 与同区端口一样只做一次性转存；唯一的消费点是 ensureContextInitialized
     this.identityPresetPort = deps.identityPresetPort;
-    // FORK(reload-command): 创建期解析与 /reload 共用的档位端口
+    // FORK(reload-command): 创建期解析与 /refresh 共用的档位端口
     this.forkToolModePort = deps.forkToolModePort;
     this.skillPort = deps.skillPort;
     this.mcpPort = deps.mcpPort;

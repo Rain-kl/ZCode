@@ -112,7 +112,7 @@ export interface AgentRuntimeInternal
   contextSourcePort?: ContextSourcePort;
   // FORK(identity-preset): 端口只能走 deps（config 会被子运行时 spread），故按同区惯例镜像成字段
   identityPresetPort?: IdentityPresetPort;
-  // FORK(reload-command): /reload 读档位的端口；内置工具按当下 config 重注册的闭包；
+  // FORK(reload-command): /refresh 读档位的端口；内置工具按当下 config 重注册的闭包；
   // MCP 上次注册名与启动期描述符快照（收窄要显式注销，放宽按同一份快照重新过滤）。
   forkToolModePort?: ForkToolModePort;
   reregisterBuiltInTools?: () => void;

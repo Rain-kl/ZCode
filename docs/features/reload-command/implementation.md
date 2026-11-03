@@ -1,4 +1,4 @@
-# 覆盖设置热重载：/reload 命令（reload-command）——实现记录
+# 覆盖设置热重载：/refresh 命令（reload-command）——实现记录
 
 > 设计见 `design.md`；功能索引见 `FEATURES.md` 的 `reload-command` 条目。
 > 上游接线一律标注 `FORK(reload-command)`。
@@ -7,28 +7,28 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts` | 档位**单点解析**：读 `tool-groups.json` → 三档工具名 → 与宿主名单交集。`toolAllowlist` 是**终值**语义（标准档 = 宿主名单本身，可能 undefined），创建期与 `/reload` 共用；绝不抛出，读不动给诊断 |
+| `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts` | 档位**单点解析**：读 `tool-groups.json` → 三档工具名 → 与宿主名单交集。`toolAllowlist` 是**终值**语义（标准档 = 宿主名单本身，可能 undefined），创建期与 `/refresh` 共用；绝不抛出，读不动给诊断 |
 | `apps/zcode-cli/packages/core/src/runtime/methods/reload.ts` | `reloadForkOverrides`（实质动作：重读两端口 → 工具差量 → 清缓存 → `rebuildContextPrefix` → 日志）与 `executeForkReload`（kind=`reload` 的维护轮，形状照抄 `executeManualCompact`） |
 | `apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts` | 新增 `refreshForkMcpToolRegistrations`（注销上次注册名 → 按启动期描述符快照重新过滤，不重连）；`initializeMcp` 现在留存描述符与注册名单 |
 | `apps/zcode-cli/packages/core/src/runtime/helpers/runtime-tools.ts` | 留存 `reregisterBuiltInTools` 闭包（完整选项集 + silent 重注册） |
-| `apps/zcode-cli/packages/core/src/runtime/helpers/commands.ts` | `parseReloadCommand`（只接受整条 `/reload`） |
-| `apps/zcode-cli/packages/core/src/runtime/methods/turn.ts` | 分流：命中 `/reload` → `executeForkReload`（空闲派发与队列排空同一入口） |
-| `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts` | v4 原生命令：空闲 `submitPrompt("/reload")`；忙碌与 compact 一致入 FIFO（`commandKind: "reload"`） |
-| `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` | `/` 菜单解析 `kind: "reload"`、派发信封、排队/失败 toast、队列项不参与 Composer 回填；成功回执由转录标记承担 |
+| `apps/zcode-cli/packages/core/src/runtime/helpers/commands.ts` | `parseRefreshCommand`（只接受整条 `/refresh`） |
+| `apps/zcode-cli/packages/core/src/runtime/methods/turn.ts` | 分流：命中 `/refresh` → `executeForkReload`（空闲派发与队列排空同一入口） |
+| `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts` | v4 原生命令：空闲 `submitPrompt("/refresh")`；忙碌与 compact 一致入 FIFO（`commandKind: "refresh"`） |
+| `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` | `/` 菜单解析 `kind: "refresh"`、派发信封、排队/失败 toast、队列项不参与 Composer 回填；成功回执由转录标记承担 |
 | 事件与投影链 | `contracts` 新增 `ForkReloadCompleted` 事件（payload 带 `sourceCommandId`）→ `product-projection` 落 `timelineMarker`（`reload` 型）→ `rows.ts` schema → `ConversationRowView` 灰字分隔线（「已重载提示词与工具面」，刷新图标）；分享面（公开投影 + 只读时间线）同步透出 |
 | `packages/ui/src/v4/pendingCommand{Registry,Replay}.ts` | `reload` 与 compact 同为可回放输入命令（刷新后仍有重放线索） |
-| `packages/shared/src/zcode-protocol-v4/{command,input-intent}.ts` 等 | 命令信封 `reload`（空 payload）、intent kind、steer kind、`activeTurnKind`、内置帮助目录 |
+| `packages/shared/src/zcode-protocol-v4/{command,input-intent}.ts` 等 | 命令信封 `refresh`（空 payload）、intent kind、steer kind、`activeTurnKind`、内置帮助目录 |
 | 删除 | `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口） |
 
 ## 2. 关键改动
 
-- **创建期与重载单点化**：原 `bootstrap` 的一次性 `resolveForkToolMode` 迁入 core 的 `createFileForkToolModePort`，`create-app` 创建端口 → 解析 → 注入 runtime deps；`/reload` 经同一端口重读。端口返回**终值**（标准档 = 宿主名单本身），否则 `/reload` 从极简切回标准会把宿主约束一并丢掉。
-- **执行路径唯一**：空闲时 v4 handler `submitPrompt("/reload")`，队列排空时 `executeTurnCommand("/reload")`，两条都落到 `turn.ts` 的 `parseReloadCommand` 分流 → `executeForkReload`。维护轮 `TurnStarted` 标 `inputVisibility: "model-only"` + `executionKind: "controlOnly"`（不渲染用户气泡、模型也读不到 `/reload` 文本、0ms 轮不进 Agent 工时），`TurnComplete` 空 response。
+- **创建期与重载单点化**：原 `bootstrap` 的一次性 `resolveForkToolMode` 迁入 core 的 `createFileForkToolModePort`，`create-app` 创建端口 → 解析 → 注入 runtime deps；`/refresh` 经同一端口重读。端口返回**终值**（标准档 = 宿主名单本身），否则 `/refresh` 从极简切回标准会把宿主约束一并丢掉。
+- **执行路径唯一**：空闲时 v4 handler `submitPrompt("/refresh")`，队列排空时 `executeTurnCommand("/refresh")`，两条都落到 `turn.ts` 的 `parseRefreshCommand` 分流 → `executeForkReload`。维护轮 `TurnStarted` 标 `inputVisibility: "model-only"` + `executionKind: "controlOnly"`（不渲染用户气泡、模型也读不到 `/refresh` 文本、0ms 轮不进 Agent 工时），`TurnComplete` 空 response。
 - **工具面差量**：内置先按 `resolveBuiltInToolAllowlist(config)` 显式注销被排除项（注册表不会回收旧项），再走**完整选项集的整体重注册**（含 embedded-search 联动与 deps 侧的门；不能复用分支刷新的精简集，它省略了 `includeNodeRepl` 等门）。MCP 注销上次注册名后按启动快照重新过滤（不重连；服务器配置变更仍需新会话）。`cachedTools` 清空后 `rebuildContextPrefix` 重建前缀——顺序有约束：builder 的 `guidanceToolNames` 从当前注册表取。
-- **缓存语义**：`/reload` 是「前缀在会话内不可变」的显式例外，一次性前缀失效是目的；设置无变化时重建结果逐字节相同，缓存不失效。
+- **缓存语义**：`/refresh` 是「前缀在会话内不可变」的显式例外，一次性前缀失效是目的；设置无变化时重建结果逐字节相同，缓存不失效。
 - **回执**：成功后追加 `ForkReloadCompleted` 事件 → 投影成 `timelineMarker`（`reload` 型，lane `assistantWork`，与 `/compact` 同款分隔线），UI 灰字「已重载提示词与工具面」，带 `sourceCommandId`（pending command 据此结算，不再弹恢复提示）。排队与失败仍走 toast——成功 toast 已移除，避免双份回执。
 - **让位与短路**：`subagent_child` 运行时不承接（`reloadForkOverrides` 直接返回 `skipped`）；workflow actor / `customSystemPrompt` 沿用 builder 既有让位规则。
-- **kind 扩展**：`"reload"` 进入 steer/intent/activeTurn 四个联合类型与两处 zod schema；`steering.ts` 的两处 inline-guide 排除同步加上（控制命令不得被当作 guide 消费）。
+- **kind 扩展**：新命令的 steer/intent 使用 `"refresh"`；内部 activeTurn 与持久化 marker 仍使用 `"reload"`；`steering.ts` 的两处 inline-guide 排除同步加上（控制命令不得被当作 guide 消费）。
 
 ## 3. 上游接线点
 
@@ -53,12 +53,20 @@ ui 8（`v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandRepla
 
 | 项 | 原因 | 验证方法 |
 | --- | --- | --- |
-| `executeForkReload` 的 turn 边界（TurnStarted/Complete、投影） | 需要完整 runtime 装配，超出单测成本；形状照抄 `executeManualCompact` | 运行实例：执行 `/reload` 后查 `fork.reload.started/completed` 与 `fork.reload.turn.completed` 日志，UI 无用户气泡 |
-| 转录回执（marker 落位与分享面渲染） | 需要真实投影消费与 UI | 运行实例：执行 `/reload` 后对话里出现灰字分隔线「已重载提示词与工具面」；冷恢复后仍在；分享会话里同样可见 |
-| MCP 工具面差量的真实重注册 | 单测里 MCP 端口缺席（`mcpRegistered` 为空） | 运行实例：标准→极简→标准 各执行一次 `/reload`，对比 MCP 工具在注册表/请求里的出现与消失（`mcp.tools.refreshed` 日志） |
-| 排队路径（忙碌时 `/reload` → 回合结束执行） | 需要真实 busy 会话 | 运行实例：任务运行中发送 `/reload`，观察「已排队」toast 与随后日志 |
-| 请求前缀的实际变化（含缓存） | 需要抓包 | 运行实例：改设置 → `/reload` → 抓下一轮请求对比 system prompt 与 tools 列表 |
+| `executeForkReload` 的 turn 边界（TurnStarted/Complete、投影） | 需要完整 runtime 装配，超出单测成本；形状照抄 `executeManualCompact` | 运行实例：执行 `/refresh` 后查 `fork.reload.started/completed` 与 `fork.reload.turn.completed` 日志，UI 无用户气泡 |
+| 转录回执（marker 落位与分享面渲染） | 需要真实投影消费与 UI | 运行实例：执行 `/refresh` 后对话里出现灰字分隔线「已重载提示词与工具面」；冷恢复后仍在；分享会话里同样可见 |
+| MCP 工具面差量的真实重注册 | 单测里 MCP 端口缺席（`mcpRegistered` 为空） | 运行实例：标准→极简→标准 各执行一次 `/refresh`，对比 MCP 工具在注册表/请求里的出现与消失（`mcp.tools.refreshed` 日志） |
+| 排队路径（忙碌时 `/refresh` → 回合结束执行） | 需要真实 busy 会话 | 运行实例：任务运行中发送 `/refresh`，观察「已排队」toast 与随后日志 |
+| 请求前缀的实际变化（含缓存） | 需要抓包 | 运行实例：改设置 → `/refresh` → 抓下一轮请求对比 system prompt 与 tools 列表 |
 
 ## 6. 与设计的偏差
 
-- 无功能偏差。实现补充了两条设计未写的细节：①内置重注册传 `silentDuplicateWarnings`（覆盖式重注册否则每次刷屏）；②`resolveQueuedComposerRestore` 同步排除 `reload` 队列项（与 compact 一致，否则会回填进 Composer 当文本重发）。
+- 无功能偏差。实现补充了两条设计未写的细节：①内置重注册传 `silentDuplicateWarnings`（覆盖式重注册否则每次刷屏）；②`resolveQueuedComposerRestore` 同步排除 `refresh` 队列项（与 compact 一致，否则会回填进 Composer 当文本重发）。
+
+## 2026-11-03 命名隔离验证
+
+- 文档先更新，再新增 `packages/shared/test/forkRefreshCommandContract.test.ts`；实现前 `/refresh` 解析断言失败（返回 null），实现后 3/3 通过。
+- 新命令目录、v4 信封与排队 kind 为 `refresh`；排队和空闲文本均为 `/refresh`。内部维护轮及持久化完成回执继续使用 reload 名称，避免历史迁移。
+- `architecture:check --changed`：0 violations。根 `pnpm lint`：0 errors，102 条现有 warnings。
+- CLI lint 脚本已执行但受其子进程 pnpm/native binary 环境阻塞；core forkReload 测试受 contracts/dist 尚未构建阻塞，未冒称通过。shared/UI 定向 tsc 构建仍在执行；完整根/CLI typecheck 由合并阶段复验。
+- 桌面/手机 E2E 未运行；验收场景：菜单仅列出 fork `/refresh`，参数/附件不拦截，忙碌排队后出现原灰字回执；上游 `/reload` 由 App 生命周期入口单独处理。

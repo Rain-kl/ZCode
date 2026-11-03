@@ -1,5 +1,5 @@
 /**
- * FORK(reload-command): `/reload` —— 在已有会话里重读 fork 设置（系统指令 + 工具档位）。
+ * FORK(reload-command): `/refresh` —— 在已有会话里重读 fork 设置（系统指令 + 工具档位）。
  *
  * 与 `/compact` 同形的维护轮：TurnStarted 标 `inputVisibility: "model-only"`（不渲染用户气泡、
  * 模型也读不到该文本），执行期间是 kind = "reload" 的不可干预活动轮，不产生模型请求。
@@ -31,7 +31,7 @@ import { builtInTools } from "../../tool/index.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
 import { refreshForkMcpToolRegistrations } from "./mcp.js";
 
-/** `/reload` 的执行结果摘要（日志与测试用）。 */
+/** `/refresh` 的执行结果摘要（日志与测试用）。 */
 export interface ForkReloadOutcome {
   /** 子代理运行时不承接（命令面不可达；防御性短路）。 */
   skipped?: "subagent_child";
@@ -161,7 +161,7 @@ export async function reloadForkOverrides(
 }
 
 /**
- * `/reload` 的维护轮（形状照抄 `executeManualCompact`）：落完整 turn 边界，不落用户消息。
+ * `/refresh` 的维护轮（形状照抄 `executeManualCompact`）：落完整 turn 边界，不落用户消息。
  */
 export async function executeForkReload(
   this: AgentRuntimeInternal,
@@ -190,7 +190,7 @@ export async function executeForkReload(
         turnNumber: this.turnNumber,
         input,
         inputId,
-        // /reload 是维护命令，不是用户真实 query：事件保留 raw input 供恢复/排查，
+        // /refresh 是维护命令，不是用户真实 query：事件保留 raw input 供恢复/排查，
         // 但 v4 投影不渲染成 user bubble（与 /compact 同一旗标）。
         inputVisibility: "model-only",
         // 0ms 控制轮：不产生 Agent 工时；缺这个旗标旧 UI 会把 duration=0 渲染成「已工作」。

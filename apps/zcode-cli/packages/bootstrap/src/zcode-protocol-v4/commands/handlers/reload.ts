@@ -1,9 +1,9 @@
-// reload 命令组：/reload（FORK(reload-command)）。
+// refresh 命令组：/refresh（FORK(reload-command)）。
 //
 // 语义：在已有会话里重读 fork 设置（系统指令 + 工具档位），就地重建提示词前缀与工具面，
-// 下一轮起生效；对话历史不动。空闲直接派发为一次 `executeTurnCommand("/reload")`
-// （turn.ts 的 parseReloadCommand 分流到 core 的 executeForkReload 维护轮），忙碌与 compact
-// 一致进入 FIFO（commandKind = "reload"，回合结束排空时走同一条分流）。命令本身不产生模型请求。
+// 下一轮起生效；对话历史不动。空闲直接派发为一次 `executeTurnCommand("/refresh")`
+// （turn.ts 的 parseRefreshCommand 分流到 core 的 executeForkReload 维护轮），忙碌与 compact
+// 一致进入 FIFO（commandKind = "refresh"，回合结束排空时走同一条分流）。命令本身不产生模型请求。
 //
 // 见 FEATURES.md 的 reload-command 条目与 docs/features/reload-command/design.md。
 import type { CommandEnvelope, CommandResult } from "@zcode/shared/zcode-protocol-v4";
@@ -13,44 +13,44 @@ import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 import { enqueueDeferredInputForBusyWork, V4InputAdmissionRejectedError } from "../input-admission.js";
 
-/** /reload 的裁决拒绝（gateway 捕获后进 ACK failed，message 透传给客户端）。 */
-export class V4ReloadRejectedError extends Error {
+/** /refresh 的裁决拒绝（gateway 捕获后进 ACK failed，message 透传给客户端）。 */
+export class V4RefreshRejectedError extends Error {
   constructor(
     readonly reasonCode: "restoreWarning",
     message: string,
   ) {
     super(message);
-    this.name = "V4ReloadRejectedError";
+    this.name = "V4RefreshRejectedError";
   }
 }
 
-async function reload(
+async function refresh(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
 ): Promise<CommandResult | undefined> {
   const record = requireRecord(host, envelope.sessionId);
   if (record.restoreWarning) {
     // 与 compact / prompt-turn 同一道闸：恢复失败的会话不能静默续写（含维护轮）。
-    throw new V4ReloadRejectedError("restoreWarning", record.restoreWarning.message);
+    throw new V4RefreshRejectedError("restoreWarning", record.restoreWarning.message);
   }
 
   const activeTurn = record.app.runtime.getActiveTurnInfo();
   const routingMode = host.getInputRoutingMode?.(record.app.sessionId) ?? null;
   const busy = Boolean(record.activeAbortController) || Boolean(activeTurn);
   if (busy || routingMode === "enqueue" || routingMode === "guide" || routingMode === "choice") {
-    // 忙碌：与 compact 一致入 FIFO；消费时由 turn.ts 的 parseReloadCommand 分流执行，
+    // 忙碌：与 compact 一致入 FIFO；消费时由 turn.ts 的 parseRefreshCommand 分流执行，
     // 与空闲路径落到同一个执行点。
-    const intent = inputIntentMetadata(envelope, { requestedDelivery: "queue", text: "/reload" });
+    const intent = inputIntentMetadata(envelope, { requestedDelivery: "queue", text: "/refresh" });
     const queueOptions = {
-      commandKind: "reload" as const,
+      commandKind: "refresh" as const,
       inputId: envelope.commandId,
       intent,
       queryId: envelope.commandId as NonNullable<SteerTurnOptions["queryId"]>,
     };
-    if (await enqueueDeferredInputForBusyWork(record, "/reload", queueOptions)) {
+    if (await enqueueDeferredInputForBusyWork(record, "/refresh", queueOptions)) {
       return undefined;
     }
-    const queued = await record.app.steerTurn("/reload", {
+    const queued = await record.app.steerTurn("/refresh", {
       ...queueOptions,
       delivery: "queue",
     });
@@ -61,7 +61,7 @@ async function reload(
           : queued.reason === "empty_input"
             ? "proto.invalidPayload"
             : "fault.command.inputRejected",
-        `reload input queue rejected: ${queued.reason}`,
+        `refresh input queue rejected: ${queued.reason}`,
       );
     }
     return undefined;
@@ -72,7 +72,7 @@ async function reload(
   const abortController = new AbortController();
   record.activeAbortController = abortController;
   try {
-    await record.app.submitPrompt("/reload", {
+    await record.app.submitPrompt("/refresh", {
       abortSignal: abortController.signal,
       inputId: envelope.commandId,
     });
@@ -84,4 +84,4 @@ async function reload(
   return undefined;
 }
 
-export const reloadHandlers = { reload } as const;
+export const refreshHandlers = { refresh } as const;

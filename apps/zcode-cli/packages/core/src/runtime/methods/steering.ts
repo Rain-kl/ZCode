@@ -486,7 +486,7 @@ function firstInlineGuideIndex(activeTurn: ActiveTurnSteeringState): number {
       pendingInput.commandKind !== "sendGoalCommand" &&
       // FORK(reload-command): reload 与 compact 同为控制命令，不得被消费为 inline guide。
       pendingInput.commandKind !== "compact" &&
-      pendingInput.commandKind !== "reload" &&
+      pendingInput.commandKind !== "refresh" &&
       pendingInputDelivery(pendingInput) === "guide",
   );
 }
@@ -505,7 +505,7 @@ export function hasInlineGuidePendingInput(
     pendingInput?.commandKind !== "sendGoalCommand" &&
     // FORK(reload-command): 同上，reload 不得被消费为 inline guide。
     pendingInput?.commandKind !== "compact" &&
-    pendingInput?.commandKind !== "reload" &&
+    pendingInput?.commandKind !== "refresh" &&
     pendingInputDelivery(pendingInput) === "guide"
   );
 }
@@ -708,7 +708,7 @@ export async function guidePendingInputById(
   // 维护命令与单轮执行材料不能改写当前轮；附件也沿用现有独立排队合同。
   if (
     commandKind === "compact" ||
-    commandKind === "reload" ||
+    commandKind === "refresh" ||
     commandKind === "sendGoalCommand" ||
     intent?.kind === "compact" ||
     intent?.kind === "sendGoalCommand" ||

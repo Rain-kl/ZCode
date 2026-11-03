@@ -73,7 +73,7 @@ import type {
   AgentRuntimeConfig,
   // FORK(identity-preset): 自定义身份段端口类型；见 FEATURES.md 的 identity-preset 条目
   IdentityPresetPort,
-  // FORK(reload-command): 工具档位端口类型（创建期解析与 /reload 共用）
+  // FORK(reload-command): 工具档位端口类型（创建期解析与 /refresh 共用）
   ForkToolModePort,
   AmendWorkflowRunSettingsInput,
   AmendWorkflowRunSettingsResult,
@@ -259,7 +259,7 @@ export interface SteerTurnOptions {
   queryId?: QueryId;
   expectedTurnId?: TurnId;
   // FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind。
-  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "refresh";
   /** 投递语义：queue=消费时切新轮；guide=内联当前轮。缺省 queue。 */
   delivery?: "guide" | "queue";
   intent?: TurnInputIntentMetadata;
@@ -282,7 +282,7 @@ export type SendInputOptions = SubmitPromptOptions & {
   requireIdle?: boolean;
   expectedTurnId?: TurnId;
   // FORK(reload-command): 同上（SendInputOptions 与 SteerTurnOptions 共用同一 kind 全集）。
-  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "refresh";
 };
 
 export interface UserPromptInput {

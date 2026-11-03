@@ -279,8 +279,8 @@ export interface TurnSteerInput {
   toolDisallowlist?: readonly string[];
 }
 
-// FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind（不得被消费为 inline guide）。
-export type TurnSteerCommandKind = "sendText" | "sendGoalCommand" | "compact" | "reload";
+// FORK(reload-command): "refresh" 与 compact 同为可排队的维护命令 kind（不得被消费为 inline guide）。
+export type TurnSteerCommandKind = "sendText" | "sendGoalCommand" | "compact" | "refresh";
 export type TurnSteerSource = "plan_approval_feedback" | "workflow_refine_feedback";
 
 /**

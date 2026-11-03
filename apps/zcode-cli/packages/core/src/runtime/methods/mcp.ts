@@ -136,7 +136,7 @@ export async function initializeMcp(
 
   try {
     const snapshot = await startup;
-    // FORK(reload-command): /reload 复用已发现的描述符，不重连 MCP 服务。
+    // FORK(reload-command): /refresh 复用已发现的描述符，不重连 MCP 服务。
     this.mcpToolDescriptors = snapshot.tools;
     const registered = registerMcpTools(this.registry, mcpPort, snapshot.tools, {
       allowedTools: this.config.toolAllowlist,
@@ -247,7 +247,7 @@ export async function refreshMcpToolsIfChanged(
 }
 
 /**
- * FORK(reload-command): 按当前 `config.toolAllowlist` 重新过滤 MCP 工具（`/reload` 的工具面差量）。
+ * FORK(reload-command): 按当前 `config.toolAllowlist` 重新过滤 MCP 工具（`/refresh` 的工具面差量）。
  *
  * 不重连：复用启动期描述符快照（MCP 服务器配置本身是会话创建期配置，增删/改服务器仍需新会话）；
  * 先把上一次注册的名字显式注销，再按新名单重新注册——收窄方向注册表不会自动回收，

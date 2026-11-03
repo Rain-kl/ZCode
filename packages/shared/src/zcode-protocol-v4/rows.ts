@@ -357,7 +357,7 @@ export const timelineMarkerPayloadSchema = z.union([
     tokensAfter: z.number().optional(),
     summaryRef: z.string().optional(),
   }),
-  // FORK(reload-command): /reload 的转录内灰字回执（"已重载提示词与工具面"）。
+  // FORK(reload-command): /refresh 的转录内灰字回执（"已重载提示词与工具面"）。
   z.object({
     type: z.literal("reload"),
   }),

@@ -1581,7 +1581,7 @@ export class ProductProjection {
       case SessionEventType.CompactCompleted:
       case SessionEventType.CompactFailed:
         return this.onCompactLifecycle(event);
-      // FORK(reload-command): /reload 的转录回执（与 compact marker 同形的分隔线）。
+      // FORK(reload-command): /refresh 的转录回执（与 compact marker 同形的分隔线）。
       case SessionEventType.ForkReloadCompleted:
         return this.onForkReloadCompleted(event);
       case SessionEventType.TargetChanged:
@@ -5025,7 +5025,7 @@ export class ProductProjection {
     return deltas;
   }
 
-  // ── FORK(reload-command): /reload marker（命令效果回执）──
+  // ── FORK(reload-command): /refresh marker（命令效果回执）──
   // 与 compact marker 同形的分隔线；落事件到达时的行尾，客户端零归属逻辑。
 
   private onForkReloadCompleted(event: SessionEvent): ConversationDelta[] {

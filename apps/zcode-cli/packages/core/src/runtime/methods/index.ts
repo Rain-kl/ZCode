@@ -335,7 +335,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.admitPrompt = admitPrompt;
   proto.executeTurnCommand = executeTurnCommand;
   proto.executeManualCompact = executeManualCompact;
-  // FORK(reload-command): /reload 的维护轮入口（turn.ts 的分流与 v4 命令共同消费）。
+  // FORK(reload-command): /refresh 的维护轮入口（turn.ts 的分流与 v4 命令共同消费）。
   proto.executeForkReload = executeForkReload;
   proto.autoCompactIfNeeded = autoCompactIfNeeded;
   proto.microcompactIfNeeded = microcompactIfNeeded;

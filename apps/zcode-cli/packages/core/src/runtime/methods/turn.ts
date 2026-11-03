@@ -30,7 +30,7 @@ import type {
 } from "../deps.js";
 import {
   parseCompactCommand,
-  parseReloadCommand,
+  parseRefreshCommand,
   parseRewindCommand,
   createTurnAbortScope,
   throwIfTurnAborted,
@@ -158,7 +158,7 @@ export async function executeTurnCommand(
     : undefined;
   const admittedOutputStyle = this.config.outputStyle;
   const compactInstructions = parseCompactCommand(input);
-  const reloadCommand = parseReloadCommand(input);
+  const refreshCommand = parseRefreshCommand(input);
   const rewindCommand = parseRewindCommand(input);
   const turnId = startReservation?.turnId ?? createTurnId();
   const queryId = options?.queryId ?? (options?.inputId as QueryId | undefined) ?? createQueryId();
@@ -441,9 +441,9 @@ export async function executeTurnCommand(
           options?.inputId,
         );
       }
-      // FORK(reload-command): /reload 与 /compact 同形的维护轮（无模型请求）。空闲直接派发与
+      // FORK(reload-command): /refresh 与 /compact 同形的维护轮（无模型请求）。空闲直接派发与
       // 队列排空走的是同一个入口，保证「输入被消费必有 turn 边界」。
-      if (reloadCommand) {
+      if (refreshCommand) {
         return this.executeForkReload(
           input,
           turnId,

@@ -46,9 +46,9 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
         "Re-reads the identity preset and tool-mode settings for this conversation and applies them from the next turn on.",
         "Conversation history is unchanged; the next request rebuilds the prompt prefix.",
       ],
-      name: "reload",
-      summary: "Reload prompt and tool settings for this conversation.",
-      usage: "/reload",
+      name: "refresh",
+      summary: "Refresh prompt and tool settings for this conversation.",
+      usage: "/refresh",
     },
     {
       details: [

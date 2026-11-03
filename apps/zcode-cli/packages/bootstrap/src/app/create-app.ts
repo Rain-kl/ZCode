@@ -27,7 +27,7 @@ import {
   buildPluginReferenceCatalog,
   // FORK(identity-preset): 自定义身份段的只读文件端口；见 FEATURES.md 的 identity-preset 条目
   createFileIdentityPresetPort,
-  // FORK(reload-command): 工具档位的只读文件端口；创建期解析与 /reload 共用同一份读盘逻辑
+  // FORK(reload-command): 工具档位的只读文件端口；创建期解析与 /refresh 共用同一份读盘逻辑
   createFileForkToolModePort,
   writeWorkflowDraft,
   type AmendWorkflowRunSettingsInput,
@@ -301,7 +301,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       });
     // FORK-BEGIN(tool-modes)
     // 用户选定的工具档位落到 runtimeConfig.toolAllowlist；与宿主下发的既有名单取交集（档位只让
-    // 工具面更小）。解析走 core 的档位端口：创建期与 /reload（FORK(reload-command)）共用同一份
+    // 工具面更小）。解析走 core 的档位端口：创建期与 /refresh（FORK(reload-command)）共用同一份
     // 读盘逻辑；端口实例随后注入 runtime deps，供重载按当下设置重读。
     const forkHostToolAllowlist = runtimeConfig.toolAllowlist;
     const forkToolModePort =
@@ -899,7 +899,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
           root: join(storageRoot, FORK_IDENTITY_PRESET_ROOT_NAME),
         }),
       // FORK-END(identity-preset)
-      // FORK(reload-command): 档位端口与创建期解析共用同一实例；/reload 经 deps 读回。
+      // FORK(reload-command): 档位端口与创建期解析共用同一实例；/refresh 经 deps 读回。
       forkToolModePort,
       skillPort:
         configResult.config.features.skill && configResult.config.skills.enabled
