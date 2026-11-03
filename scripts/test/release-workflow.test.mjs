@@ -110,7 +110,7 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
   assert.ok(verify.includes("pnpm test:unit:fork"));
   assert.ok(
     verify.includes(
-      "node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs",
+      "node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs scripts/test/server-installer.test.mjs",
     ),
   );
   assert.ok(!verify.includes("pnpm test:unit"));

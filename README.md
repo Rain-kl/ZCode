@@ -109,6 +109,34 @@ Web 模式默认工作目录为当前目录，监听 `127.0.0.1`，默认不启�
 
 构建方式见下方打包章节。`pnpm build:zcode` 只生成发行包，不会替换 `PATH` 中已有的 `zcode`。如果命令仍指向旧安装或其他源码目录，macOS / Linux 可用 `command -v zcode` 检查，Windows 可用 `where.exe zcode` 检查。
 
+### 二开：独立服务端一键安装
+
+支持 Linux / macOS 的 x64、arm64，需要 `curl` 和 Python 3.8+，无需预装 Node.js 或使用 sudo。
+
+```bash
+# 正式版（最新稳定版本）
+curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh
+
+# 开发版（最新 canary 集成版本）
+curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh -s -- dev
+```
+
+脚本从 GitHub Releases 下载与系统、架构对应的 Server 包，校验大小、SHA-256 和包内版本后安装。默认运行文件放在 `~/.local/share/zcode-server`，命令放在 `~/.local/bin/zcode`。若命令目录不在 PATH，按脚本提示配置，例如：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+zcode server connect  # 向导中输入自建 Relay 地址、账号和密码
+zcode server up -d
+zcode server logs -f
+zcode server down
+```
+
+安装后需按自己的模型服务配置 provider；安装不会配置账号或自动启动。浏览器访问所连接 Relay 的域名，登录后选择在线设备。完整部署说明见 [自建 Relay 部署](docs/features/cloud-web-access/deployment.md)。
+
+可用 `ZCODE_SERVER_INSTALL_DIR`、`ZCODE_SERVER_BIN_DIR` 指定绝对安装路径和命令目录（使用管道时将环境变量放在 `sh` 前）。脚本拒绝覆盖其他来源的 `zcode` 命令。升级前先 `zcode server down`，重新执行对应通道的安装命令，再 `zcode server up -d`；旧运行包、项目、会话及连接配置保留。
+
+当前最新正式版尚无配套 Server 包，请使用 `dev`；缺少正式版产物时脚本会明确失败，不自动改装开发版。此脚本安装独立 Server，用于 `zcode server` 命令组；上方 TUI / `--web` 命令行发行包仍使用其单独的打包与安装方式。
+
 ### CLI 源码开发
 
 CLI 的模型配置、非交互调用、工具与扩展、批量评测和轨迹记录见 [CLI 使用指南](apps/zcode-cli/docs/usage/README.md)。

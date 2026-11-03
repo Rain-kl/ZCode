@@ -43,6 +43,18 @@ pnpm --filter @zcode/fork-remote-relay exec wrangler secret put AUTH_EPOCH --con
 
 在云主机安装可用的 ZCode Server 运行包，并预先配置模型 provider。远程控制不开放 ZCode 入站端口，也不需要 Cloudflare Tunnel；Server 只主动发出 HTTPS/WSS。
 
+独立安装（Linux/macOS x64/arm64；curl、Python 3.8+；使用随包 Node）：
+
+```sh
+# 默认正式版；当前最新正式版无 Server companion 时明确失败
+curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh
+# 开发版
+curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh -s -- dev
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+安装器只放置运行文件与命令，不配置 Relay、不启动服务。升级先 down，安装后再 up；不覆盖其他来源的 zcode，不删除旧版本或业务数据。详细合同见 [server-installer.md](../../specs/server-installer.md)。
+
 交互配置：
 
 ```sh
