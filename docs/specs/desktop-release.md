@@ -80,7 +80,7 @@
   publish 直接汇合完整门禁和三类构建，全部成功后仍先发布不可变 Server，再发布桌面。
 - `unit-tests` 使用 Vitest 官方 `--shard=<index>/4`，四个独立 Ubuntu runner 完整覆盖根配置的所有项目，
   不另维护测试文件列表，不改变 include/exclude、worker 数、超时或测试断言。
-  `fork-isolated` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
+  `engineering` / `fork-contracts` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
   matrix `fail-fast: false` 保留其余分片的诊断结果，每片先构建所需 CLI 包并补装 Electron。
 - 本地 `pnpm test:unit` 保持原入口。fork 的 node:test 契约仍完整执行一次，不被 Vitest 分片替代。
 - `bundle.mjs` 独占 bundle 路径的 runtime prepare 调度，随后调用 `build:no-runtime-assets`。
@@ -119,6 +119,17 @@ E2E reporting 单测时无法解析 `@zcode/e2e-report`。该包公开入口指�
   并执行 lifecycle、error classification、skipped summary 三个实际 reporting 回归。
 - 同一 run 还发现 App/分享只读渲染一致性测试仍使用已移除的 `Agent` 输入。
   测试必须改用现有 `spawn_agent` 参数，继续断言两端摘要一致；不恢复旧工具或展示兼容。
+
+## 2026-11-03 CI run 41575790953 修复
+
+本次 canary 发布在四个独立点失败，已分别修复：
+
+- Vitest 分片契约跟随当前显式项目 `engineering` / `fork-contracts` / `cua-placeholder`，继续断言官方四片覆盖全部 209 个项目/文件且无重复，不恢复已退役的 App 业务测试发现。
+- Windows 工程契约与产品策略对齐：关闭 Inspector 参数、保留 RunAsNode，并明确禁止签名验证形成更新门槛。
+- 预编译 tgz 解压先以调用方 cwd 解析归档和目标，再从归档父目录执行 tar，`-f` 只收到 `./<basename>`。Windows 跨盘归档不再把 `D:` 传给 GNU tar 识别为远程主机；不增加 GNU 专属参数。
+- Source Server 安装复用其他 job 的三次有界重试，只重试 ENOENT/网络类临时错误；锁文件配置错误立即失败，最终状态和诊断仍保留。
+
+验证边界：release/sharding/Source Server 契约 23 通过，Electron builder 安全 15 通过，相关 bundled npm/feed 17 通过，预编译解压 8 通过；node:test 7 组通过，包含 unsigned Windows/feed 依赖合同。真实 Windows 跨盘打包与新的 Linux hosted install 需要在后续 CI run 验证；本次本地为 macOS。
 
 ## 2026-11-02 配套 Source Server 发布
 

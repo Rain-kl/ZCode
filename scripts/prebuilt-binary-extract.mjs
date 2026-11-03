@@ -9,35 +9,38 @@ import {
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, posix, win32 } from "node:path";
 import process from "node:process";
 import { runCommand } from "./spawn-command.mjs";
 
-// Bugfix: Windows GNU tar（Git Bash）会把绝对路径里的盘符冒号（C:）当成远程主机名，
-// 反斜杠路径也会被 MSYS 参数转换破坏。tar 参数统一转正斜杠，归档路径优先改用
-// 相对 cwd 的形式避开盘符冒号；对 bsdtar 与 Linux/macOS CI 无影响。
-function toTarPosixPath(pathValue) {
-  return pathValue.replaceAll("\\", "/");
+// Bugfix: Windows GNU tar（Git Bash）会把 -f 参数里的盘符冒号当成远程主机名。
+// 在归档父目录执行，并只把 ./basename 交给 -f；不同盘符时基名同样不含盘符。
+function toTarPath(pathValue, pathApi) {
+  return pathApi.sep === "\\" ? pathValue.replaceAll("\\", "/") : pathValue;
 }
 
-function resolveTarArchiveArg(archivePath, cwd) {
-  if (process.platform === "win32") {
-    try {
-      const relativeArchivePath = relative(cwd, archivePath);
-      if (relativeArchivePath && !relativeArchivePath.startsWith("..")) {
-        return toTarPosixPath(relativeArchivePath);
-      }
-    } catch {
-      // 跨盘符时 relative 会抛错，退回正斜杠绝对路径（bsdtar 可用）。
-    }
-  }
+export function resolvePrebuiltTarInvocation(
+  { archivePath, extractDir, cwd },
+  pathApi = process.platform === "win32" ? win32 : posix,
+) {
+  const absoluteArchivePath = pathApi.resolve(cwd, archivePath);
+  const absoluteExtractDir = pathApi.resolve(cwd, extractDir);
 
-  return toTarPosixPath(archivePath);
+  return {
+    cwd: pathApi.dirname(absoluteArchivePath),
+    args: [
+      "-xzf",
+      `./${pathApi.basename(absoluteArchivePath)}`,
+      "-C",
+      toTarPath(absoluteExtractDir, pathApi),
+    ],
+    extractDir: absoluteExtractDir,
+  };
 }
 
 export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cwd }) {
-  mkdirSync(extractDir, { recursive: true });
   if (archiveExt === "zip") {
+    mkdirSync(extractDir, { recursive: true });
     if (process.platform === "win32") {
       runCommand("powershell.exe", [
         "-NoProfile",
@@ -54,12 +57,13 @@ export function extractPrebuiltArchive({ archivePath, archiveExt, extractDir, cw
     return;
   }
 
-  const tarCwd = cwd ?? process.cwd();
-  runCommand(
-    "tar",
-    ["-xzf", resolveTarArchiveArg(archivePath, tarCwd), "-C", toTarPosixPath(extractDir)],
-    { cwd: tarCwd },
-  );
+  const invocation = resolvePrebuiltTarInvocation({
+    archivePath,
+    extractDir,
+    cwd: cwd ?? process.cwd(),
+  });
+  mkdirSync(invocation.extractDir, { recursive: true });
+  runCommand("tar", invocation.args, { cwd: invocation.cwd });
 }
 
 export function findPrebuiltBinary(rootDir, binaryName) {

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
@@ -101,5 +104,63 @@ test("only publish may write Releases; builders use identical version and SHA ou
       /gh release (create|edit|upload)|source-server-release\.mjs publish/,
     );
     assert.equal(job.steps.find((step) => step.name === "Checkout repository").with, undefined);
+  }
+});
+
+test("Source Server installation retries only transient failures and preserves final diagnostics", async (t) => {
+  const step = jobs["build-source-server"].steps.find(
+    (step) => step.name === "Install dependencies",
+  );
+  assert.equal(step.if, "steps.reuse.outputs.reused != 'true'");
+  const root = await mkdtemp(join(tmpdir(), "source-server-install-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pnpm = join(root, "pnpm");
+  const sleep = join(root, "sleep");
+  await writeFile(
+    pnpm,
+    `#!/usr/bin/env bash
+set -eu
+count=$(cat "$TEST_INSTALL_COUNTER")
+count=$((count + 1))
+echo "$count" > "$TEST_INSTALL_COUNTER"
+case "$TEST_INSTALL_MODE" in
+  transient) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
+  network) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'EAI_AGAIN registry lookup'; exit 34 ;;
+  exhausted) echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
+  config) echo 'ERR_PNPM_OUTDATED_LOCKFILE immutable lock mismatch'; exit 42 ;;
+esac
+exit 99
+`,
+  );
+  await writeFile(sleep, "#!/usr/bin/env bash\nexit 0\n");
+  await chmod(pnpm, 0o755);
+  await chmod(sleep, 0o755);
+  for (const [mode, status, attempts] of [
+    ["transient", 0, 2],
+    ["network", 0, 2],
+    ["exhausted", 33, 3],
+    ["config", 42, 1],
+  ]) {
+    await t.test(mode, async () => {
+      const counter = join(root, "attempts");
+      await writeFile(counter, "0\n");
+      const result = spawnSync("bash", ["-c", step.run], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH}`,
+          TEST_INSTALL_COUNTER: counter,
+          TEST_INSTALL_MODE: mode,
+        },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, status, `${mode}: ${result.stdout}\n${result.stderr}`);
+      assert.equal(Number(await readFile(counter, "utf8")), attempts);
+      if (status !== 0) {
+        assert.match(result.stdout, /::error title=pnpm install failed::/);
+        assert.match(result.stdout, mode === "config" ? /OUTDATED_LOCKFILE/ : /esbuild rename/);
+      }
+    });
   }
 });

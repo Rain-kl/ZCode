@@ -247,7 +247,7 @@ jobs:
       - name: Build E2E report Node entry used by unit tests
         run: pnpm --filter @zcode/e2e-report build:node
 
-      # 官方分片覆盖根配置所有项目；fork-isolated 仍按原配置在每片内串行。
+      # 官方分片覆盖根配置所有项目；engineering / fork-contracts 仍按原配置在每片内串行。
       - name: Unit tests
         run: pnpm test:unit --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
@@ -510,7 +510,25 @@ jobs:
 
       - name: Install dependencies
         if: steps.reuse.outputs.reused != 'true'
-        run: pnpm install --frozen-lockfile --ignore-scripts --fetch-retries=5
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            pnpm install --frozen-lockfile --ignore-scripts \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=10000 \
+              --fetch-retry-maxtimeout=60000 2>&1 | tee /tmp/source-server-pnpm-install.log
+            install_status=${PIPESTATUS[0]}
+            if [ "$install_status" -eq 0 ]; then break; fi
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/source-server-pnpm-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          set -e
+          if [ "$install_status" -ne 0 ]; then
+            detail=$(tail -n 20 /tmp/source-server-pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=pnpm install failed::${detail}"
+            exit "$install_status"
+          fi
 
       - name: Apply release version
         if: steps.reuse.outputs.reused != 'true'

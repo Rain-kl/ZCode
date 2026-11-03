@@ -200,13 +200,13 @@ it("缺失生产依赖时打包必须失败", async () => {
   expect(config.allowMissingDependencies).toBe(false);
 });
 
-it("Windows 打包关闭 Node Inspector，保留 Agent 所需的 RunAsNode", async () => {
+it("Windows 打包关闭 Node Inspector，保留 RunAsNode 与无签名更新策略", async () => {
   vi.stubEnv("ZCODE_TARGET_OS", "win32");
   const { default: config } = await import("../electron-builder.config.js");
 
   expect(config.electronFuses?.enableNodeCliInspectArguments).toBe(false);
   expect(config.electronFuses?.runAsNode).toBeUndefined();
-  expect(config.win?.verifyUpdateCodeSignature).toBe(true);
+  expect(config.win?.verifyUpdateCodeSignature).toBe(false);
 });
 
 it.each(["darwin", "linux"])("%s 保留现有 fuse 配置", async (platform) => {
