@@ -39,7 +39,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 2. connector 使用持久 `device_sid` 申请 device ticket，主动连接 Relay；
 3. 收到合法 `auth_ack` 后，Supervisor 才看到 Core ready；`waiting` 不等手机在线；
 4. 手机发送 bootstrap/workspace-list 时，connector 从注入的现有 `IProjectService` 快照回答；
-5. `workspace-bridge-open` 才打开同一 Core `/ws` 的 `web-remote-replayable` attachment，ready 前排队 raw frame 不发送；
+5. `workspace-bridge-open` 才打开同一 Core `/ws` 的 `web-remote-replayable` attachment；loopback bridge 从 socket 建立起按序保留 Core 帧，router 订阅后先交付早到的 RPC `Initialize`，ready 前排队 raw frame 不发送；
 6. 旧 bridge、旧 ACK、迟到的异步 open 和旧 RPC 代次不能推进新代；被替换 terminal 只释放自己的 bridge，不停止已接纳的任务；
 7. 启动失败按 connector stop → HTTP close → services dispose 顺序清理，每个清理步骤不掩盖原启动错误。
 
@@ -84,7 +84,7 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 ## 7. 已执行验证
 
 - Relay：6/6（真实 workerd、认证/V2、票据单次消费、owner 替换、离线 meta、alarm 清理、Workers-safe KDF 预算）；
-- Connector：10/10；Server CLI 定向 13/13；tsup 工程测试 4/4；
+- Connector：11/11，包含真实 WebSocket 在 router 订阅前发送 RPC `Initialize` 并完成 setting channel roundtrip；Server CLI 定向 13/13；tsup 工程测试 4/4；
 - Web 认证/transport 定向 19/19；self-hosted auth 错误语义回归 7/7；UI Root startup 回归纳入 fork 合同清单；
 - `pnpm test:unit:fork` 10 组通过；补齐 CLI 构建产物后 `pnpm test:unit:contracts` 53 文件/1165 测试通过；
 - 根 `pnpm typecheck` 通过；根 `pnpm lint` 为 85 warnings/0 errors（既有警告）；架构变更检查 0 违规；`pnpm fork:check-removals` 通过；CLI build、Web lint/build、Relay/Connector lint 通过。

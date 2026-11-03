@@ -25,6 +25,12 @@
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
 - **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。当前已通过本地 workerd、Connector、CLI/Web 定向测试和浏览器进入工作区；真实 Cloudflare、发行包、公网手机及模型回复未验证。
 
+### Server loopback RPC 首帧有序交付（2026-11-03）
+
+- **背景与行为**：Headless Server 的 Core `/ws` 可以在 router 注册 bridge listener 前立即发出 RPC `Initialize`。连接层从 socket 建立起暂存这段窗口内的 Core 帧，listener 注册后按到达顺序仅交付一次，保证浏览器 RPC 完成初始化并进入工作区。
+- **文件与标记**：`packages/fork-remote-connector/src/connector.ts` 与就近回归测试；独立 fork 包无需上游逐行标记。
+- **设计与落地**：[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
 ### Server 安装路径与资源统一（2026-11-03）
 
 - **背景与行为**：一键安装与 SSH 自动安装共用 `~/.zcode/server`、`current.json`、稳定启动入口和既有生命周期/任务/降级保护，避免双版本树。迁移旧脚本拥有的 PATH 命令，保留旧文件与业务数据。补齐独立 Agent 所需的同次构建 provider 配置，整包与 agent-runtime 组件共用资源身份。

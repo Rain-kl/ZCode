@@ -71,36 +71,66 @@ export function openLoopbackCoreBridge(options: {
     let settled = false;
     const onData = new Emitter<VSBuffer>();
     const onClose = new Emitter<void>();
+    const rawSocket: ISocket = {
+      onData: onData.event,
+      onClose: onClose.event,
+      onEnd: onClose.event,
+      write(buffer) {
+        if (socket.readyState === WebSocket.OPEN) socket.send(buffer.buffer);
+      },
+      end() {
+        socket.close();
+      },
+      drain: () => Promise.resolve(),
+      dispose() {
+        socket.close();
+      },
+    };
+    // Bug 原因：Core 会在 WebSocket open 后立即发送 RPC Initialize；旧实现等 open 才构造
+    // SocketProtocol，并在 Promise resolve 后才注册 bridge listener，两段空窗都会丢掉首帧。
+    // 连接建立前先接住 raw data，再把已解码消息保留到 router 的唯一 listener 就绪。
+    const protocol = new SocketProtocol(rawSocket);
+    const pendingCoreMessages: Uint8Array[] = [];
+    let bridgeListener: ((bytes: Uint8Array) => void) | undefined;
+    let bridgeListenerRegistered = false;
+    const protocolMessageDisposable = protocol.onMessage((message) => {
+      if (bridgeListener) {
+        bridgeListener(message.buffer);
+      } else if (!bridgeListenerRegistered) {
+        pendingCoreMessages.push(message.buffer);
+      }
+    });
     socket.binaryType = "arraybuffer";
     socket.once("error", (error) => {
-      if (!settled)
-        reject(new Error(`Core replayable WebSocket failed at ${url.host}`, { cause: error }));
+      if (!settled) {
+        protocolMessageDisposable.dispose();
+        protocol.dispose();
+        reject(
+          new Error(`Core replayable WebSocket failed at ${url.host}`, {
+            cause: error,
+          }),
+        );
+      }
       onClose.fire();
     });
     socket.once("close", () => onClose.fire());
     socket.on("message", (raw) => onData.fire(VSBuffer.wrap(bytes(raw))));
     socket.once("open", () => {
       settled = true;
-      const rawSocket: ISocket = {
-        onData: onData.event,
-        onClose: onClose.event,
-        onEnd: onClose.event,
-        write(buffer) {
-          if (socket.readyState === WebSocket.OPEN) socket.send(buffer.buffer);
-        },
-        end() {
-          socket.close();
-        },
-        drain: () => Promise.resolve(),
-        dispose() {
-          socket.close();
-        },
-      };
-      const protocol = new SocketProtocol(rawSocket);
       resolve({
         onMessage(listener) {
-          const disposable = protocol.onMessage((message) => listener(message.buffer));
-          return () => disposable.dispose();
+          if (bridgeListenerRegistered) {
+            throw new Error(
+              "Core loopback bridge message listener is already registered",
+            );
+          }
+          bridgeListenerRegistered = true;
+          bridgeListener = listener;
+          const queued = pendingCoreMessages.splice(0);
+          for (const message of queued) listener(message);
+          return () => {
+            if (bridgeListener === listener) bridgeListener = undefined;
+          };
         },
         send(message) {
           protocol.send(VSBuffer.wrap(message));
@@ -109,6 +139,9 @@ export function openLoopbackCoreBridge(options: {
           // SocketProtocol has no independent flow-control lane; acknowledged replay remains bounded.
         },
         close() {
+          bridgeListener = undefined;
+          pendingCoreMessages.length = 0;
+          protocolMessageDisposable.dispose();
           protocol.dispose();
           socket.close();
         },

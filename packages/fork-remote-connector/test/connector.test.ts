@@ -1,12 +1,95 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import type { AddressInfo } from "node:net";
 import { test } from "node:test";
+import {
+  ChannelClient,
+  ChannelServer,
+  Emitter,
+  Event,
+  SocketProtocol,
+  VSBuffer,
+  type ISocket,
+} from "@zcode/rpc";
 import { createFakeRelayV2 } from "@zcode/shared/testing/fake-relay-v2";
-import { WebSocket } from "ws";
-import { createForkRemoteConnector } from "../src/connector.js";
+import { WebSocket, WebSocketServer } from "ws";
+import {
+  createForkRemoteConnector,
+  openLoopbackCoreBridge,
+} from "../src/connector.js";
 import type { ForkRemoteConnectorOptions } from "../src/contract.js";
 
 const logger = { info() {}, warn() {}, error() {} };
+
+function wrapCoreTestSocket(socket: WebSocket): ISocket {
+  const data = new Emitter<VSBuffer>();
+  const close = new Emitter<void>();
+  socket.on("message", (raw) =>
+    data.fire(VSBuffer.wrap(new Uint8Array(raw as Buffer))),
+  );
+  socket.on("close", () => close.fire());
+  return {
+    onData: data.event,
+    onClose: close.event,
+    onEnd: close.event,
+    write(buffer) {
+      socket.send(buffer.buffer);
+    },
+    end() {
+      socket.close();
+    },
+    drain: () => Promise.resolve(),
+    dispose() {
+      socket.close();
+    },
+  };
+}
+
+test("loopback bridge retains Core frames emitted before router subscription", async () => {
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  server.on("connection", (socket) => {
+    const protocol = new SocketProtocol(wrapCoreTestSocket(socket));
+    const channelServer = new ChannelServer(protocol, "server");
+    channelServer.registerChannel("settings", {
+      call: async (_context, command) => {
+        assert.equal(command, "get");
+        return { theme: "dark" };
+      },
+      listen: () => Event.None,
+    });
+  });
+  await once(server, "listening");
+  const port = (server.address() as AddressInfo).port;
+  const bridge = await openLoopbackCoreBridge({
+    host: "127.0.0.1",
+    port,
+    ingressToken: "test-token",
+  });
+
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const inbound = new Emitter<VSBuffer>();
+    const channelClient = new ChannelClient({
+      onMessage: inbound.event,
+      send: (message) => bridge.send(message.buffer),
+    });
+    const disposeBridge = bridge.onMessage((bytes) =>
+      inbound.fire(VSBuffer.wrap(bytes)),
+    );
+    assert.equal(channelClient.isInitialized(), true);
+    assert.deepEqual(await channelClient.getChannel("settings").call("get"), {
+      theme: "dark",
+    });
+    disposeBridge();
+    channelClient.dispose();
+    inbound.dispose();
+  } finally {
+    bridge.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+});
 
 async function registerDevice(endpoint: string, jwt: string, deviceMid = "server-mid") {
   const response = await fetch(`${endpoint}/api/v1/remote/device`, {
