@@ -23,9 +23,9 @@ or persisting them.
 The public module surface is intentionally small: `contract.ts` describes deployment/runtime
 bindings and `module.ts` exports the Worker and Durable Object entrypoints.
 
-The deployed Worker also serves the built `packages/web/dist` SPA. `/api/*` is always routed through
-Worker authentication and Relay logic before the asset binding; unknown browser routes such as
-`/remote/v4` use SPA fallback. Unknown `/api/*` routes return a JSON 404 and never fall back to
-`index.html`, while existing asset files are served byte-for-byte by the asset binding. Relay tests
-use an isolated temporary asset directory so a stale or pre-existing `packages/web/dist` cannot make
-this contract pass accidentally.
+The deployed Worker also serves the built `packages/web/dist` SPA. Every request reaches the Worker
+first: `/` redirects to `/remote/v4`, `/api/*` uses Worker authentication and Relay logic, and other
+paths fall through to the asset binding. Unknown `/api/*` routes return a JSON 404 and never fall
+back to `index.html`, while existing asset files are served byte-for-byte. Relay tests use an
+isolated temporary asset directory so a stale or pre-existing `packages/web/dist` cannot make this
+contract pass accidentally.

@@ -74,7 +74,7 @@ zcode server down
 
 按顺序检查：
 
-1. `https://<relay>/remote/v4` 返回当前 Web SPA；
+1. `https://<relay>/` 重定向到 `/remote/v4`，且该路径返回当前 Web SPA；
 2. 一个带哈希的 `/assets/...` 资源返回实际文件，而不是 HTML；
 3. 未知 `/api/not-real` 返回 JSON 404；
 4. 匿名、错误密码和正确账号密码的登录结果分别为 401、401、200；
