@@ -54,6 +54,10 @@ const worker: ExportedHandler<ForkRemoteRelayEnv> = {
     const url = new URL(request.url);
     if (!isSameOrigin(request)) return json(403, { error: "cross-origin request rejected" });
 
+    if ((request.method === "GET" || request.method === "HEAD") && url.pathname === "/") {
+      return Response.redirect(new URL("/remote/v4", url).toString(), 302);
+    }
+
     if (url.pathname === FORK_REMOTE_AUTH_LOGIN_PATH && request.method === "POST") {
       const body = (await readJson(request)) as { username?: unknown; password?: unknown } | null;
       if (

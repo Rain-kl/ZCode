@@ -160,6 +160,10 @@ async function waitForDevice(options: {
 }
 
 test("isolated assets serve the SPA and never swallow API routes", async () => {
+  const root = await fetch(`${origin}/`, { redirect: "manual" });
+  assert.equal(root.status, 302);
+  assert.equal(new URL(root.headers.get("location") ?? "", origin).pathname, "/remote/v4");
+
   const spa = await fetch(`${origin}/remote/v4?sid=test-device`);
   assert.equal(spa.status, 200);
   assert.match(spa.headers.get("content-type") ?? "", /^text\/html/);
