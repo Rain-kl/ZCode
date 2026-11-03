@@ -268,6 +268,12 @@
 - **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
   [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
 
+### 开发渠道 Source Server 版本门（2026-11-03）
+
+- **背景与行为**：dev Desktop 使用提交哈希作为版本后缀，哈希大小不代表构建先后，旧的字符串比较会把较新的 Server 误判为过旧。开发渠道连接 Source Server 时跳过最低版本比较与升级提示；正式版继续严格校验，缺失 compatibility manifest 的旧 Server 仍拒绝。
+- **文件与标记**：`packages/shared/src/source-server/compatibility.ts`、`packages/desktop/src/host/sourceServerConnectionManager.ts` 与回归测试；上游接线使用 `FORK(github-update)`。
+- **设计与落地**：[设计](docs/features/github-update/design.md#2026-11-03-开发渠道-source-server-版本门)、[实现](docs/features/github-update/implementation.md#8-开发渠道-source-server-版本门2026-11-03)。
+
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 
 - **状态**：已实现（2026-09-28），未打包验收（见实现文档 §4）
