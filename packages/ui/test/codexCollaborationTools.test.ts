@@ -8,6 +8,8 @@ import { ZCodeIntlProvider } from "../src/i18n/IntlProvider.js";
 import { ToolCallBlock } from "../src/ToolCallBlocks.js";
 import { buildAssistantWorkRenderItems } from "../src/v4/conversationAssistantWorkItems.js";
 import type { SubagentRow, ToolCallRow } from "@zcode/shared/zcode-protocol-v4";
+import { ConversationAgentToolCallRow } from "../src/v4/ConversationAgentToolCallRow.js";
+import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../src/lib/codePreviewSettings.js";
 const names = [
   "spawn_agent",
   "followup_task",
@@ -16,6 +18,56 @@ const names = [
   "list_agents",
   "wait_agent",
 ];
+it("shows a failed child's canonical error while preserving the successful spawn ACK", () => {
+  const base = { turnId: "turn", createdAt: 1, createdAtSeq: 1 };
+  const row: ToolCallRow = {
+    ...base,
+    rowId: 1,
+    kind: "toolCall",
+    toolCallId: "spawn-error",
+    toolName: "spawn_agent",
+    status: "success",
+    input: { task_name: "worker", message: "work" },
+    inputText: "{}",
+    output: { text: '{"task_name":"/root/worker"}' },
+  };
+  const subagentRow: SubagentRow = {
+    ...base,
+    rowId: 2,
+    kind: "subagent",
+    parentToolCallId: "spawn-error",
+    childSessionId: "opaque",
+    subagentType: "worker",
+    status: "failed",
+    summaryText: "SPEC_PROVIDER_ERROR_503 original upstream failure",
+  };
+  const view = (child: SubagentRow) =>
+    createElement(
+      ZCodeIntlProvider,
+      { initialLocale: "en-US" },
+      createElement(ConversationAgentToolCallRow, {
+        item: { kind: "agentToolCall", key: "paired", row, subagentRow: child },
+        context: {
+          workspacePath: "/workspace",
+          theme: "light",
+          codePreviewSettings: DEFAULT_CODE_PREVIEW_SETTINGS,
+          sessionId: "root",
+        },
+      }),
+    );
+  const rendered = render(view(subagentRow));
+  const toggle = screen.getByRole("button", { name: /tool details/ });
+  if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle);
+  expect(document.body.textContent).toContain(subagentRow.summaryText);
+  expect(row.status).toBe("success");
+  expect(row.output?.text).toBe('{"task_name":"/root/worker"}');
+  rendered.rerender(view({ ...subagentRow, summaryText: "UPDATED_PROVIDER_ERROR_502" }));
+  expect(document.body.textContent).toContain("UPDATED_PROVIDER_ERROR_502");
+  expect(document.body.textContent).not.toContain("SPEC_PROVIDER_ERROR_503");
+  rendered.rerender(view({ ...subagentRow, status: "running", summaryText: "new generation" }));
+  expect(document.body.textContent).not.toContain("SPEC_PROVIDER_ERROR_503");
+  expect(document.body.textContent).not.toContain("UPDATED_PROVIDER_ERROR_502");
+});
 it.each([
   ["wait_agent", { timeout_ms: 1234 }, "1234"],
   ["list_agents", { path_prefix: "/root/worker" }, "/root/worker"],

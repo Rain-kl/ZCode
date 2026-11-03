@@ -52,6 +52,11 @@ Mailbox content is not duplicated into wait's model result.
 
 ## Tool presentation
 
+When a successful spawn is paired with a subsequently failed child, the paired card
+shows the canonical child error summary in its expanded details. The original spawn
+ACK remains successful and unchanged. Rendering derives status and error from the same
+child row; a later running/completed generation must not retain the earlier error.
+
 All six tools have intentional labels and summaries. spawn_agent pairs with the
 child lifecycle row, while send_message, followup_task, interrupt_agent,
 list_agents and wait_agent remain actions on that collaboration. They do not

@@ -50,6 +50,9 @@ export function ConversationAgentToolCallRow({
       ...node,
       toolCall: {
         ...node.toolCall,
+        // FORK(codex-collaboration): 配对隐藏独立 child 行后仍须展示其原始失败原因，不能只留下成功 spawn ACK。
+        error:
+          item.subagentRow.status === "failed" ? item.subagentRow.summaryText : node.toolCall.error,
         status:
           item.subagentRow.status === "running"
             ? "in_progress"
@@ -60,7 +63,7 @@ export function ConversationAgentToolCallRow({
                 : "completed",
       },
     };
-  }, [item.row, item.subagentRow.status]);
+  }, [item.row, item.subagentRow.status, item.subagentRow.summaryText]);
   const childSessionId = item.subagentRow.childSessionId;
   const subagentType = item.subagentRow.subagentType;
   // 与 Agent 摘要行复用同一 title resolver，保证右侧 tab 和用户点击的可见标题逐字一致。
