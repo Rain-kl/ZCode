@@ -2,7 +2,9 @@ import { FORK_REMOTE_SESSION_SECONDS, type ForkRemoteLoginResult } from "./contr
 
 const encoder = new TextEncoder();
 const PASSWORD_ALGORITHM = "PBKDF2-SHA256";
-const PASSWORD_ITERATIONS = 210_000;
+// 修复依据：生产 Workers 的 CPU 限制会中断 210k 次 PBKDF2，导致正确密码被判为错误；
+// 100k 是校验器已接受且生产环境可完成的下限预算。
+const PASSWORD_ITERATIONS = 100_000;
 const PASSWORD_BYTES = 32;
 
 function base64Url(bytes: Uint8Array): string {

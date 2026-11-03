@@ -18,7 +18,7 @@
 
 ## 关键接线
 
-`packages/fork-remote-relay/**` 实现 Worker/DO、PBKDF2-SHA256（210000 次）、12 小时两段 HMAC 会话、V2 HTTP/WS 和静态资源。`packages/fork-remote-connector/**` 通过既有 Core loopback `/ws` 接入 `web-remote-replayable`，bridge ready 之前不发送 queued raw frames，旧 generation 和迟到异步 open 被隔离。
+`packages/fork-remote-relay/**` 实现 Worker/DO、PBKDF2-SHA256（100000 次，生产 Workers CPU 安全预算）、12 小时两段 HMAC 会话、V2 HTTP/WS 和静态资源。`packages/fork-remote-connector/**` 通过既有 Core loopback `/ws` 接入 `web-remote-replayable`，bridge ready 之前不发送 queued raw frames，旧 generation 和迟到异步 open 被隔离。
 
 `packages/zcode-server-cli/src/fork/cloud-web-access/**` 提供配置、日志和模式门控。`server up` 强制要求有效配置；普通 `serve` 没有配置时不启动 Relay，以保持既有 SSH/WSL/Docker 路径。OS service descriptor 会把 `--require-remote-config` 带到下一次服务重启。
 

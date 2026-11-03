@@ -6,33 +6,31 @@
   "routes": [
     {
       "pattern": "zcode.arctel.net",
-      "custom_domain": true
-    }
+      "custom_domain": true,
+    },
   ],
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
   },
   "durable_objects": {
     "bindings": [
       {
         "name": "RELAY",
-        "class_name": "RelayRoom"
-      }
-    ]
+        "class_name": "RelayRoom",
+      },
+    ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": [
-        "RelayRoom"
-      ]
-    }
+      "new_sqlite_classes": ["RelayRoom"],
+    },
   ],
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
-  }
+    "head_sampling_rate": 1,
+  },
 }
