@@ -46,7 +46,8 @@ Server connector 是外层 AppPayload 与现有 Core replayable RPC 的唯一适
 2. connector 使用持久 `device_sid` 获取 device ticket 并主动连接 Relay；
 3. 收到合法 `auth_ack` 后，Core 才向 Supervisor 报 ready；`waiting` 已算 Relay 就绪，手机是否在线不是启动条件；
 4. 手机发送 `bootstrap-request` / `workspace-list-request`，connector 从注入的项目目录端口生成快照；
-5. `workspace-bridge-open` 先建立到同一 Core `/ws` 的 `web-remote-replayable` attachment，再返回
+5. `workspace-bridge-open` 先建立到同一 Core `/ws` 的 `web-remote-replayable` attachment；loopback
+   bridge 从 socket 建立起即按序暂存 Core 帧，router 订阅后先交付 `Initialize` 等早到帧，再返回
    `workspace-bridge-ready`；ready 进入普通 AppPayload 后才允许 queued raw frame 发出；
 6. `rpc-frame` / `rpc-frame-ack` 只由 acknowledged raw adapter 处理，正文不经过业务解析或持久化；
 7. terminal 被替换、断线或新 bridge supersede 旧 bridge 时，先 abort 旧 RPC，再释放 loopback socket；已被
@@ -101,7 +102,8 @@ sequenceDiagram
     R-->>S: matched
     B->>S: 经 data.payload 请求 bootstrap / workspace bridge
     S->>S: 原 Core 创建手机 terminal attachment
-    S-->>B: bridge-ready / RPC / 任务读模型
+    S->>S: Core Initialize 可先到；loopback 按序保留
+    S-->>B: bridge-ready / 早到帧与后续 RPC / 任务读模型
 ```
 
 连接器实现现有 AppPayload 的 bootstrap、workspace-list、bridge-open/ready/error、必要平台请求和 rpc-frame/ack；宿主端口由 Core 注入。不得复制整个 Electron manager 或创建第二份服务容器。
