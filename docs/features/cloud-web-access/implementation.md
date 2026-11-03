@@ -1,27 +1,50 @@
-# 云端浏览器访问实现计划与证据
+# 本期实施计划与当前证据
 
-当前仅完成设计调查，未实现登录网关、未部署 Worker/Tunnel/ZCode，未执行功能验收。
+状态：只更新设计文档；Relay、connect/up/down/logs和Server连接器尚未实现/部署。
 
-## 已验证基线
+## 1. 当前基线
 
-- 原工作区 `/Users/ryan/Code/Node/ZCode` 为干净 canary `6b007f78`，包含已完成的上游合并 `0e649142`。
-- freshness 检查通过；`pnpm architecture:check --changed` 为 0 violations。
-- 新工作区 `/Users/ryan/Code/Node/ZCode-cloud-web-access`，分支 `codex/cloud-web-access`。
-- 读取 `server` 受控上下文，确认是 legacy；新增模块必须独立登记，不能借其 legacy 状态绕过检查。
-- 已核实统一发行包 `zcode --web`、Server loopback/token/普通 WS scope，以及 Web 同源 bootstrap 路径。
-- 根 `pnpm lint` 通过：85 warnings / 0 errors。
-- 根 `pnpm typecheck` 实际失败（exit 2）：`packages/ui/src/previewPaneOfficeXlsxContent.tsx:176` 的 `onOpenLink` 不在已安装 `XlsxViewerProps` 中；`packages/desktop/src/main/pluginSandbox/host.ts:7` 的 Electron `ClipboardItem` 导出及 `:342` 参数类型不匹配。此次仅新增文档，产品源码与依赖均未修改，记录为开工基线失败；尚未调查这些错误的成因，不扩大本任务修复范围。
-- 新文档 `git diff --cached --check` 通过。功能回归与浏览器验收均未执行。
+原源码基线canary 6b007f78；隔离文档工作区`/Users/ryan/Code/Node/ZCode-cloud-web-access`，分支`codex/cloud-web-access`。原工作区已有并行协作/UI改动，全部保留；本轮只改本分支设计文档。
 
-## 方案确认后的执行顺序
+已核实当前Source Server CLI提供serve/stop/status/restart/update等生命周期接口，内部调用用于桌面SSH/WSL/Docker；公开zcode server命令组不能假定已经完整分发。现有canonical root、Supervisor/control endpoint/锁/stop-and-wait是复用基线。日志查看需要核实并补齐持久sink，不能把stdio=ignore当作持久日志。
 
-1. 根据设计选择确定接口，更新 design、FEATURES 与架构模块合同；新增 fork 网关优先独立包，不修改 Agent 或 Electron Relay。
-2. 先写 CWA01/02/07 的认证与依赖契约回归，确认红灯；再写 Worker 认证与转发适配。
-3. 先登记 CWA03–06 的浏览器场景与隔离夹具；用真实 Web/Server 和受控模型回放验证 HTTP 与二进制 WS，不能用回显服务器冒充 ZCode 会话成功。
-4. 为运行包、云主机服务与选定传输编写部署配置；账号密码与 Origin token 通过 Secrets/受限文件配置，不在聊天中采集。
-5. 执行定向测试、浏览器验收、根 typecheck/lint/architecture/removals，记录真实结果；无法执行的验收保留未验证。
-6. 提交本地功能 commit，不推送。目标主机和域名明确后进行真实部署与公网 URL 验收。
+上一轮根architecture检查0violations，lint85warnings/0errors；typecheck失败于原Excel预览onOpenLink属性和Electron ClipboardItem/参数类型，不是本次文档引入。本轮无产品源码变化，不重复运行这些全量检查，也不将旧失败写成通过。
 
-## 当前未验证
+## 2. 模块建议
 
-所有 CWA 功能用例尚未实现或执行；源码表明每个 WebSocket 有独立 scope，但不作为多浏览器交互通过的证据。手机普通 Web 的布局与权限交互必须实际检查。没有远程部署或公网可访问结果。
+| 模块         | 建议位置                                               | 依赖与职责                                                 |
+| ------------ | ------------------------------------------------------ | ---------------------------------------------------------- |
+| 自建Relay    | 独立`packages/fork-remote-relay/`                      | Worker/DO、认证、V2兼容HTTP/WS、静态手机页；不依赖任务仓储 |
+| Node连接器   | 独立`packages/fork-remote-connector/`                  | 既有shared Relay/transport、出站连接；仅依赖宿主公开端口   |
+| CLI扩展      | `packages/zcode-server-cli/src/fork/cloud-web-access/` | connect向导/配置、up/down映射、日志读取；复用原生命周期    |
+| 手机登录适配 | `packages/web/src/fork/cloud-web-access/`              | 自建账号密码入口、凭据端口；复用官方远控组件/行为          |
+
+这些路径是拟新增，不是当前已存在模块。新增模块登记managed、publicEntrypoints与单向依赖；上游组合根接线保持最小连续diff及FORK标记。正式实施时更新FEATURES，不把本文档列为已经上线功能。
+
+## 3. 开发顺序
+
+1. 固定自建登录返回和持久配置合同，复用V2 schema；先补Worker/CLI依赖契约红灯再实现。
+2. 实现Worker/DO登录、设备、票据原子消费、单owner替换/清理、心跳与透明转发。保持官方wire；验证真实workerd尺寸/慢接收/内存边界。
+3. 实现Server连接器与Core窄attachment端口；不复制Electronmanager、不新建服务容器或Agent。先验证bootstrap/项目/能力白名单和替换后的scope回收。
+4. 实现zcode server命令分发及connect TUI/参数；up/down复用Supervisor与canonical root。先做发行包真实入口与旧serve/proxy-stdio兼容回归。
+5. 补齐持久日志sink与cursor，实施前台输出、logs普通读取与-f轮转/重启跟踪；写入时脱敏。先有进程/日志回归再改实现。
+6. 手机只接自建登录与endpoint，保留官方单owner、KICKED、waiting/离线和缓存。先维护浏览器场景再接入口。
+7. 真Core/Agent/受控模型→Worker→手机公网闭环；全部acceptance用例planned，实际通过后登记证据与review。
+
+不增加多路Relay协议、byte-credit消息、IndexedDB、离线只读、多手机同控、备份、通知或远程更新入口。
+
+## 4. 部署准备
+
+Cloudflare：Worker名称、测试/生产DO隔离、绑定/migration、静态资源版本、自建固定账号/密码校验/签名Secrets、TLS、日志query脱敏与资源费用监测。密码安全输入，不发在聊天或写Git。
+
+云主机：受支持Linux/架构、Server运行包、运行账号与数据目录、模型配置、出站HTTPS/WSS网络。通过拟实现connect配置、up前台或-d运行，logs查看、down停止。当前这些新增命令尚未可用，完整运行手册要等实际help/发行包验收后填写。
+
+## 5. 验证与提交
+
+依据acceptance.md执行CLI进程、V2依赖契约、workerd、真实Core与浏览器、公网手机测试。根typecheck/lint/architecture/removals报告真实结果；不恢复已退役App UT、不刷新baseline隐藏失败。保留未运行环境与实际失败证据。
+
+功能commit仅提交明确文件及对应Agent Note，Conventional Commits，不推送。原工作区并行修改与文档分支无关，不纳入本次提交。
+
+## 6. 设计交付
+
+文档组：design.md、cli.md、protocol.md、acceptance.md、impact.md、implementation.md。全部是设计/计划，未宣称任何功能测试通过、Worker已部署或手机已经可访问。此前多对多与离线阅读草案已由本稿取代，不再是本期实施要求。

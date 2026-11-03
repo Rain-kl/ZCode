@@ -1,102 +1,167 @@
-# 云端 ZCode 浏览器访问最小版本
+# 自建 Cloudflare Relay 与 ZCode Server 接入设计
 
-状态：方案待确认，尚未实现或部署。基线：2026-11-03，canary `6b007f78`。
+版本：2.0，2026-11-03；功能 id：`cloud-web-access`。状态：根据用户最新范围修订的设计稿，未实现、未部署。
 
-## 用户目标与边界
+本稿取代此前多对多、离线只读与 Tunnel 草案。用户明确要求：本期保留官方连接替换和离线页面行为，只做对应 Relay、Server 连接层与 `zcode server` 命令组。
 
-在 Linux 云主机运行 ZCode，主动连接 Cloudflare；手机和电脑浏览器访问统一入口，以部署时设置的一套账号密码登录。任务、文件、模型配置与 Agent 均由云主机持有。Cloudflare 承担认证与传输。
+配套文档：[命令行规格](cli.md)、[协议设计](protocol.md)、[验收矩阵](acceptance.md)、[实施计划](implementation.md)、[影响分析](impact.md)。
 
-第一阶段交付：登录、访问现有 Web 界面、读取项目与历史、创建任务、发送消息、接收流式结果、处理权限请求，以及多个浏览器的独立连接。浏览器刷新后从云端恢复真实历史。
+## 1. 本期目标
 
-暂缓：电脑离线时的持久离线阅读、WebDAV 替换、云端配置备份、原生手机应用、桌面 Electron Relay V2 多对多改造、自动发现所有云实例。早先的多客户端目标保留为后续范围；MVP 先验收一个云实例和多个浏览器，不能把它宣称为已完成多实例控制台。
+用户在 Linux 云主机安装 ZCode，用 `zcode server connect` 配置自建 Cloudflare 服务，使用 `zcode server up` 前台启动或 `up -d` 后台运行。Server 主动连接 Relay，手机/电脑浏览器登录同一固定账号密码，通过现有手机远控界面操作云端项目、任务和 Agent。
 
-## 当前源码事实
+Cloudflare 接受两端出站 WSS，负责登录、设备、一次性票据、配对、心跳及透明转发。云端无需开放 ZCode 公网端口，也不需要 Cloudflare Tunnel/cloudflared。
 
-- `README.md` 与 `specs/zcode-unified-distribution.md`：统一 Node 运行包支持 `zcode --web`，同时托管现有 Web 静态资源、HTTP/WebSocket 服务及 Agent；不需要 Electron。
-- `packages/server/src/http.ts`：普通 `/ws` 固定创建 `web-remote-replayable` 的 terminal-client scope，每个连接有独立 connectionId。`/ws/host` 与 `/api/rpc-host-capability` 属于受信 Host 通道，浏览器网关不得开放。
-- `packages/web/src/main.tsx`：普通 Web 从同源 `/api/server-info` 获取默认工作区，再连接同源 `/ws`。它与 `/remote/v4` 的桌面配对入口不同。
-- `packages/server/src/entry-http.ts`：已有 loopback 监听、静态目录、workspace 和 Bearer token 配置。
-- 现有桌面 Relay V2 需要 Electron main 的设备注册、手机 owner 与 attachment 调度，不能将它直接当作 headless Linux 云服务的现成连接器。
-- 多 WebSocket scope 的源码结构支持复用，但多浏览器同任务的实际交互、手机窄屏可用性仍需验收，不能仅凭源码宣布通过。
+## 2. 已确认范围
 
-## 方案比较与待确认项
+| 能力                                | 本期决定                                                         |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| 单租户固定账号密码                  | 保留用户既定要求；不做注册、组织与多角色管理                     |
+| Worker 后端                         | Worker + Durable Objects，附带手机网页静态资源                   |
+| Server 主动连接 Relay               | 本期核心，复用现有 Core/services/Agent                           |
+| 同一客户端多个手机                  | 按官方：同 SID 同角色只有一个当前 owner，新连接替换旧连接        |
+| 多个 Server 设备登记                | 沿用官方设备目录；不同 SID 的配对彼此隔离，不做新的多对多协议    |
+| Server 离线后手机体验               | 按官方：现有等待/重连/离线失败页规则，不新增离线只读入口         |
+| 手机缓存                            | 沿用现有实现；不新增 IndexedDB、app shell 离线启动或缓存同步策略 |
+| Server 管理                         | `connect`、`up [-d]`、`down`、`logs [-f]`                        |
+| WebDAV、官方设备配置同步            | 保持现状，不修改、不移除                                         |
+| Electron 桌面经新 Relay 控制 Server | 不新增桌面 connector；本期控制入口是手机/电脑浏览器              |
 
-| 方案 | 接入方式 | 改动与维护 | 状态 |
-| --- | --- | --- | --- |
-| A：Worker + Cloudflare Tunnel | 云端 cloudflared 出站连接；Worker 校验账号密码后代理现有 Web HTTP/WS | 不改 Agent 或桌面 Relay；新增独立网关包与部署配置；需要配置 Tunnel | 推荐，待用户确认是否接受 cloudflared |
-| B：Worker/Durable Objects + 专用连接器 | ZCode 外围连接器主动连接 DO，中转浏览器请求 | 需实现 HTTP/WS 多路复用、流控、连接路由、取消及重连；变更面更大 | 用户若只接受 Worker/DO，再单独定接口 |
-| C：Worker 连接公网 Origin | Worker 直接访问已暴露的 ZCode 服务 | 部署简单，但不符合用户期望的云主机主动连接方式 | 本期排除 |
+此前讨论的多对多与离线阅读从本期删除，不再作为 P1/P2 必交付阶段；将来用户重新提出时另行设计。
 
-方案 A 使用 Cloudflare 已有 Tunnel 传输，不额外创建业务队列或会话副本。官方资料：
-
-- <https://developers.cloudflare.com/tunnel/>
-- <https://developers.cloudflare.com/network/websockets/>
-- <https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/>
-
-## 推荐方案的状态归属与事件顺序
+## 3. 架构与状态归属
 
 ```mermaid
-sequenceDiagram
-    participant Z as 云主机 ZCode Web/Server
-    participant T as cloudflared / Tunnel
-    participant W as Worker 登录网关
-    participant B as 手机或电脑浏览器
-    Z->>Z: 加载 workspace、配置、会话与 Agent
-    T->>T: 主动建立出站隧道到 Cloudflare
-    B->>W: 账号密码登录（HTTPS）
-    W-->>B: 同主机 HttpOnly Secure 登录 Cookie
-    B->>W: 页面 / API / WebSocket Upgrade
-    W->>W: 校验登录、来源与允许的通道
-    W->>T: 服务端 Origin 凭证 + 原始 HTTP/WS
-    T->>Z: 转发到 loopback 服务
-    Z->>Z: 每个浏览器独立 scope，既有 runtime 接受命令
-    Z-->>B: 经同一传输返回真实状态
+flowchart LR
+    B[手机 / 电脑浏览器] -->|HTTPS 登录 / WSS terminal| W[Worker 入口与静态手机页面]
+    S[云端 ZCode Server] -->|主动 WSS device| W
+    W --> R[RelayRoom Durable Object]
+    S --> C[现有 Server Core services]
+    C --> A[现有 Agent / 任务 / 文件与持久化]
 ```
 
-| 状态 | 唯一所有者 | 持久化 |
-| --- | --- | --- |
-| 固定账号与密码、会话签名配置 | Worker 部署配置与 Secrets | 不进入前端资源、源码或日志 |
-| 浏览器登录 | 网关签发，浏览器 Cookie 承载 | 有效期与域名绑定；不得借用官方 OAuth/模型账号 |
-| HTTP/WS 连接 | Tunnel 与现有 Server scope | 不保存业务消息；断线回到现有服务恢复路径 |
-| 任务、权限、已接受输入、执行顺序 | 云端既有 Host/CLI/runtime | 云主机原有数据目录 |
-| 浏览器草稿与选中态 | 各浏览器 | 沿用现有行为，不将一端导航广播给另一端 |
+同一 Cloudflare 部署允许多个独立 device SID；每 SID 仅一个 device owner 和一个 terminal owner。RelayRoom 是单租户连接集合的唯一协调者。它保存认证/设备/连接元数据，不保存 task、workspace、snapshot、队列或转发正文。
 
-必须满足：
+Server 连接器由既有 Core 组合根装配，不创建第二份 `createServerHostServices`、Host 或 Agent。手机 attachment 按现有 replayable 边界接入原服务，同一任务继续由原 runtime/CommandInbox 接受命令。
 
-1. 云主机 ZCode 绑定 loopback；隧道 Origin 同样需要服务端凭证，不能绕过 Worker 登录访问 RPC。
-2. 网关仅转发普通 Web 需要的通道；禁止浏览器升级到 trusted-host，剥离来源伪造的 Host capability、Origin 凭证和代理认证头。
-3. WebSocket 校验同源；登录与退出的修改请求校验来源；密码不写 URL、二维码或 localStorage。
-4. 未登录的 HTML 导向登录页；未登录的 API/WS 返回明确未授权，不能把登录 HTML 误当 RPC 响应。
-5. 不缓存授权后的 API 与 HTML；HTTP 与 WebSocket 均经过同一认证边界。
-6. 网关不自行重放用户命令、不自动重复提交权限决定。多个浏览器对同一任务的冲突由既有云端 owner 裁决。
-7. 退出删除浏览器凭据；密码/会话密钥轮换使旧 HTTP/Upgrade 登录失效。已经建立的 WS 是否即时撤销必须明确，不默认宣称能被无状态 Cookie 方案立刻关闭。
-8. Origin 不可达与密码错误分别展示；登录成功不意味着云端 ZCode 健康。不得将 502 伪装为 401。
+| 状态                           | 唯一 owner                          | 持久化/缓存                                            |
+| ------------------------------ | ----------------------------------- | ------------------------------------------------------ |
+| 固定账号、密码校验、登录凭据   | Relay 认证组件                      | 安全密码校验信息与可撤销会话元数据                     |
+| 设备记录、票据、配对 owner     | RelayRoom                           | DO 元数据；活跃 socket attachment                      |
+| 自建连接地址与凭据引用         | Server 配置端口                     | 对应 server-root 下的受限配置/凭据文件                 |
+| Supervisor/Core 生命周期与锁   | 既有 Server Supervisor              | canonical server-root、原 control endpoint、原状态记录 |
+| 手机 bridge 与订阅             | Server terminal attachment          | 连接期 scope；不另存权威任务数据                       |
+| 项目、聊天、任务队列、权限结果 | 既有 Core/CLI/runtime               | 云主机已有数据库与文件                                 |
+| 日志                           | 既有日志设施及新增最小生命周期 sink | 同一服务实例的持久日志，前台与 logs 都读取这一事实流   |
 
-## 影响分析
+## 4. 与当前官方代码的关系
 
-| 用户场景 / UI Surface | 入口与显示所有者 | 校验与提交 | 权威来源 | 边界 |
-| --- | --- | --- | --- | --- |
-| 登录 | 独立 Worker 登录页 | 固定账号密码与限速 → Cookie | Worker Secrets | 不恢复官方账号、权益或云模型配置 |
-| 浏览工作区与会话 | 原有 Web Root | 原有 services 与 RPC | 云端 Server / runtime | 不新建手机 Agent |
-| 多浏览器控制 | 每浏览器独立连接与草稿 | 原有命令准入与权限对账 | 云端同一任务 owner | 一端断线不得清理其他 scope |
-| 云端离线 | 网关明确服务不可达 | 禁止伪造成功或自动重复提交 | Origin 连通性 | 离线历史阅读暂缓 |
+- `packages/zcode-server-cli` 是本期执行宿主；其 Core 已持有服务与 Agent，普通 `/ws` 已有 terminal-client/replayable scope。
+- 官方桌面 Relay 客户端位于 Electron main；它除了建立 WS，还负责 bootstrap、项目列表、workspace bridge 和平台请求。headless 接入需补这些宿主适配，不能只把一个 WS URL 改为 Relay。
+- shared 的 Relay V2 类型、HTTP 响应、心跳以及 raw RPC 分片/CRC/ACK/重放机制可以复用。
+- 本期保持官方 V2 外层格式与单 owner 行为，不新增 channelId 多路外壳、不新增 Fork Relay v1 数据协议。
+- 账号密码登录是自建的新增入口；替换官方 OAuth 的必要适配独立放在 fork 入口，不伪造 Z.AI/BigModel 模型业务令牌。
+- Source Server 普通 `/ws` 和 Electron 手机 attachment 的服务暴露面不保证相同；实施前必须对比 manifest 与方法白名单，复用已审阅的手机能力集合，不能把完整 ServiceCollection 直接开放给浏览器。
+- `packages/server`/`zcode --web` 是另外的 Web HTTP 宿主，本期不再起它与 Source Server 并跑，不让两个服务争用同一数据目录。
 
-共享/差异：复用普通 Web 的聊天、工具和协议；登录是新的独立 surface。桌面 continuous 与手机 replayable 仍由 Server 既有可信装配区分。
+## 5. 使用流程
 
-必查上游/下游：网关认证 → Server token（must-inspect）；WS 转发 → 独立 scope 与清理（must-inspect）；普通 Web Root → 手机窄屏（must-inspect）；云端模型提供商与运行包（deployment prerequisite）；WebDAV/官方设备同步（invariant-only）。
+下列是拟实现的产品命令，当前不能据此宣称已存在。精确语义见 [cli.md](cli.md)。
 
-代码证据：以 `http.ts:createHttpServer/setupChannelServer`、`main.tsx:resolveWebBootstrap/bootstrapWebApp`、`scripts/zcode-distribution/runner.mjs:serve` 为起点，直接调用深度 1–2；本次用源码搜索核实，未运行 codegraph。`server` 模块当前 legacy，架构检查不能证明其运行语义；新增网关包必须登记 managed。语义图尚无 cloud-web-access 节点，方案确认后登记；不把待定 Tunnel 路线写成已确认关系。
+```text
+zcode server connect
+zcode server up
+zcode server up -d
+zcode server down
+zcode server logs
+zcode server logs -f
+```
 
-## 验收场景（实现前定义）
+1. 部署者部署 Cloudflare Worker/DO/手机页面，设置一套固定账号密码。
+2. 云主机执行 connect，使用 TUI 向导或参数提供服务 URL、用户名和密码；先校验登录，成功才原子保存配置，失败保留原配置。
+3. 执行 up 启动 Core 和连接器；收到 Relay 的合法 auth_ack（即使 waiting、尚无手机）即建立远控服务就绪事实。
+4. 手机打开自建服务页面，使用相同账号密码登录，扫码或从设备列表选择在线 Server。
+5. 由现有手机页面完成 bootstrap、选项目、聊天和权限处理；任务与文件均在云主机。
+6. logs 读取同一实例的持久日志；down 显式停止整个 Server，保留配置、凭据和业务数据。
 
-| ID | 操作 | 必须观察到的结果 | 证据层 |
-| --- | --- | --- | --- |
-| CWA01 | 未登录访问 HTML/API/WS，或直接访问 Origin RPC | 登录门禁/401；Origin 凭证未泄露 | Worker 契约与真实隧道 |
-| CWA02 | 正确/错误密码、会话过期、跨域提交、修改后的 Cookie | 成功进入；不同拒绝原因准确；限速实际生效 | Worker runtime / 浏览器 |
-| CWA03 | 经网关加载真实 Web，打开项目，发送一轮固定回复请求 | HTML/资源/API/WS 均成功；真实模型请求与回复 | 隔离数据、回放模型、浏览器 |
-| CWA04 | 两浏览器连接同一云实例，各自选任务；关闭其中一个 | 导航独立；另一个继续接收并可发送；任务未取消 | 双 context 浏览器 |
-| CWA05 | 手机 390px 与桌面宽屏登录并处理一项权限请求 | 可见、可操作、无横向遮挡；一次决定生效 | 浏览器截图与运行证据 |
-| CWA06 | 云端连接中断后刷新或重连 | 明确离线；服务恢复后读取真实历史；无重复发送 | 网络故障注入与运行证据 |
-| CWA07 | 请求受信 Host 端点及伪造 capability 头 | 网关拒绝；普通 Web 不升权 | 协议契约 |
+Server 模型配置在云主机预先完成；首次远控不自动要求官方账号、不把账号密码当模型 API Key。缺少模型时展示真实配置错误。
 
-未定义：目标主机/域名/运行包来源；是否接受方案 A；首版已建立连接的撤销策略。必须先完成该选择，再写依赖传输方案的产品代码。
+## 6. 官方配对与离线行为保持
+
+同一个 SID 上，第二台手机接入会替换第一台；旧连接收到 KICKED 并关闭。手机端既有 KICKED 有界重试策略不修改：首次可延迟恢复、短窗口内重复被替换后停止并提示冲突。因此可能发生一次反向接管，不能承诺新手机永远立即稳定占有。
+
+不同 SID 互不转发。设备 owner 更替、terminal owner 更替与 socket close 必须校验当前 owner 引用，旧 close 不得删除新连接。重新注册可能产生新 SID，沿用官方持久身份/重新注册规则，不擅自用 sourceServerId 替代 wire SID。
+
+Server 离线时沿用官方的 waiting、reconnecting、DEVICE_OFFLINE、超时和失败页面。短暂挂起/恢复中现有画面或草稿是否保留，服从现有 owner 路径；不新增“刷新后仍可看离线历史”的保证。
+
+官方手机小快照缓存仍是现有 ETag/传输优化，不升级为本期的离线数据库；不调整容量、退出清理或缓存 key。
+
+## 7. Server attachment 适配
+
+连接器通过公开的宿主端口请求：读取 bootstrap/capabilities、列出或打开工作区、建立/释放 terminal attachment、转发必要平台操作。Core 提供端口实现，连接器不引用 Repo 或 Core 私有类。
+
+每个当前 terminal 对应独立 connectionId、bridge generation 与 scope。被替换/断线时先撤销新请求与在途 open，再结束 RPC、订阅及短期 PTY。只关闭手机 attachment 不停止已经接受的任务；down 才是显式停止 Server 的生命周期操作。
+
+workspaceIdentity 用于身份、workspacePath 用于实际操作；两者按现有工具传递，保留 remoteSessionId 与 stale run 防护。RPC delivery 固定 web-remote-replayable，不允许手机选择 desktop-continuous/trusted-host。
+
+headless 不支持的 Electron 原生窗口、文件对话框等 capability 明确缺席；UI 使用现有禁用/unsupported 反馈，不挂一个永不返回的平台通道。
+
+## 8. Cloudflare 后端
+
+一个 Worker 提供手机静态页面、单租户密码认证及 V2 HTTP/WS 入口；一个 tenant-scoped RelayRoom DO 串行持有设备、一次性 token 与 `(SID, role)` owner。
+
+使用 DO WebSocket Hibernation API。唤醒后从 DO 存储与 socket attachments 恢复连接身份，不能相信 Worker 全局变量。持久记录只包含认证/设备元数据；每片业务 data 直接送另一角色，不落盘、不解析 RPC 内部任务内容。
+
+票据单次消费必须原子化。角色从票据派生，不能由 auth_init 自述升级。在线、waiting/matched、设备归属、同角色替换、断线通知与 V2 错误码遵循已有合同，详见 protocol.md。
+
+沿用 shared transport 的 1 MiB 物理 outer JSON、16 MiB 逻辑 raw message、64 片及现有重放边界。不得为本期改 wire 格式或增加 byte-credit 消息。Worker 实现必须以真实 runtime 验证 send、速率与内存边界；无法有界运行时应限制设备/连接数或明确失败并回到设计评审，不能静默持久化正文或无界排队。
+
+DO 存储与静态资源足够承载本期，不需要 D1/R2/KV 来保存聊天。频繁 V2 心跳会唤醒 DO，必须以实测记录费用与请求量，不承诺休眠后零成本。
+
+## 9. 认证与配置安全
+
+自建登录产生相同账号身份下的各端登录凭据，再用已有 token 接口取得 role=device/terminal 的一次性票据；手机和 Server 无需拿到同一个 token 字符串。
+
+密码校验使用经过 Workers 支持性/CPU 自检的加盐 KDF，参数作为部署配置固定；不以普通 SHA256 代替密码 KDF。不在源码、静态资源、日志、二维码里存明文密码。Server 默认保存可撤销登录凭据而非密码；配置权限 0600，失败不假装已保存。
+
+浏览器登录/注销检查同源/CSRF，WS 校验 Origin；Node 登录与票据请求使用 HTTPS 认证而非伪造浏览器来源。票据若出现在 WS query，日志必须脱敏；官方单次/过期语义保持。生产拒绝非 HTTPS，localhost 调试例外显式配置。
+
+凭据到期/撤销停止认证重试并报告需 connect；网络/5xx 用现有有界退避。连接到新 endpoint 需重新验证，不向旧域或其他域发送新密码。Relay 位于 TLS 信任边界内，本期不声称端到端加密。
+
+## 10. 服务生命周期与日志
+
+新命令复用现有 Supervisor、canonical root、控制 socket、data-root 锁、Core ready/heartbeat/stop 和服务注册，不能再建立一个 fork daemon 或靠 PID 文件直接杀进程。
+
+connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner；down 复用停止并等待完成；logs 不加载 Core/Agent，也不触发服务启动。已有 serve/status/stop/restart/update/proxy-stdio 等内部接口继续可用，避免破坏桌面自动部署与重连。
+
+前台日志与后台日志有同一持久来源。先定义 Supervisor/Core/连接器的日志归属、文件轮转与 IPC/订阅接缝，再实现 logs，禁止把现有 detached stdio=ignore 误当已有持久日志支持。敏感信息在写入前脱敏，不能靠日志查看器临时遮掩。
+
+## 11. 阶段与完成标准
+
+| 阶段             | 交付                                                     | 完成证据                                                       |
+| ---------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| A：合同与 Relay  | 单租户登录、兼容 V2 的设备/票据/配对/透明转发            | 真实 workerd HTTP/WS、owner 替换、票据原子消费、休眠与故障测试 |
+| B：Server 与 CLI | connect/up/down/logs、Core 接入、持久日志与生命周期复用  | CLI 进程测试、真实 Core、停止/重启/日志轮转与锁验证            |
+| C：手机真实闭环  | 同账号登录、项目/任务、模型回复、权限与官方离线/替换行为 | 真实浏览器+Server+受控模型、公网 Worker、手机网络验收          |
+
+整个本期完成需要 A/B/C；纯 WebSocket echo、单测通过、或者命令帮助能打印不能视作产品完成。多设备同账号分别配对可作为隔离回归，但不是多手机同控的产品承诺。
+
+## 12. 改动布局、迁移与发布
+
+独立 fork 合同、Worker/DO 与 Node 连接器优先分包；Core/CLI/Web 只留最小组合根接线，新增模块登记 managed 与公开入口。新产品入口在正式实现时登记 FEATURES 与 FORK(cloud-web-access) 标记。
+
+`zcode server` 分发必须同时覆盖实际发行包稳定 launcher 与对应开发入口，不能只给 Agent TUI 加一个同名帮助而运行包不支持。安装身份、原数据根和现有版本更新逻辑保留。
+
+部署顺序：测试 Worker/手机页面 → 匹配 Server 发行包 → 真实闭环与安全回归 → 生产 Worker/页面与对应 Server。Web/Worker/Server 检查现有兼容 manifest；不将页面 `/remote/v4` 路径误当作新业务协议版本。
+
+目标云主机、域名、固定账号、密码校验参数为部署信息，用户尚未提供；完整设计不依赖虚构主机。测试使用隔离目录和回放模型，不读取或覆盖生产会话库。关闭功能/回滚连接器后，既有 SSH Source Server 方式继续可用。
+
+## 13. 当前事实、资料与边界
+
+源码：`packages/zcode-server-cli/src/cli.ts`、`runtime/stableLauncher.ts`、`runtime/paths.ts`、`server-core/core.ts`、`server-core/http.ts`；`packages/desktop/src/main/webRemoteControlManager.ts`；shared Relay/transport 与 Web 入口。
+
+规格：[官方 V2 配对](../../web-remote-control/relay-v2-pairing.md)、[官方远控架构](../../web-remote-control/web-remote-control-architecture.md)、[R2 daemon](../../architecture/r2-server-cli-and-daemon.md)、[R3 Source Server](../../architecture/r3-source-server-remote-architecture.md)。
+
+Cloudflare 官方资料：[DO WebSocket/休眠](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)、[DO state](https://developers.cloudflare.com/durable-objects/api/state/)、[静态资源与 API 路由](https://developers.cloudflare.com/workers/static-assets/)。
+
+当前只有文档。所有验收均 planned；本仓库没有可供审计的官方线上 Relay 后端，本稿只承诺自建方案不持久化业务正文，不替官方生产服务作数据保留声明。
