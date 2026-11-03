@@ -8,6 +8,10 @@ The user explicitly chose to rename the fork settings reload command to /refresh
 
 Preserve local-only operation, removed off-peak entry points, GitHub update channels, direct WebFetch, tool modes, identity presets, search providers and the six-tool Codex collaboration runtime. Prefer upstream lifecycle ownership and adapt fork collaboration cleanup through existing ports, never resurrect the removed legacy subagent runner.
 
+## Fork verification exception
+
+Upstream retires App business UT and keeps an explicit engineering project. Adopt that retirement for untouched upstream tests, but retain fork-owned and fork-modified dependency-contract regressions (plus their minimal fixture import closure) under explicit fork test entries. Keep the node:test fork runner and dedicated Vitest fork project; do not restore broad App test discovery. This preserves the user-required dependency API contracts without undoing upstream test retirement.
+
 ## Ownership and delivery
 
 ```text
