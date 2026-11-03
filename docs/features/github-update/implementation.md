@@ -194,3 +194,16 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
   未执行 Linux/macOS ARM/Intel 的全部原生运行验收。CI 包校验不是所有平台运行验证的替代。
 - 未连接、安装或重启用户远程设备；需在新发布下载完成后，以真实 SSH 新设备安装验收闭环。
 - 旧桌面安装包仍含旧下载源，不会因本次源码修改自动修复；需要安装包含本次接线的新桌面包。
+
+## 7. Windows 未签名更新兼容（2026-11-03）
+
+- 同步上游 a60ba6a7 时保留 GitHub generic feed；按用户确认不引入强制 Authenticode hook，
+  不执行安装前缓存包签名复查。未签名包继续走 electron-updater 原生安装入口。
+- `electron-builder.config.js` 显式关闭 `win.verifyUpdateCodeSignature`，避免签名构建自动写入
+  publisherName 后把未来未签名更新拒绝；发布签名 hook 本身保留。
+- 保留启动参数 `--` 边界与正式包忽略调试 feed 的上游安全加固，保留下载 SHA512 完整性校验。
+- 先补回归：配置/接线的无强制签名契约、Windows 原生安装、参数边界与正式包 feed 不可覆盖。
+  新策略契约先失败于签名校验仍在位；未解冲突的 updater 运行测试先失败于编译。
+- 验证：updater scoped Vitest 72/72、GitHub feed/第三方依赖/未签名策略 node 契约 15/15 通过；
+  `pnpm typecheck` 全部通过（含 desktop main/host/E2E、remote-main、CUA）；4 个修改文件 lint
+  0 warning / 0 error，移除守卫全部通过。真实 Windows 未签名下载、安装和 SmartScreen 未验证。

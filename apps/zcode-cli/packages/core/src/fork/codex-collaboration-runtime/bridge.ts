@@ -316,7 +316,8 @@ export function createRuntimeCollaborationBinding(
               handle as unknown as import("../../runtime/agent-runtime.js").AgentRuntime;
             child.beginShutdown();
             await drainCommand(identity.agentId);
-            await child.closeBrowserSession({ propagateErrors: true });
+            // 重启要求等待 child 全部所属工作与真实写入，不能只释放浏览器。
+            await child.close();
             handles.delete(identity.agentId);
             bindings.delete(identity.agentId);
             mailboxes.delete(identity.agentId);
@@ -357,22 +358,26 @@ export function createRuntimeCollaborationBinding(
   }
   const ready = () => (startup ??= initialize());
   function scheduleProjection() {
-    projectionTail = projectionTail.then(async () => {
-      try {
-        while (pendingProjections.length) {
-          await publish(pendingProjections[0]!);
-          pendingProjections.shift();
+    // 终态 register 早于投影移出队列，retire 在此间醒来会再次等待；真实 flight 必须入账，
+    // 由 ledger 在整批移出后发出最终唤醒，不能用延时或轮询掩盖所有权交接。
+    projectionTail = rootRuntime.trackResidencyBlockingWork(
+      projectionTail.then(async () => {
+        try {
+          while (pendingProjections.length) {
+            await publish(pendingProjections[0]!);
+            pendingProjections.shift();
+          }
+          projectionError = undefined;
+        } catch (error) {
+          // 只截获异步投影失败以避免 unhandled；保留待重放快照，并由所有 await 边界明确抛出。
+          projectionError = error;
+          rootRuntime.logger?.error(
+            "Collaboration projection failed; durable snapshot retained for retry",
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
-        projectionError = undefined;
-      } catch (error) {
-        // 只截获异步投影失败以避免 unhandled；保留待重放快照，并由所有 await 边界明确抛出。
-        projectionError = error;
-        rootRuntime.logger?.error(
-          "Collaboration projection failed; durable snapshot retained for retry",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-    });
+      }),
+    );
   }
   async function awaitProjection() {
     scheduleProjection();

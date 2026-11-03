@@ -20,9 +20,10 @@ import { createStructuredPatch } from "../diff.js";
 import { stampMemoryOriginSessionId } from "../../memory/origin-session.js";
 import { resolveWorkspacePath } from "../path-policy.js";
 import {
-  createReadFileStateKey,
   findLatestReadFileState,
   normalizeReadFileStateMtimeMs,
+  requestedPathField,
+  setReadFileStateEntry,
 } from "../read-file-state.js";
 import { createReadFileStateMetadataFromEntry } from "../read-file-state-metadata.js";
 // FORK(edit-stale-guard): 内容哈希判据；见 FEATURES.md 的 edit-stale-guard 条目
@@ -142,6 +143,7 @@ export const writeHandler: ToolHandler = async (input, context) => {
   const readFileStateEntry = updateReadFileStateAfterWrite(
     context.readFileState,
     filePath,
+    file_path,
     contentToWrite,
     writeResult.revision,
   );
@@ -360,12 +362,14 @@ function isStrictFullRead(entry: ReadFileStateEntry): boolean {
 function updateReadFileStateAfterWrite(
   readFileState: ReadFileStateMap | undefined,
   filePath: string,
+  requestedPath: string,
   content: string,
   revision: FileSystemReadTextResult["revision"] | undefined,
 ): ReadFileStateEntry | undefined {
   if (!readFileState) return undefined;
   const entry: ReadFileStateEntry = {
     path: filePath,
+    ...requestedPathField(requestedPath, filePath),
     content,
     offset: undefined,
     limit: undefined,
@@ -378,7 +382,7 @@ function updateReadFileStateAfterWrite(
     // FORK(edit-stale-guard): 写回结果自带磁盘字节的 hash，与读路径同算法，作为下一次写入的比对基准；见 FEATURES.md 的 edit-stale-guard 条目
     contentHash: revision?.hash,
   };
-  readFileState.set(createReadFileStateKey(filePath, 1, undefined), entry);
+  setReadFileStateEntry(readFileState, entry);
   return entry;
 }
 

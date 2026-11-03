@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. 用户已批准连续实施和验证，任务之间不暂停请求确认。
 
-**Goal:** 实现最多 20 次、最长 30 秒间隔的 API 恢复，并移植 Codex V2 协作语义。
+**Goal:** 实现最多20次重试、普通退避最长30秒的 API 恢复，并移植 Codex V2 协作语义。2026-11-03 政策调整：供应商 Retry-After 独立接受<=5分钟加最多5秒正向 jitter。
 
 **Architecture:** 模型失败链共享唯一预算；adapter 负责请求，core 负责已输出流的安全恢复。
 根 runtime 的协作控制器统一管理身份、邮箱、执行句柄和名额；工具与客户端只发命令和投影事件。
@@ -29,7 +29,7 @@ CLI 路径默认相对于 apps/zcode-cli/packages；fork 标记统一 codex-coll
 
 ```ts
 expect(resolveAiSdkModelRetryOptions(undefined, {}).maxAttempts).toBe(21);
-expect(calculateRetryDelay(retry, 20, 300_000)).toBeLessThanOrEqual(30_000);
+expect(calculateRetryDelay({ ...retry, jitter: false }, 20, 300_000)).toBe(300_000);
 expect(classifyModelFailure(new Error("provider response failed")).retryable).toBe(true);
 ```
 

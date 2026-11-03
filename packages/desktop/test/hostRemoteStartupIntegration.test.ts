@@ -191,6 +191,7 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
     const run = runInNewContext(
       `${compile(`async function run() { ${initNode.getText(source)} }`)};run;`,
       {
+        browserBackendIdentity: undefined,
         databaseStartup: undefined,
         activeSessionRealtimePort: null,
         activeServices: null,
@@ -261,6 +262,11 @@ describe("Window Host 的 Source 重连与数据库启动整合", () => {
         ICredentialService: {},
         ISourceServerManagementService: {},
         IRemoteProjectService: {},
+        IDeviceSyncStateService: {},
+        createDeviceSyncStateService: () => ({}),
+        getAppConfigDir: () => "/config",
+        IProviderProvisioningStatusService: {},
+        hostProviderProvisioningStatus: { service: {} },
         createRemoteProjectConnectionAdmission: () => async () => {},
         notifyProjectChange() {},
         runStartupReconnectBatch,

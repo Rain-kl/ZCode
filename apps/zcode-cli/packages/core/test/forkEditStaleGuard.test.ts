@@ -21,6 +21,7 @@ import {
   type FileSystemStatResult,
 } from "@zcode/contracts";
 
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import { resolveStalenessByContentHash } from "../src/fork/edit-stale-guard/hash-staleness.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
 import { writeToolEntry } from "../src/tool/handlers/write.js";
@@ -104,7 +105,7 @@ function createReadStateEntry(overrides: Partial<ReadFileStateEntry> = {}): Read
     contentHash: contentHashOf("line one\n"),
     ...overrides,
   };
-  return new Map([[`${FILE_PATH}\0${entry.offset ?? 1}\0${entry.limit ?? ""}`, entry]]);
+  return new Map([[createReadFileStatePathKey(FILE_PATH), entry]]);
 }
 
 function createContext(

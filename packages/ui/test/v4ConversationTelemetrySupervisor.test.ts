@@ -576,6 +576,7 @@ describe("ConversationTelemetrySupervisor", () => {
       plan_product_id: "product-1",
       message_source: "chat",
       task_trigger: "",
+      ui_mode: "unknown",
     });
   });
 

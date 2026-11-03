@@ -14,6 +14,7 @@ import type { ZhipuAccountMode } from "@zcode/provider";
 
 type TestModelTextRequest = ModelTextRequest & {
   modelRecoveryBudget?: ModelRecoveryBudget;
+  modelRequestSessionFeatures?: ModelInvocationContext["modelRequestSessionFeatures"];
   properties?: ModelProperties;
   accountMode?: ZhipuAccountMode;
 };
@@ -80,6 +81,7 @@ function invocationContext(request: TestModelTextRequest): ModelInvocationContex
     // FORK(codex-collaboration): 测试与真实 invocation 合同一致。
     modelRecoveryBudget: request.modelRecoveryBudget,
     modelRequestSessionType: request.modelRequestSessionType,
+    modelRequestSessionFeatures: request.modelRequestSessionFeatures,
     preserveProviderStreamBoundaries: request.preserveProviderStreamBoundaries,
     refreshRuntimeHeadersBeforeAttempt: request.refreshRuntimeHeadersBeforeAttempt,
     statusSink: request.statusSink,

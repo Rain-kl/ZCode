@@ -37,3 +37,10 @@ test("collaboration client removals survive an upstream merge", () => {
     );
   }
 });
+
+test("removed legacy completion notifications cannot return as a second child owner", () => {
+  const rule = REGISTRY.find((entry) => entry.featureId === "codex-collaboration");
+  assert.ok(rule);
+  assert.ok(rule.absentFiles.some((entry) =>
+    entry.path === "apps/zcode-cli/packages/core/src/subagent/completion-notification.ts"));
+});

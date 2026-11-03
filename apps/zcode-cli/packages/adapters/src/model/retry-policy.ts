@@ -13,7 +13,7 @@ export type ResolvedAiSdkModelRetryOptions = Required<AiSdkModelRetryOptions>;
 
 type EnvRecord = Record<string, string | undefined>;
 
-// FORK(codex-collaboration): 用户恢复上限必须约束配置与 provider hints，见 FEATURES.md。
+// FORK(codex-collaboration): 次数与普通退避配置必须有界；provider hint 由独立共享策略裁决，见 FEATURES.md。
 const DEFAULT_MAX_RETRIES = MODEL_RECOVERY_MAX_ATTEMPTS - 1;
 const DEFAULT_RETRY_BASE_DELAY_MS = 2_000;
 const DEFAULT_RETRY_BACKOFF_FACTOR = 2;

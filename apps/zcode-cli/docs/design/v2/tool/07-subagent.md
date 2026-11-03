@@ -78,3 +78,20 @@ profile、skills、memory、AGENTS 与 MCP 继续使用既有装配规则。未�
 
 控制器假 driver 测试、真实 runtime 测试、独立 HTTP 协议进程测试和桌面/手机 GUI 验收分别记录。
 旧工具时代的测试产物只证明当时行为，不能作为六工具运行链的验收结果。
+
+## 上游生命周期同步（2026-11-03）
+
+会话 stop/restart 由上游 lifecycle owner 编排，协作子树仍由唯一 controller 所有。
+root closeOwnedWork 等待 controller.dispose；driver.release 先 drain 原 command，随后
+child.close 取消后台 Bash、等待 residency Promise 和实际写入完成，再释放浏览器。
+错误逐级传播并保留重试资源句柄，不恢复 legacy SubagentPort/runner。
+
+子 runtime 的模型准入优先使用 `subagentModelRequestAdmission(parent.sessionId)`；未配置
+工厂时继承父准入端口。六工具的异步调度不改变此上游并发与 Retry-After 节流合同。
+
+### 自然退休与协作投影收口
+
+协作 controller 的终态快照持久化与 runtime-task 投影同属根 runtime 的真实在飞工作。
+投影入队时立即登记到 residency ledger，只有完成全部逐条发布、移出 pendingProjections
+后才结算；`retire()` 不能只等 registry 的终态通知，因为通知发生时投影本身仍未完成。
+释放最后一条投影后 ledger 唤醒退休等待者；不加轮询或延时，也不让 child 关闭共享存储。

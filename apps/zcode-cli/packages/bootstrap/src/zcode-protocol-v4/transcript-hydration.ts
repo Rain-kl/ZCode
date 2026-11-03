@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 保持既有 transcript → event 恢复 owner；本次只透传输入快照，不拆分恢复状态机。 */
 // Transcript → SessionEvent 合成（「reduce(transcript) ≡ reduce(events)」）。
 //
 // 动机：v4 投影是事件溯源，但部分历史突变（纯对话 fork 复制 message 不复制 event、
@@ -19,6 +20,9 @@ import type {
   TurnFileChangeSummary,
   TurnInputIntentMetadata,
 } from "@zcode/contracts";
+// FORK(reload-command): 维护回执复用独立 transcript 宿主，不应被恢复成空工作轮。
+import { forkRefreshTimeline, hasForkRefreshTimeline } from "../fork/reload-command/module.js";
+import { INTERRUPT_MARKER_SOURCE, joinTaskNotificationBatch } from "@zcode/core";
 import { isHighspeedProviderId } from "@zcode/shared";
 import type { EventId, SessionEvent, SessionId, TraceId, TurnId } from "@zcode/contracts";
 import {
@@ -39,6 +43,7 @@ import {
 import {
   conversationInputIntentSchema,
   errorAttributionSchema,
+  subagentResultMetaSchema,
   workflowBlockedMetaSchema,
   workflowLaunchMetaSchema,
   workflowNotificationMetaSchema,
@@ -131,6 +136,12 @@ function workflowLaunchOfMessage(message: MessageWithParts): WorkflowLaunchMeta 
   return parsed.success ? parsed.data : null;
 }
 
+/** core 停止本轮时写的隐藏提醒记录（`interrupt-marker.ts`）。 */
+function isInterruptMarkerMessage(message: MessageWithParts): boolean {
+  const semantics = message.info.semantics;
+  return semantics?.kind === "system_reminder" && semantics.source === INTERRUPT_MARKER_SOURCE;
+}
+
 function isProviderContextOnlyAssistant(message: MessageWithParts): boolean {
   return (
     message.info.role === "assistant" &&
@@ -138,14 +149,23 @@ function isProviderContextOnlyAssistant(message: MessageWithParts): boolean {
   );
 }
 
-function textOfMessage(parts: readonly MessagePart[]): string {
+function textPartsOfMessage(parts: readonly MessagePart[]): string[] {
   return parts
     .filter(
       (part): part is Extract<MessagePart, { type: "text" }> =>
         part.type === "text" && part.ignored !== true,
     )
-    .map((part) => part.text)
-    .join("");
+    .map((part) => part.text);
+}
+
+function textOfMessage(parts: readonly MessagePart[]): string {
+  return textPartsOfMessage(parts).join("");
+}
+
+// 修复原因：空闲整批的每条通知存为一个文本 part，按 "" 连接时相邻通知粘在一起，
+// 与 live 的轮输入不同。与 live 用同一个连接函数；旧版本只有一个 part，结果不变。
+function backgroundWakeInputOfMessage(parts: readonly MessagePart[]): string {
+  return joinTaskNotificationBatch(textPartsOfMessage(parts));
 }
 
 function finiteTimeMs(value: unknown): number | undefined {
@@ -381,6 +401,7 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
       // 可见 text 是展示事实；goal 的 canonical objective 只能读取持久 intent.text，
       // 禁止从 `/goal replace ...` 文案再做大小写/关键字解析。
       text: value.text,
+      genUiContext: value.genUiContext,
       ...(value.modelSelection ? { modelSelection: value.modelSelection } : {}),
       ...(value.mode ? { mode: value.mode } : {}),
       ...(value.planEnabled !== undefined ? { planEnabled: value.planEnabled } : {}),
@@ -1157,6 +1178,8 @@ function steerDeliveryOfMessage(message: MessageWithParts): "guide" | "queue" | 
  * 事实区分，统一按边界处理——内容不丢、无气泡，仅轮归属与 live 合流场景有已知差异。
  */
 function isTurnBoundaryStarter(message: MessageWithParts): boolean {
+  // FORK(reload-command): 前一普通轮必须先收尾，再按独立宿主顺序消费维护回执。
+  if (hasForkRefreshTimeline(message)) return true;
   if (isRealUserTurnStarter(message)) {
     return steerDeliveryOfMessage(message) !== "guide";
   }
@@ -1195,12 +1218,15 @@ function backgroundResultOriginMetaOfMessage(
   const workflowNotification = parseWorkflowNotificationMeta(record.workflowNotification);
   // 空闲提醒的载荷在它自己的键上（contracts 的 WorkflowBlockedMeta），同样畸形只丢载荷。
   const workflowBlocked = workflowBlockedMetaSchema.safeParse(record.workflowBlocked);
+  // 后台 Agent 的结构化终态也要过冷恢复，否则恢复后失败详情退回整句 summary。
+  const subagentResult = subagentResultMetaSchema.safeParse(record.subagentResult);
   return {
     backgroundSource,
     title,
     workId,
     ...(workflowNotification ? { workflowNotification } : {}),
     ...(workflowBlocked.success ? { workflowBlocked: workflowBlocked.data } : {}),
+    ...(subagentResult.success ? { subagentResult: subagentResult.data } : {}),
   };
 }
 
@@ -1328,6 +1354,12 @@ function collectTurnOutput(options: {
       continue;
     }
     if (message.info.role !== "assistant") {
+      // 修复原因：最终文本已完整输出后再停止时，assistant 是 finish=stop、没有 error，
+      // live 记为 cancelled，冷恢复却按 success 收口。中断标记是停止的持久化事实，以它为准；
+      // 已有持久化错误时 finishTurn 仍优先显示错误（宿主故障也写标记）。
+      if (isInterruptMarkerMessage(message)) {
+        resultType = normalizeTurnResult(resultType, "cancelled");
+      }
       index += 1;
       continue;
     }
@@ -1363,6 +1395,14 @@ function collectTurnOutput(options: {
     if (messageEnd !== undefined) {
       turnEndedAtMs = Math.max(turnEndedAtMs, messageEnd);
     }
+    // live 每次模型请求都有 start 流事件；cold 为每条 assistant 消息合成同一个事件。
+    // 修复原因：没有可见内容的 assistant 不产生任何事件，投影看不到两次 guide 取出之间的
+    // 模型 step，会把后一次取出的 guide 并进前一段工作段。
+    push(
+      SessionEventType.ModelStreaming,
+      { kind: "start", delta: "", done: false, assistantMessageId: String(message.info.id) },
+      turnId,
+    );
     const synthesized = synthesizeAssistantParts(
       message,
       options.emittedCompactOperations,
@@ -1589,6 +1629,21 @@ export function synthesizeEventsFromMessages(
 
   while (index < messages.length) {
     const message = messages[index]!;
+    // FORK-BEGIN(reload-command)
+    const refreshCompletions = forkRefreshTimeline.completions(message);
+    if (refreshCompletions.length > 0) {
+      for (const part of refreshCompletions) {
+        push(
+          SessionEventType.ForkReloadCompleted,
+          part.sourceCommandId ? { sourceCommandId: part.sourceCommandId } : {},
+          undefined,
+          part.time?.end ?? messageCreatedAtMs(message),
+        );
+      }
+      index += 1;
+      continue;
+    }
+    // FORK-END(reload-command)
     if (isProviderContextOnlyAssistant(message)) {
       index += 1;
       continue;
@@ -1694,7 +1749,8 @@ export function synthesizeEventsFromMessages(
             // cold hydration 曾把 model-only background wake 的原文清空，
             // 导致 ProductProjection 即使能消费 task-notification，恢复时也拿不到
             // tool-use-id 与失败详情。输入仍是 model-only，不会生成用户气泡。
-            input: wakeSource === "background_task" ? textOfMessage(message.parts) : "",
+            input:
+              wakeSource === "background_task" ? backgroundWakeInputOfMessage(message.parts) : "",
             inputVisibility: "model-only",
             inputSource: wakeSource,
             ...(wakeSource === "background_task"

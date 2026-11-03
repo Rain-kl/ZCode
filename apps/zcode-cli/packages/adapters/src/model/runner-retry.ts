@@ -1,6 +1,7 @@
-// FORK(codex-collaboration): adapter 退避与共享恢复合同使用同一个等待硬上限。
+// FORK(codex-collaboration): 普通退避与供应商提示使用共享恢复合同的独立边界。
 import {
   MODEL_RECOVERY_MAX_DELAY_MS,
+  isModelRecoveryRetryAfterMs,
   ModelErrorCode,
   ModelFailureReason,
   type Logger,
@@ -24,6 +25,9 @@ import type { ResolvedAiSdkModelRetryOptions } from "./retry-policy.js";
 import { modelStatusContextToLogContext, type ModelStatusContext } from "./runner-status.js";
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
+/** Retry-After 之上追加的抖动：最多 retry-after 的 20%，且不超过 5 秒。 */
+const RETRY_AFTER_JITTER_RATIO = 0.2;
+const RETRY_AFTER_JITTER_MAX_MS = 5_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
   // FORK(codex-collaboration): 重包装不能抹去本地禁止请求的控制事实。
   "localControl",
@@ -69,10 +73,12 @@ export function calculateRetryDelay(
   const uncapped = retry.baseDelayMs * retry.backoffFactor ** Math.max(0, attempt - 1);
   // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
   const capped = Math.min(uncapped, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
-  // FORK(codex-collaboration): 合法 provider hint 优先，但实际等待仍受用户 30 秒硬上限。
-  if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
-    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
-    return Math.min(retryAfterMs, retry.maxDelayMs, MODEL_RECOVERY_MAX_DELAY_MS);
+  // FORK(codex-collaboration): 用户授权合法提示独立接受至5分钟；普通退避配置不应提前唤醒限流请求。
+  if (isModelRecoveryRetryAfterMs(retryAfterMs)) {
+    // 同批限流请求沿用上游只向后抖动；300秒提示最多实际等待305秒。
+    const spread = Math.min(retryAfterMs * RETRY_AFTER_JITTER_RATIO, RETRY_AFTER_JITTER_MAX_MS);
+    const delayed = retry.jitter ? retryAfterMs + Math.round(Math.random() * spread) : retryAfterMs;
+    return delayed;
   }
 
   if (!retry.jitter || capped === 0) {
@@ -256,19 +262,6 @@ function modelFailureSource(
   }
 
   return ModelErrorSource.Provider;
-}
-
-function isReasonableRetryAfterMs(
-  value: number | undefined,
-  exponentialDelayMs: number,
-): value is number {
-  return (
-    value !== undefined &&
-    Number.isFinite(value) &&
-    value >= 0 &&
-    // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
-    (value <= 5 * 60_000 || value < exponentialDelayMs)
-  );
 }
 
 function retryAfterSource(

@@ -16,7 +16,7 @@
 | `apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts` | v4 原生命令：空闲 `submitPrompt("/refresh")`；忙碌与 compact 一致入 FIFO（`commandKind: "refresh"`） |
 | `packages/ui/src/v4/slashCommands.ts`、`SessionPane.tsx` | `/` 菜单解析 `kind: "refresh"`、派发信封、排队/失败 toast、队列项不参与 Composer 回填；成功回执由转录标记承担 |
 | 事件与投影链 | `contracts` 新增 `ForkReloadCompleted` 事件（payload 带 `sourceCommandId`）→ `product-projection` 落 `timelineMarker`（`reload` 型）→ `rows.ts` schema → `ConversationRowView` 灰字分隔线（「已重载提示词与工具面」，刷新图标）；分享面（公开投影 + 只读时间线）同步透出 |
-| `packages/ui/src/v4/pendingCommand{Registry,Replay}.ts` | `reload` 与 compact 同为可回放输入命令（刷新后仍有重放线索） |
+| `packages/ui/src/v4/pendingCommand{Registry,Replay}.ts` | `refresh` 与 compact 同为可回放输入命令（刷新后仍有重放线索） |
 | `packages/shared/src/zcode-protocol-v4/{command,input-intent}.ts` 等 | 命令信封 `refresh`（空 payload）、intent kind、steer kind、`activeTurnKind`、内置帮助目录 |
 | 删除 | `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口） |
 
@@ -70,3 +70,63 @@ ui 8（`v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandRepla
 - `architecture:check --changed`：0 violations。根 `pnpm lint`：0 errors，102 条现有 warnings。
 - CLI lint 脚本已执行但受其子进程 pnpm/native binary 环境阻塞；core forkReload 测试受 contracts/dist 尚未构建阻塞，未冒称通过。shared/UI 定向 tsc 构建仍在执行；完整根/CLI typecheck 由合并阶段复验。
 - 桌面/手机 E2E 未运行；验收场景：菜单仅列出 fork `/refresh`，参数/附件不拦截，忙碌排队后出现原灰字回执；上游 `/reload` 由 App 生命周期入口单独处理。
+
+### 合并后命令隔离回归
+
+`/reload` 是上游 App 本地生命周期操作，不经 v4 输入命令；`/refresh` 是 fork 原生维护命令。两者都必须保留为内置名，禁止用户/插件同名自定义命令接管。原生 handler 的 idle、busy FIFO、恢复失败拒绝共用现有准入，不能走 restart；参数/附件由共享 UI parser 拒绝拦截。
+
+合并核对发现 `inputIntentMetadata` 对维护信封的 kind 投影需显式识别 refresh；否则原生排队文本为 /refresh 而持久化意图错误地成为 sendText。沿用唯一投影函数补分支，并由原生 busy-route 用例断言。
+
+合并后回归：共享路由契约 6/6；Bootstrap 的 protocol-slash-commands、v4-native-goal-compact、v4-native-queue、product-projection 四文件共 319 测试通过，含 refresh 空闲执行、三种 busy routing、恢复失败拒绝、保留 maintenance queue kind、不可编辑以及原有 compact/goal/queue 回归。新增保留名、意图投影与队列投影断言均先红后绿。真实 Electron/手机 E2E 仍未运行。
+
+### FRR01 桌面命令隔离候选场景（先定场景，后写 E2E）
+
+复用上游 runtime-restart pending spec 与其显式 replay fixture，新增独立 `FRR01` 测试，避免增加原 SLR09 标题取消窗口内的动作。普通任务先完成一轮后，记录 taskId、runtime generation、用户历史与非标题模型请求；发送 `/refresh` 必须出现持久化 reload marker，generation 和用户历史不变，不产生模型请求；随后发送 `/reload` 必须保持 taskId 和历史但 generation 递增，新实例 ready 后可续发收到固定回复。该场景只验证桌面空闲路径，不声称覆盖手机、忙碌队列、MCP 真重注册或设置内容变化。候选未实跑前保持 pending/unverified。
+
+FRR01 验证记录：fixture check 通过（3 条原有 marker warnings，无新 warning）；`pnpm --filter @zcode/desktop typecheck:e2e` 通过。显式 replay 已启动，但 `onPrepare` 构建被尚未裁决的 `packages/desktop/src/main/autoUpdater.ts:9` 冲突标记阻断，Electron 未启动，FRR01 UI 断言均未执行，不能记为 covered。失败 artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20261103025739158-p29873-bcc8b03a98ec4dcd`；测试 HOME 显式隔离为 `/tmp/zcode-refresh-e2e-20261103-refresh-agent`，未操作生产数据。
+
+复验（独立 worktree 根目录）：
+
+```bash
+ZCODE_E2E_MANUAL_REVIEW=1 ZCODE_E2E_MOCHA_GREP=FRR01 \
+ZCODE_E2E_HOME_DIR=/tmp/zcode-refresh-e2e-20261103-refresh-agent \
+E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-runtime-restart.json \
+mise exec -- sh -c 'export PATH=/Users/ryan/.local/bin:$PATH; pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-runtime-restart.test.ts'
+```
+
+本机嵌套脚本需以上述 PATH 使用已固定的 pnpm 10.33.2；否则 Node 的 Corepack 会调用 pnpm 12.16.1 而在 pretest 阶段拒绝执行。此为执行环境调整，不修改仓库包管理器版本。
+
+### 2026-11-03：上游公告迁移后的维护协调
+
+根因：上游环境/模型/Git/日期/skills 迁入持久化公告历史，`rebuildContextPrefix` 只替换 system
+prefix；`/refresh` 若仅重建 prefix，已关闭的动态注入和已移除 Skill 工具的清单仍被模型读取。
+
+修复：`reloadForkOverrides` 在工具面定型与 prefix 重建后复用
+`refreshRestoredAnnouncements`，skills/指令按当前 builder 原位替换或移除；身份关闭动态注入时
+只移除明确来源的环境/模型/output-style/Git/日期 attachment。请求路径 output-style reminder
+也遵守同一 gate，避免撤回后又自动补回。主会话身份开关不影响子 runtime 自己的身份与公告。
+
+边界：只协调模型的内存历史；持久化的原始提醒、真实对话及工具记录不删不改，AGENTS.md 与
+memory 索引保留。冷恢复使用既有同一 owner 套用当前设置。无法识别为 attachment 的旧文本不靠
+正文猜测删除。恢复注入后由上游正常公告收集再次生成，无变化维护不改写公告字节。
+
+验证（离线真实 runtime，多轮模型 stub）：先红后绿覆盖动态/skills 关闭、缩档移除 Skill、
+再启用重发、维护轮零模型调用、持久化原记录不改、AGENTS/真实消息保留及无变化 history 字节不变。
+另加父身份开关不影响 child 日期的回归；具体验证结果随本次同步记录。
+
+### FRR01 实跑发现与批准修复
+
+第二次显式回放 artifact `packages/desktop/.e2e-artifacts/desktop-e2e-20261103031823602-p48729-dc7145ddf033a267` 已启动真实 macOS Electron。refresh marker出现、generation不变、taskId/用户历史不变、零模型请求均通过；reload代次递增并保留taskId/历史也通过，但重启后 marker 数0（应1）失败，最终续发断言未执行。日志确认 `fork_reload_completed` seq18 仅写内存；新实例 cold hydrate `sourceEventSeq=0 synthesized=true` 无该事实。用户批准复用独立 transcript timeline message/part 修复，不另建 entry账本；保持 E2E 原断言。
+
+### 独立 transcript 完成回执落地与验收
+
+- contracts 新增 `ForkRefreshCompletedTimelinePart`，沿用既有 `TimelinePart` 公开入口；存储层通用 message/part JSON 往返，不加表、不加 entry 类型。legacy 严格 message schema 与 mapper 显式保留 subtype、completionEventId 和可缺省 sourceCommandId。
+- core `events.ts` 在该完成事件进入内存/通知 sinks 之前调用上游 `persistAssistantTimelinePartForSession`：以 event.id 派生稳定 message/part ID，独立 provider-hidden timeline carrier。消息或 part 写失败沿原错误路径抛出，不在内存留成功事实。相同事实重写仅 upsert 同一 carrier/part。
+- bootstrap 新受管 `fork/reload-command` 纯读取模块只验证并识别该 subtype；transcript hydration 在物理 message 边界消费，不打开模型轮或 Agent 工时。cold merge 按 completion eventId 压掉 live 重复，并沿 active branch 的独立 carrier 裁剪旧分支事实及其已终态 controlOnly 维护轮壳，不恢复第二份账本。live 同 event 重放按既有行 entityId 去重，不添加副本状态。
+- fork 沿现有 message/part prefix clone：child 本地 message/part ID 重映射，completionEventId 保留来源；它仅在同 session 的 live/cold 去重中比较，不当作跨任务写入主键。真实 SQLite fork 回归确认只复制选中前缀内 marker。
+
+验证先红后绿：真实 SQLite 原先0个持久消息，现刷新首命令1个独立timeline；冷恢复原先缺 marker，新增回归覆盖多 marker物理顺序/根 marker/legacy缺sourceCommandId/同事实live+cold去重/完整control三联无空轮/同anchor rewind裁剪（含旧live三联）/严格非法时间及空sourceCommandId。core真实写失败用例确认 eventStore及sinks均无成功事件；orphan timeline空宿主不合成空工作轮。
+
+真实 E2E 修复后 FRR01 **1/1 通过**：`packages/desktop/.e2e-artifacts/desktop-e2e-20261103034836677-p75939-160e432e8a8fcc16`，macOS Electron、真实Host/CLI，显式 replay和隔离HOME，无生产数据操作。包括refresh零模型请求/不换代、reload新实例保留用户历史和完成marker、以及续发新回复。保持原断言，没有放宽；只执行FRR01，其他SLR/手机/忙碌队列不因此宣称通过。该实跑之后按独立review又补了removed-branch完整维护三联裁剪及空sourceCommandId严格拒绝的单测红绿，未重跑相同idle E2E，也不声称该artifact覆盖rewind交互。
+
+离线最终检查：core 新功能+runtime-persistence 2文件73/73；bootstrap timeline/hydration/cold merge/mapper/product projection 5文件358/358；contracts/core构建与bootstrap tsc通过；changed architecture 0 violations；定向lint（11文件）0 warnings / 0 errors。候选保持pending-review，未晋升formal/CI。

@@ -9,7 +9,7 @@ Task4 六工具真实桌面主路径已通过 CSC01；客户端冷身份、代�
 已通过独立规范与质量审查。原需求没有剩余必需开发项，验证限制在末节逐项记录。
 下文按阶段保留当时的验证边界；曾标记“待后续”的项目，以本节和末尾收尾记录为当前状态。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
-Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
+Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和普通退避30秒硬上限来自用户政策；Retry-After 于2026-11-03授权独立接受最多5分钟加上游正向 jitter。
 2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；
 相关回归通过，桌面启动阻塞已修复，隔离与默认模式实际 Electron 回放均为 5/5；
 见 [desktop-steer-acceptance.md](desktop-steer-acceptance.md)。
@@ -85,7 +85,7 @@ reactive compact 与失败链中的 preflight compact 继承外层 owner。
 ## 错误与时间边界
 
 - 默认退避为2/4/8/16/30秒，保留 jitter；base/factor 覆盖仍可改变曲线，所有配置与
-  Retry-After 都受30秒硬上限约束。配置可以收紧21请求上限。
+  普通指数退避都受30秒硬上限约束。Retry-After 独立接受<=300秒并可额外正向 jitter 最多5秒；配置可以收紧21请求上限。
 - 未知 provider 错误、4xx/5xx、解析错误和 SDK 内部 AbortError 进入有界恢复。
   明确 context-exceeded 保留语义 handoff，立即由 Core compact 改写上下文；compact 的物理请求仍占原预算。
   显式 caller signal、本地配置、权限和 `FORK_UPSTREAM_REQUEST_BLOCKED` 不重试。
@@ -195,7 +195,7 @@ native true→false终态1例）；额外 provider payload 正向回归捕获过
 GREEN：5个相关文件391/391通过，含整个 compact63例与 Adapter/native/业务码/分类回归。
 该轮 fresh CLI typecheck、架构与 lint 结果在任务报告记录；未重跑6872例大范围套件。
 
-## Task 1 质量复核修正轮 2
+## Task 1 质量复核修正轮 2（历史：其中 Retry-After 30秒政策已于2026-11-03取代）
 
 独立质量复核补充确认3个入口缺口：重试包装器同时携带 `cause` 与 `lastError` 时，Core 只沿
 单一路径扫描会漏掉 `localControl`；model admission 在 SDK 前拒绝时虽然状态事件写成不可重试，
@@ -558,3 +558,11 @@ Task4与整合规范审查APPROVE，随后最终质量审查APPROVE，没有剩�
 质量独立复跑UI3文件114/114、bootstrap2文件16/16、客户端移除契约1/1及diff whitespace检查通过。
 日志 `/tmp/zcode-finalquality-{ui,bootstrap,removals}.log`。CLI的5个max-lines错误继续作为检查失败记录，
 不是“所有检查全绿”；没有因收尾扩大为超长宿主文件重构。全部本功能提交均仅本地保留。
+
+## 2026-11-03 供应商等待政策对齐
+
+保持 `MODEL_RECOVERY_MAX_DELAY_MS=30000` 和21次物理预算，新增独立 Retry-After 接受边界300000ms。adapter 合法 hint 不按普通 maxDelayMs 裁切，并保留上游只向后 jitter（最高5秒）；>300000ms 即使低于未封顶指数退避也拒绝。workflow governor 仅向并发控制器传合法正数 hint，最多300秒且不额外抖动；无效 hint 不增加冷却，避免二重准入冻结。`wait_agent` 的30秒默认与此无关，不改。
+
+验证（本轮同步工作树）：先修改场景/政策文档，再新增/更新回归；RED 为 runner-retry 4失败、governor 3失败，分别观察到300秒提示被裁为30秒与60秒冷却被裁为30秒。GREEN：adapter 5文件235/235、governor 48/48，通过边界300000/300001ms、超长hint低于未封顶指数值、无效值、305秒正向 jitter、普通2/4/8/16/30秒与21请求、header优先级/独立普通配置、offpeak冷却。contracts构建、adapter/bootstrap定向 TypeScript 均通过；定向lint 0错误，6条原有测试警告。`MODEL_RECOVERY_MAX_DELAY_MS` 剩余消费者仅普通退避默认/配置夹紧/计算；governor 改用共享合法hint判据，没有修改 wait_agent。
+
+扩展回归：10个adapter文件413/413通过。HTTP业务错误与SSE业务错误的原有41秒/37秒 Retry-After 回归原先仍断言裁为30秒，按本轮授权政策同步期望与fake clock推进量，确认两种真实runner入口沿用供应商提示。此次只调整合同期望，不放宽错误分类、次数预算或其他断言。

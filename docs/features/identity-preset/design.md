@@ -279,3 +279,10 @@ function buildIdentityPresetSection(preset: ResolvedIdentityPreset): ContextSect
 5. **上游漂移**：第 1 期接线点为 10 个上游文件、30 行标记（见第 7 节），其中 `context/builder.ts`、`runtime/methods/context.ts`、`runtime/types.ts` 位于 core 提示词主链路；第 2、3 期还要动 UI 设置页与 WebDAV 打包链路。冲突时按二开标准的冲突阶梯处理，优先把逻辑迁回 `core/src/fork/identity-preset/**`。
 6. **`configSync` 漏守卫**：`packages/ui/src/lib/settingsNavigation.ts` 的 `isSettingsSectionId` 未包含 fork 上次加的 `configSync`，导致持久化的「上次所在栏目」无法恢复。本功能顺手修复，属既有缺陷，随本期提交并在「其他更新」登记。
 7. **不做热切换**：用户在设置页保存后若不新建会话会看不到变化。设置页文案必须明确，否则会被当成 bug 反馈。
+
+### 2026-11-03 公告迁移兼容
+
+`injectDynamic=false` 与 `injectSkills=false` 的约束覆盖已公告的模型内存历史，不仅覆盖
+下一次 builder 输出。冷恢复与显式 `/refresh` 均复用 Core 公告协调 owner，移除当前配置
+不再允许的 runtime attachment；AGENTS.md/memory 索引与真实对话不受影响，原始存储不改。
+动态重新开启或工具档恢复 Skill 后，由正常请求前公告重新注入，不新增第二套公告写入路径。

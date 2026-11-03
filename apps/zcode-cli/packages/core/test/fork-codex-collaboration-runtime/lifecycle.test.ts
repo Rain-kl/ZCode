@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionEventType, modelMessageContentToText, type ModelRequest } from "@zcode/contracts";
+import { AgentRuntime } from "../../src/runtime/agent-runtime.js";
 import { done, gate, setup, tool, texts } from "./fixture.js";
 describe("actual collaboration lifecycle", () => {
   it("does not miss durable mail delivered while the child model is in flight before wait subscribes", async () => {
@@ -36,6 +37,25 @@ describe("actual collaboration lifecycle", () => {
     release.resolve();
     await vi.waitFor(() => expect(calls).toBe(2), { timeout: 1000 });
     await consumed.promise;
+  });
+  it("natural retirement wakes after the final collaboration projection is fully drained", async () => {
+    const started = gate();
+    const release = gate();
+    const { runtime, rootId } = setup(async (_request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
+      started.resolve();
+      await release.promise;
+      return done;
+    });
+    await tool(runtime, "spawn_agent", { task_name: "worker", message: "inspect" });
+    await started.promise;
+    const browser = vi.spyOn(runtime, "closeBrowserSession").mockResolvedValue();
+    const retired = runtime.retire();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(browser).not.toHaveBeenCalled();
+    release.resolve();
+    await vi.waitFor(() => expect(browser).toHaveBeenCalledOnce(), { timeout: 1000 });
+    await retired;
   });
   it("persists acceptance and raw child task before model IO, and root completion leaves child alive", async () => {
     const childGate = gate();
@@ -404,4 +424,50 @@ describe("actual collaboration lifecycle", () => {
     await vi.waitFor(() => expect(sessions).toHaveLength(2));
     expect(sessions[1]).toBe(sessions[0]);
   });
+});
+
+it("session owner cleanup closes the collaboration child through the complete runtime owner", async () => {
+  const started = gate();
+  const commandExit = gate();
+  const closingChild = gate();
+  const childTail = gate();
+  let childCleanupEntered = false;
+  const originalClose = AgentRuntime.prototype.close;
+  const close = vi.spyOn(AgentRuntime.prototype, "close").mockImplementation(function () {
+    if (this.sessionId !== rootId) {
+      childCleanupEntered = true;
+      void this.trackResidencyBlockingWork(childTail.promise);
+      closingChild.resolve();
+    }
+    return originalClose.call(this);
+  });
+  const { runtime, rootId } = setup(async (request) => {
+    started.resolve();
+    request.abortSignal?.addEventListener("abort", () => commandExit.resolve(), { once: true });
+    await commandExit.promise;
+    return done;
+  });
+  try {
+    await tool(runtime, "spawn_agent", {
+      task_name: "worker",
+      message: "wait",
+      fork_turns: "none",
+    });
+    await started.promise;
+    let finished = false;
+    const cleanup = runtime.closeOwnedWork().then(() => {
+      finished = true;
+    });
+    await commandExit.promise;
+    await vi.waitFor(() => expect(childCleanupEntered).toBe(true));
+    await closingChild.promise;
+    expect(finished).toBe(false);
+    childTail.resolve();
+    await cleanup;
+    expect(finished).toBe(true);
+  } finally {
+    childTail.resolve();
+    commandExit.resolve();
+    close.mockRestore();
+  }
 });

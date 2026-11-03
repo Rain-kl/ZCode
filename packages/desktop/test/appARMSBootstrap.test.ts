@@ -198,7 +198,8 @@ describe("appARMSBootstrap beforeReport", () => {
     expect(result.events[1]!.message).not.toContain("alice");
     expect(result.events[1]!.message).not.toContain("secret");
     expect(result.events[1]!.message).not.toContain("bob@example.com");
-    expect(result.events[2]!.url).toBe("https://zcode.z.ai/api/v1/event/report");
+    // 上游过滤上报端点的自采集网络事件；其它事件仍须完成脱敏。
+    expect(result.events).toHaveLength(2);
   });
 
   it("脱敏排在网络 ingest 之后，聚合仍拿到原始 URL", async () => {

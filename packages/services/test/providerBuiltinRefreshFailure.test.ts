@@ -83,7 +83,7 @@ async function setup(active = false) {
 
 describe("Builtin 远端失败不阻断有效本地配置的业务刷新", () => {
   it.each([
-    ["HTTP 地址校验失败", false, "invalid-url"],
+    ["非 HTTP(S) 地址校验失败", false, "invalid-url"],
     ["下载服务 503", true, "http-error"],
     ["下载正文不是 JSON", false, "invalid-json"],
     ["请求取消", true, "cancelled"],
@@ -95,7 +95,8 @@ describe("Builtin 远端失败不阻断有效本地配置的业务刷新", () =>
       if (failure === "invalid-json") return new Response("not json");
       return Response.json({
         code: 0,
-        data: { configs: { builtin_provider_config_json: "http://cdn.example.com/release.json" } },
+        // 上游允许内网 HTTP；继续断言非 HTTP(S) 地址不能发起第二次下载。
+        data: { configs: { builtin_provider_config_json: "file:///tmp/release.json" } },
       });
     });
     fixture.download.mockImplementation(async () => {

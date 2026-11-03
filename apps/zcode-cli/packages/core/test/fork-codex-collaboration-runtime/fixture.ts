@@ -12,7 +12,7 @@ import { createTestSessionEventStore } from "../../tests/test-event-store.js";
 
 const roots: ReturnType<typeof createTestAgentRuntime>[] = [];
 afterEach(async () => {
-  for (const runtime of roots.splice(0)) await runtime.closeBrowserSession();
+  for (const runtime of roots.splice(0)) await runtime.close();
 });
 const done = { text: "finished", finishReason: "stop" as const, usage: {} };
 function gate() {

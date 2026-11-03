@@ -53,6 +53,7 @@ describe("settingsPageConfig", () => {
         sections: [
           "toolGroups",
           "systemInstructions",
+          "personalization",
           "memory",
           "subagents",
           "plugin",
@@ -63,7 +64,7 @@ describe("settingsPageConfig", () => {
           "hooks",
         ],
       },
-      { id: "dataAndStats", sections: ["usage", "archives"] },
+      { id: "dataAndStats", sections: ["dataSync", "usage", "projects", "archives"] },
     ]);
     expect(settingsSections.map((section) => section.id)).toEqual([
       "general",
@@ -72,6 +73,7 @@ describe("settingsPageConfig", () => {
       "configSync",
       "toolGroups",
       "systemInstructions",
+      "personalization",
       "memory",
       "subagents",
       "plugin",
@@ -83,7 +85,9 @@ describe("settingsPageConfig", () => {
       "browser",
       "remoteDevices",
       "shortcuts",
+      "dataSync",
       "usage",
+      "projects",
       "archives",
     ]);
   });
@@ -99,6 +103,7 @@ describe("settingsPageConfig", () => {
       "configSync",
       "toolGroups",
       "systemInstructions",
+      "personalization",
       "memory",
       "subagents",
       "plugin",
@@ -110,7 +115,9 @@ describe("settingsPageConfig", () => {
       "browser",
       "remoteDevices",
       "shortcuts",
+      "dataSync",
       "usage",
+      "projects",
       "archives",
     ]);
   });

@@ -1,0 +1,3 @@
+# Refresh completion transcript adapter
+
+CLI transcript message/part is the only durable owner. This pure reader recognizes the fork_refresh_completed timeline subtype; it neither stores a ledger nor opens a model turn. Strict invalid-part errors carry session/message/part context. sourceCommandId remains optional for older completion facts. completionEventId matches the original live event for same-session deduplication; fork copies may retain that provenance because events and projection are session-scoped and the carrier's message/part ids are remapped by the existing fork path. Physical message order, not event sequence across generations or timestamps, owns placement and branch retention.

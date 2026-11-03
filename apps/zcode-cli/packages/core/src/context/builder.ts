@@ -13,9 +13,11 @@ import type {
 import type { ToolRegistry } from "../tool/registry.js";
 import { estimateTokens } from "./utils.js";
 import { buildCliPrefixSection } from "./sections/cli-prefix.js";
+// FORK(identity-preset): 自定义身份仅替换既有稳定身份段。
+import { buildIdentityPresetSection } from "../fork/identity-preset/identityManager.js";
 import { buildIdentitySection } from "./sections/identity.js";
 import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
-import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/env-info.js";
+import { buildEnvironmentSections, buildGitSystemContextSection } from "./sections/env-info.js";
 import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
 import { buildCurrentDateSection } from "./sections/current-date.js";
@@ -25,11 +27,8 @@ import { buildDesktopContextSection } from "./sections/desktop.js";
 import {
   buildContextManagementSection,
   buildDynamicBehaviorSection,
-  buildOutputStyleSection,
   buildSessionGuidanceSection,
 } from "./dynamic-sections.js";
-// FORK(identity-preset): 用户自定义身份段
-import { buildIdentityPresetSection } from "../fork/identity-preset/identityManager.js";
 
 // -----------------------------------------------
 // Context Builder
@@ -87,8 +86,9 @@ export class ContextBuilder {
     const activeOutputStyle = this.config.outputStyle?.prompt.trim()
       ? this.config.outputStyle
       : undefined;
-    const customSystemPrompt = this.config.customSystemPrompt?.trim();
-    const hasCustomSystemPrompt = Boolean(customSystemPrompt);
+    // 自定义 system prompt 原样发送，不 trim；只有全空白时视为未设置。
+    const customSystemPrompt = this.config.customSystemPrompt;
+    const hasCustomSystemPrompt = Boolean(customSystemPrompt?.trim());
     // 工作流子代理身份：第三条路径。与
     // customSystemPrompt 互斥——两者同在只可能是接线错误（persona 该经 workflowActor 进来，
     // 不该再塞 systemPrompt），大声失败而不是默默二选一。
@@ -114,11 +114,10 @@ export class ContextBuilder {
     const injectDynamic = customIdentity?.injectDynamic ?? true;
     const injectSkills = customIdentity?.injectSkills ?? true;
     // FORK-END(identity-preset)
+    const midConversationSystem = this.config.midConversationSystem !== false;
 
-    // 1. CLI / product prefix. Keep this as the short leading identity block.
-    // 「You are ZCode, an interactive coding agent」对一个
-    // 只对脚本说话、可能连读文件工具都没有的子代理是错的身份，且走在正确身份段前面。
-    // FORK(identity-preset): 用户自定义身份段生效时连这一段一起换掉——用户要的是「身份完全由我决定」
+    // 1. CLI / 产品前缀。工作流子代理只向脚本返回结果，
+    // 不使用面向用户交互的身份前缀，直接以工作流身份开头。
     if (!isWorkflowActor && !customIdentity) {
       sections.push(buildCliPrefixSection());
     }
@@ -135,18 +134,24 @@ export class ContextBuilder {
         }),
       );
     } else if (customIdentity) {
-      // FORK(identity-preset): 用户自定义身份段；见 FEATURES.md 的 identity-preset 条目
+      // FORK(identity-preset): 仅替换身份，运行时公告仍由原 owner 维护。
       sections.push(buildIdentityPresetSection(customIdentity));
     } else if (workflowActor !== undefined) {
-      sections.push(buildWorkflowActorIdentitySection(workflowActor));
+      sections.push(buildWorkflowActorIdentitySection(workflowActor, midConversationSystem));
     } else {
-      sections.push(buildIdentitySection(activeOutputStyle));
+      sections.push(buildIdentitySection(activeOutputStyle, midConversationSystem));
     }
 
+    // 环境与模型是运行时公告（meta_user），不进 system；使用自定义 prompt 时也照常发送。
+    const environmentSections = buildEnvironmentSections(
+      this.config.envInfo,
+      this.config.model,
+      this.config.additionalDirectories,
+    );
+
     // 3. Dynamic system context
-    // custom prompt 不是只替换
-    // stable body，而是跳过默认 system prompt 体系和 systemContext；否则用户提供
-    // custom prompt 后仍会混入 Session Guidance / output style 等动态 system 段。
+    // custom prompt 不是只替换 stable body，而是跳过默认 system prompt 的动态段；否则用户
+    // 提供 custom prompt 后仍会混入 Session Guidance 等动态 system 段。
     // 工作流子代理跳过其中面向「与用户对话」的三段（desktop、Dynamic Behavior、session
     // guidance——契约里已把 Report outcomes faithfully 搬过去），保留 memory 与其后各段。
     if (!hasCustomSystemPrompt && injectDynamic) {
@@ -180,19 +185,7 @@ export class ContextBuilder {
           sections.push(memorySection);
         }
       }
-      sections.push(
-        buildEnvInfoSection(
-          this.config.envInfo,
-          this.config.model,
-          this.config.additionalDirectories,
-        ),
-      );
-
-      // Output Style
-      const outputStyleSection = buildOutputStyleSection(activeOutputStyle);
-      if (outputStyleSection) {
-        sections.push(outputStyleSection);
-      }
+      sections.push(...environmentSections);
 
       // Context Management
       sections.push(buildContextManagementSection());
@@ -201,6 +194,8 @@ export class ContextBuilder {
       if (gitSystemContextSection) {
         sections.push(gitSystemContextSection);
       }
+    } else if (hasCustomSystemPrompt) {
+      sections.push(...environmentSections);
     }
 
     // 4. Skills appear as a meta user system-reminder, matching provider block layout.
@@ -217,7 +212,7 @@ export class ContextBuilder {
       }
     }
 
-    // 5. Meta user context: workspace instructions/project memory first, date second.
+    // 5. Meta user context（workspace instructions / project memory）；日期是其后的独立公告。
     const requestUserContextSection = buildRequestUserContextSection({
       userInstructions: this.config.userInstructions,
       memoryIndexContent: this.config.memoryIndexContent,
@@ -227,11 +222,7 @@ export class ContextBuilder {
       sections.push(requestUserContextSection);
     }
 
-    // 当前日期属于动态信息：关掉「注入动态提示词」时一并停掉。
-    // 同一附件里的 # agentsMd（工作区指令 / memory 索引）是项目配置，不受该开关影响。
-    const currentDateSection = injectDynamic
-      ? buildCurrentDateSection(this.config.currentDate)
-      : null;
+    const currentDateSection = injectDynamic ? buildCurrentDateSection(this.config.currentDate) : null;
     if (currentDateSection) {
       sections.push(currentDateSection);
     }
@@ -246,7 +237,7 @@ export class ContextBuilder {
     const totalTokens = orderedSections.reduce((sum, s) => sum + s.tokens, 0);
 
     const systemMessages = this.assembleSystemMessages(orderedSections);
-    const metaUserAttachments = this.assembleMetaUserAttachments(orderedSections, injectDynamic);
+    const metaUserAttachments = buildMetaUserAttachments(orderedSections);
 
     return {
       sections: orderedSections,
@@ -309,40 +300,36 @@ export class ContextBuilder {
 
     return messages;
   }
+}
 
-  private assembleMetaUserAttachments(
-    sections: ContextSection[],
-    includeScaffold: boolean,
-  ): ContextMetaUserAttachment[] {
-    const attachments: ContextMetaUserAttachment[] = [];
+// 环境、模型、日期由运行时按当前事实宣告；builder 只保留 section 作开关与用量统计。
+const RUNTIME_ANNOUNCED_SOURCES: ReadonlySet<ContextSection["source"]> = new Set([
+  "env_info",
+  "model",
+  "current_date",
+]);
 
-    const skillsContent = buildSkillsMetaUserBody(
+export function buildMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
+  // 来源明确分流；不再把日期、环境和 Git 折进指令 carrier。
+  const sourceMap: Partial<Record<ContextSection["source"], ContextMetaUserAttachment["source"]>> =
+    {
+      skills: "skills_listing",
+      request_user_context: "context_prefix",
+      session_context: "session_context",
+    };
+  const attachments: ContextMetaUserAttachment[] = [];
+  for (const attachmentSource of Object.values(sourceMap)) {
+    const content = buildSectionContent(
       sections.filter(
-        (section) => section.injectionTarget === "meta_user" && section.source === "skills",
+        (section) =>
+          section.injectionTarget === "meta_user" &&
+          !RUNTIME_ANNOUNCED_SOURCES.has(section.source) &&
+          (sourceMap[section.source] ?? "context_prefix") === attachmentSource,
       ),
     );
-    if (skillsContent) {
-      attachments.push({
-        source: "skills_listing",
-        content: skillsContent,
-      });
-    }
-
-    const contextContent = buildContextMetaUserBody(
-      sections.filter(
-        (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
-      ),
-      { includeScaffold },
-    );
-    if (contextContent) {
-      attachments.push({
-        source: "context_prefix",
-        content: contextContent,
-      });
-    }
-
-    return attachments;
+    if (content) attachments.push({ source: attachmentSource, content });
   }
+  return attachments;
 }
 
 function orderSectionsForInjection(sections: ContextSection[]): ContextSection[] {
@@ -360,35 +347,6 @@ function orderSectionsForInjection(sections: ContextSection[]): ContextSection[]
       (section) => section.injectionTarget === "meta_user" && section.cacheHint === "dynamic",
     ),
   ];
-}
-
-export function buildContextMetaUserBody(
-  sections: ContextSection[],
-  options: { includeScaffold?: boolean } = {},
-): string | null {
-  if (sections.length === 0) return null;
-
-  const content = buildSectionContent(sections);
-  if (options.includeScaffold === false) {
-    // 关闭动态段后块里只剩 AGENTS.md 这类必须遵守的指令，ZCode 的头/尾说明不再合适：
-    // 尾句「may or may not be relevant… don't respond to it」与「这些指令覆盖默认行为」相悖。
-    return content;
-  }
-  return [
-    "As you answer the user's questions, you can use the following context:",
-    content,
-    "",
-    "      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.",
-  ].join("\n");
-}
-
-export function buildSkillsMetaUserBody(sections: ContextSection[]): string | null {
-  const content = buildSectionContent(sections);
-  if (!content) {
-    return null;
-  }
-
-  return content;
 }
 
 function buildSectionContent(sections: ContextSection[]): string {

@@ -61,6 +61,8 @@ const memorySchema = z.object({
 
 const mcpServerBaseSchema = {
   alwaysLoad: z.boolean().optional(),
+  // Host DTO 和连接池已有 isolation；文件解析不能丢弃整条已支持的声明。
+  isolation: z.enum(["session", "workspace"]).optional(),
   // 设置页和 MCP adapter 已支持协议选择；配置入口漏掉该字段会因 strict 校验丢弃整个 server。
   protocolVersion: z.enum(["auto", "legacy", "2026-07-28"]).optional(),
   enabled: z.boolean().optional(),
@@ -256,6 +258,7 @@ export const hookProcessSchema = z
     args: z.array(z.string()).optional(),
     timeoutMs: positiveNumberSchema.optional(),
     statusMessage: z.string().min(1).optional(),
+    onError: z.enum(["allow", "deny"]).optional(),
   })
 
   .passthrough();
@@ -270,6 +273,7 @@ export const hookCommandSchema = z
     timeout: positiveNumberSchema.optional(),
     timeoutMs: positiveNumberSchema.optional(),
     statusMessage: z.string().min(1).optional(),
+    onError: z.enum(["allow", "deny"]).optional(),
   })
   .passthrough();
 
@@ -323,6 +327,30 @@ export const ZCodeConfigFileSchema = z
     hooks: hooksSchema.optional(),
   })
   .passthrough();
+
+// 项目曾复用用户配置 schema，可改写代理、CA 和插件存储根目录。只开放扩展声明，
+// 在校验前剔除运行参数，防止新增用户字段自动向项目开放，也避免无效的禁用字段拖垮 MCP/Hook。
+const projectConfigFileSchema = ZCodeConfigFileSchema.pick({
+  mcp: true,
+  hooks: true,
+  skill: true,
+  command: true,
+})
+  .extend({
+    plugins: pluginsSchema.pick({ enabledPlugins: true, options: true }).optional(),
+    skills: z
+      .preprocess(
+        (value) =>
+          isPlainRecord(value)
+            ? Object.fromEntries(
+                Object.entries(value).filter(([path]) => isAbsoluteConfigPath(path)),
+              )
+            : value,
+        z.record(z.string(), skillToggleSchema),
+      )
+      .optional(),
+  })
+  .strip();
 
 export type ZCodeConfigFile = z.infer<typeof ZCodeConfigFileSchema>;
 
@@ -404,10 +432,13 @@ function normalizeMcpServerConfigInput(value: unknown): unknown {
 
 export function parseConfigFileToRuntimePatchWithDiagnostics(
   value: unknown,
+  scope: "user" | "project" = "user",
 ): ParseConfigFileResult {
   const diagnostics: ConfigDiagnostic[] = [];
   const normalized = normalizeConfigFileInput(value, diagnostics);
-  const parsed = ZCodeConfigFileSchema.parse(normalized);
+  const parsed = (scope === "project" ? projectConfigFileSchema : ZCodeConfigFileSchema).parse(
+    normalized,
+  );
   return {
     config: parsedConfigFileToRuntimePatch(parsed),
     diagnostics,

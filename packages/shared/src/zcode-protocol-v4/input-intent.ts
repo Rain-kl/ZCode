@@ -1,3 +1,4 @@
+import { genUiModelContextSchema } from "../gen-ui/contract.js";
 import { conversationQuotesSchema } from "../conversationSelection.js";
 import { botGroupInputSourceSchema } from "../bots.js";
 // CLI admission 后的自包含输入事实。
@@ -70,7 +71,7 @@ export const conversationInputIntentSchema = z
     sourceCommandId: z.string().min(1),
     queueItemId: z.string().min(1),
     clientId: z.string().min(1),
-    // compact / reload（FORK(reload-command)）是可排队的维护意图；消费时走各自 lifecycle，
+    // compact / refresh（FORK(reload-command)）是可排队的维护意图；消费时走各自 lifecycle，
     // 不投影为 user row。
     kind: z.enum(["sendText", "sendGoalCommand", "compact", "refresh"]),
     text: z.string(),
@@ -79,6 +80,7 @@ export const conversationInputIntentSchema = z
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),
+    genUiContext: genUiModelContextSchema.optional(),
     sharedContextRefs: z.array(sharedContextRefSchema).max(1).optional(),
     delivery: conversationInputDeliverySchema,
     order: conversationInputOrderSchema,

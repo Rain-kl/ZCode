@@ -1,14 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  ProviderConfig,
-  ProviderConfigMap,
-  ZhipuAccountAccessConfig,
-  type AccountProviderConfigSnapshot,
-  type ModelSelectionView,
-} from "@zcode/provider";
+import type { ModelSelectionView } from "@zcode/provider";
 import { zcodeProtocolMethods } from "@zcode/shared";
 import { V4_METHODS } from "@zcode/shared/zcode-protocol-v4";
-import { createAccountProviderConfig } from "./providerConfigFixtures.js";
 
 const START_PLAN_PROVIDER_ID = "account:zai-start-plan";
 const BIGMODEL_CODING_PLAN_PROVIDER_ID = "account:bigmodel-individual-coding-plan";
@@ -33,6 +26,15 @@ type RegistryFixture = {
   }>;
 };
 class MockProcessManagerBase {
+  // 上游可复用共享进程；本文件夹具仍模拟独立 workspace worker。
+  getRuntimeWorkspaces(params: { workspacePath: string; workspaceIdentity?: string }) {
+    return [params];
+  }
+
+  isSharedRuntime() {
+    return false;
+  }
+
   // Bug 原因：service 现在订阅 runtime unavailable 生命周期来清理旧 client；这些 provider
   // 用例只验证 registry/model 语义，mock 必须提供同形状的空订阅，避免在业务断言前失败。
   onRuntimeLifecycle() {
@@ -157,28 +159,6 @@ function createBigModelCodingPlanRegistry(params?: { revision?: string }): Regis
   };
 }
 
-function createAccountProviderConfigChangeSource(initial: AccountProviderConfigSnapshot) {
-  let snapshot = initial;
-  let listener: ((reason: string) => void) | undefined;
-  return {
-    source: {
-      async read() {
-        return snapshot;
-      },
-      onDidChange(callback: (reason: string) => void) {
-        listener = callback;
-        return () => {
-          if (listener === callback) listener = undefined;
-        };
-      },
-    },
-    emit(reason: string, next: AccountProviderConfigSnapshot) {
-      snapshot = next;
-      listener?.(reason);
-    },
-  };
-}
-
 function createModelSelectionChangeSource(initial: ModelSelectionView) {
   let view = initial;
   let listener: ((next: ModelSelectionView) => void) | undefined;
@@ -245,6 +225,7 @@ describe("createZCodeAgentService provider registry", () => {
       ],
     });
     const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
       if (method === zcodeProtocolMethods.sessionCreate) {
         const model = (params as { model: { providerId: string; modelId: string } }).model;
         return createSessionSnapshot({ model, thoughtLevel: "high" });
@@ -296,7 +277,8 @@ describe("createZCodeAgentService provider registry", () => {
       providers: [],
     });
     const getClient = vi.fn(async () => ({
-      request: vi.fn(async () => {
+      request: vi.fn(async (method: string) => {
+        if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
         throw new Error("Unexpected request");
       }),
       transportKind: "stdio" as const,
@@ -354,6 +336,7 @@ describe("createZCodeAgentService provider registry", () => {
         async getClient() {
           return {
             request: vi.fn(async (method: string) => {
+              if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
               if (method === zcodeProtocolMethods.initialize) {
                 return {
                   available: true,
@@ -464,7 +447,7 @@ describe("createZCodeAgentService provider registry", () => {
 
   it("keeps concurrent callers on the same ready startup generation available", async () => {
     const getClient = vi.fn(async () => ({
-      request: vi.fn(),
+      request: vi.fn(async () => ({})),
       transportKind: "stdio" as const,
       onNotification: () => ({ dispose() {} }),
       onRequest: () => ({ dispose() {} }),
@@ -552,11 +535,13 @@ describe("createZCodeAgentService provider registry", () => {
         await expect(command).resolves.toMatchObject({ status: "accepted" });
         expect(getView).toHaveBeenCalledTimes(1);
         expect(getClient).toHaveBeenCalledTimes(1);
-        expect(request).toHaveBeenCalledExactlyOnceWith(
-          V4_METHODS.command,
-          expect.objectContaining({ commandId: "first-input", type: "sendText" }),
-          expect.anything(),
-        );
+        expect(request.mock.calls.filter(([method]) => method === V4_METHODS.command)).toEqual([
+          [
+            V4_METHODS.command,
+            expect.objectContaining({ commandId: "first-input", type: "sendText" }),
+            expect.anything(),
+          ],
+        ]);
       } finally {
         finishLateRead(ready);
         service.disposeAll();
@@ -572,7 +557,7 @@ describe("createZCodeAgentService provider registry", () => {
     });
     const getView = vi.fn().mockReturnValueOnce(oldRead).mockResolvedValue(ready);
     const getClient = vi.fn(async () => ({
-      request: vi.fn(),
+      request: vi.fn(async () => ({})),
       transportKind: "stdio" as const,
       onNotification: () => ({ dispose() {} }),
       onRequest: () => ({ dispose() {} }),
@@ -612,6 +597,7 @@ describe("createZCodeAgentService provider registry", () => {
     }> = [];
     const getClient = vi.fn(async () => {
       const request = vi.fn(async (method: string) => {
+        if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
         throw new Error(`Unexpected method ${method}`);
       });
       const client = {
@@ -661,7 +647,13 @@ describe("createZCodeAgentService provider registry", () => {
     expect(getClient).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceIdentity: secondIdentity }),
     );
-    expect(clients.every((client) => client.request.mock.calls.length === 0)).toBe(true);
+    expect(
+      clients.every((client) =>
+        client.request.mock.calls.every(
+          ([method]) => method === zcodeProtocolMethods.runtimeCapabilities,
+        ),
+      ),
+    ).toBe(true);
 
     selectionSource.emit(
       createModelSelectionViewFromRegistry({
@@ -676,7 +668,7 @@ describe("createZCodeAgentService provider registry", () => {
 
   it("readiness 读取中到达 ready 事件时，失败的旧启动不能吞掉新事件", async () => {
     const getClient = vi.fn(async () => ({
-      request: vi.fn(),
+      request: vi.fn(async () => ({})),
       transportKind: "stdio" as const,
       onNotification: () => ({ dispose() {} }),
       onRequest: () => ({ dispose() {} }),
@@ -707,7 +699,7 @@ describe("createZCodeAgentService provider registry", () => {
 
   it("does not restart a released workspace from an already queued provider-ready event", async () => {
     const getClient = vi.fn(async () => ({
-      request: vi.fn(),
+      request: vi.fn(async () => ({})),
       transportKind: "stdio" as const,
       onNotification: () => ({ dispose() {} }),
       onRequest: () => ({ dispose() {} }),
@@ -751,6 +743,7 @@ describe("createZCodeAgentService provider registry", () => {
 
   it("reuses a read-only sessions-index client when provider/model becomes ready", async () => {
     const request = vi.fn(async (method: string) => {
+      if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
       if (method === "v4/conversation/subscribe") {
         return {
           ack: {
@@ -810,11 +803,10 @@ describe("createZCodeAgentService provider registry", () => {
     service.disposeAll();
   });
 
-
-
   it("does not push the full local registry before a V4 draft createSession command", async () => {
     const calls: string[] = [];
     const request = vi.fn(async (method: string, params?: unknown) => {
+      if (method === zcodeProtocolMethods.runtimeCapabilities) return {};
       calls.push(method);
       if (method === V4_METHODS.command) {
         const envelope = params as { commandId: string };
@@ -872,7 +864,7 @@ describe("createZCodeAgentService provider registry", () => {
     });
     expect(calls).toEqual([V4_METHODS.command]);
     expect(request).toHaveBeenNthCalledWith(
-      1,
+      2,
       V4_METHODS.command,
       expect.objectContaining({
         type: "createSession",
@@ -978,7 +970,7 @@ describe("createZCodeAgentService provider registry", () => {
       });
     vi.resetModules();
     vi.doMock("../src/zcode-agent/zcodeAgentProcessManager.js", () => ({
-      ZCodeAgentProcessManager: class {
+      ZCodeAgentProcessManager: class extends MockProcessManagerBase {
         getClient = getClient;
         // Bug 原因同共享 mock：service 构造期新增 runtime 生命周期订阅；本用例只驱动
         // stdio 重试，因此用空 disposable 补齐局部测试桩契约。

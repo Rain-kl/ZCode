@@ -36,6 +36,7 @@ export const REGISTRY = [
         "subagent/runner.ts",
         "subagent/message-steering.ts",
         "subagent/coordinator-response.ts",
+        "subagent/completion-notification.ts",
       ].map((file) => ({
         path: `apps/zcode-cli/packages/core/src/${file}`,
         reason: "协作控制器替代旧 runner 与消息 owner，禁止恢复第二写入路径",

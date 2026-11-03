@@ -1,8 +1,17 @@
+import { normalizeGenUiInput } from "@zcode/core";
+import { genUiModelContextSchema } from "@zcode/shared/gen-ui";
 import type { ZCodeMessagePart, ZCodeMessageWithParts, ZCodeToolState } from "@zcode/shared";
 import type { MessagePart, MessageWithParts, ToolState } from "@zcode/contracts";
 import { shouldHideInvalidToolCallFromProduct } from "../tool-call-product-visibility.js";
 
 export function mapMessageWithParts(message: MessageWithParts): ZCodeMessageWithParts {
+  const intent =
+    message.info.metadata?.conversationInputIntent ?? message.info.metadata?.inputIntent;
+  const context = genUiModelContextSchema.safeParse(
+    intent && typeof intent === "object"
+      ? (intent as Record<string, unknown>).genUiContext
+      : undefined,
+  );
   return {
     info:
       message.info.role === "user"
@@ -56,7 +65,21 @@ export function mapMessageWithParts(message: MessageWithParts): ZCodeMessageWith
         (part) =>
           part.type !== "tool" || !shouldHideInvalidToolCallFromProduct(part.tool, part.metadata),
       )
-      .map(mapMessagePart),
+      .map((part) => {
+        // 历史读取和搜索索引同走此出口，旧尾块复用 CLI 解码器，不改持久正文。
+        if (
+          message.info.role === "user" &&
+          !message.info.synthetic &&
+          part.type === "text" &&
+          !part.synthetic
+        ) {
+          return mapMessagePart({
+            ...part,
+            text: normalizeGenUiInput(part.text, context.success ? context.data : undefined).text,
+          });
+        }
+        return mapMessagePart(part);
+      }),
   };
 }
 
@@ -145,6 +168,10 @@ function mapMessagePart(part: MessagePart): ZCodeMessagePart {
         attempt: part.timelineType === "context_compaction" ? part.attempt : undefined,
         boundaryId: part.timelineType === "context_compaction" ? part.boundaryId : undefined,
         compactReason: part.timelineType === "context_compaction" ? part.compactReason : undefined,
+        // FORK(reload-command): 历史读取与冷恢复不能丢掉完成事实身份和命令对账来源。
+        completionEventId:
+          part.timelineType === "fork_refresh_completed" ? part.completionEventId : undefined,
+        sourceCommandId: part.sourceCommandId,
         display: part.display,
         fromModel: part.timelineType === "model_change" ? part.fromModel : undefined,
         goalIteration: part.timelineType === "goal_verification" ? part.goalIteration : undefined,

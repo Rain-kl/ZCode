@@ -1,5 +1,5 @@
 import { APICallError, RetryError } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ModelErrorCode, ModelFailureReason, ModelRetryReason } from "@zcode/contracts";
 import { classifyModelFailure } from "../src/model/failure-classifier.js";
 import type { ResolvedAiSdkModelRetryOptions } from "../src/model/retry-policy.js";
@@ -36,12 +36,41 @@ describe("calculateRetryDelay", () => {
     maxDelayMs: 60_000,
   };
 
-  it("caps retry-after hints at thirty seconds", () => {
-    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(30_000);
+  it("accepts provider hints through five minutes independently of ordinary backoff", () => {
+    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(300_000);
   });
 
   it("falls back to local backoff when retry-after is above five minutes", () => {
     expect(calculateRetryDelay(retry, 1, 300_001)).toBe(2_000);
+    expect(calculateRetryDelay(retry, 21, 300_001)).toBe(30_000);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])("rejects invalid hint %s", (hint) => {
+    expect(calculateRetryDelay(retry, 1, hint)).toBe(2_000);
+  });
+
+  // 修复原因：同一批被限流的请求拿到同一个 retry-after，不加抖动会在同一毫秒一起醒来再撞限流。
+  it("jitters retry-after hints upwards only, by at most 20% capped at five seconds", () => {
+    const jittered = { ...retry, jitter: true };
+    const random = vi.spyOn(Math, "random");
+    try {
+      random.mockReturnValue(0);
+      expect(calculateRetryDelay(jittered, 1, 10_000)).toBe(10_000);
+      random.mockReturnValue(0.999_999);
+      expect(calculateRetryDelay(jittered, 1, 10_000)).toBe(12_000);
+      expect(calculateRetryDelay(jittered, 1, 60_000)).toBe(65_000);
+      expect(calculateRetryDelay(jittered, 1, 29_000)).toBe(34_000);
+      expect(calculateRetryDelay({ ...jittered, maxDelayMs: 11_000 }, 1, 10_000)).toBe(12_000);
+      expect(calculateRetryDelay(jittered, 1, 300_000)).toBe(305_000);
+      expect(calculateRetryDelay(jittered, 1, 0)).toBe(0);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("keeps accepted provider hints exact when jitter is disabled", () => {
+    expect(calculateRetryDelay(retry, 1, 10_000)).toBe(10_000);
+    expect(calculateRetryDelay(retry, 1, 41_000)).toBe(41_000);
   });
 });
 
@@ -431,7 +460,7 @@ describe("bounded API recovery", () => {
     ).toMatchObject({ maxAttempts: 21, maxDelayMs: 30_000 });
   });
 
-  it("caps exponential and provider hinted delays at thirty seconds", () => {
+  it("caps ordinary exponential at thirty seconds but accepts five-minute provider hints", () => {
     const retry = {
       maxAttempts: 21,
       maxDelayMs: 90_000,
@@ -442,7 +471,7 @@ describe("bounded API recovery", () => {
     expect([1, 2, 3, 4, 5, 6].map((attempt) => calculateRetryDelay(retry, attempt))).toEqual([
       2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
     ]);
-    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(30_000);
+    expect(calculateRetryDelay(retry, 1, 300_000)).toBe(300_000);
   });
 
   it.each([400, 401, 403, 404, 422, 499, 503])("recovers actual HTTP %s failures", (statusCode) => {

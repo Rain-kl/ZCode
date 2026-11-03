@@ -139,6 +139,22 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 6. **移除强更 gate 后没有 kill switch**。旧版本出严重问题时只能靠用户主动检查更新，
    不能再强制下线。若将来需要，建议改成「只提示不阻断」或在读取 Release 正文时解析最低版本要求。
 
+## 2026-11-03 Windows 签名同步取舍
+
+用户明确选择：Windows 自动更新继续允许未签名安装包。上游 a60ba6a7 新增的强制 Authenticode
+下载 hook、缓存包安装前签名复查不纳入本 fork；`win.verifyUpdateCodeSignature` 显式设为 `false`，
+防止当前包带签名时 electron-builder 写入 publisherName，导致未来的未签名更新被隐式拒绝。
+此取舍不关闭发布时可用的 Windows 签名，不改变 macOS 签名要求。
+
+信任边界仍是本 fork GitHub Release 写权限、HTTPS 与 electron-updater 元数据中的 sha512；
+sha512 仅验证下载完整性，不证明发布者身份。接受 GitHub 仓库被接管时可发布恶意更新的风险。
+同时保留上游其它安全修复：启动参数遇到 `--` 后不再解析更新源覆盖，打包版始终忽略调试更新源，
+包括环境变量与内部初始化传入的覆盖。保留现有退出准备、版本/通道锁及失败恢复所有者。
+
+验收：Windows 正式包下载完成后无需签名验证或 PowerShell 即可进入原生安装入口；
+`--` 后的覆盖不生效；正式包不接受 argv/env/init 任何调试源；缺 checksum 的更新仍拒绝。
+真实 Windows 安装和 SmartScreen 行为必须用实际产物另行验证，不以 mock 测试声称覆盖。
+
 ## 配套远程 Server 下载（2026-11-02）
 
 桌面自动更新仍消费 stable/latest 或 canary-build 指针；远程 Server 必须锁定当前完整版本，默认从

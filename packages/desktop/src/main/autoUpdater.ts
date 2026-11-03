@@ -451,6 +451,7 @@ async function quitAndInstallUpdate(rejectUnavailable = false) {
   // 也不能让一次挂起的后台网络请求扣押用户已经选择的安装。
   quitAndInstallState = "preparing";
   logger.info("[auto-update] user requested quit and install");
+  // FORK(github-update): 用户允许 Windows 未签名更新；安装前不追加 Authenticode 准入。
   // macOS 上 quitAndInstall() 在关窗前不会先走 app.before-quit。
   // 如果仍然只靠 before-quit 去放行窗口 close，现有的“红绿灯关闭=隐藏窗口”逻辑会把退出拦住，
   // 表现成点击更新后界面消失但进程没退、安装流程也不再继续。
@@ -708,6 +709,8 @@ function readSwitchValue(argv: readonly string[], switchName: string): string | 
   const equalsPrefix = `${switchName}=`;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    // 协议注册使用 -- 分隔外部 URL；其后的内容不能重新解释为应用开关。
+    if (arg === "--") break;
     if (!arg) {
       continue;
     }
@@ -731,6 +734,9 @@ export function resolveUpdateFeedSourceFromStartupConfig(
     env?: Record<string, string | undefined>;
   } = {},
 ): RuntimeUpdateFeedSource | undefined {
+  // Windows 深链中的引号可拆出额外 argv。正式包必须忽略调试更新源，
+  // 不能让不可信启动参数（或继承的环境变量）接管安装包下载来源。
+  if (app.isPackaged) return undefined;
   const argv = options.argv ?? process.argv;
   const env = options.env ?? process.env;
   const feedUrl = readSwitchValue(argv, UPDATE_FEED_URL_SWITCH) ?? env[UPDATE_FEED_URL_ENV]?.trim();
@@ -1587,6 +1593,7 @@ export async function initAutoUpdater(options: InitAutoUpdaterOptions = {}): Pro
   // 由 before-quit 主动安装，避免目标已经升高后退出装上旧包。
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.logger = logger;
+  // FORK(github-update): 自有 Release 允许未签名 Windows 更新，不接入官方强制签名 hook。
   forkGithubUpdateOverrideBaseUrl = options.updateFeedSource?.url.trim() || null;
   applyGithubUpdateFeed(availableUpdateChannel);
 

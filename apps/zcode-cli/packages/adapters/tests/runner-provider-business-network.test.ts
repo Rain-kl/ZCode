@@ -497,13 +497,13 @@ describe("AiSdkModelAdapter provider business network retries", () => {
       await waitForRetryEvents(events, 1);
 
       expect(events[2]).toMatchObject({
-        delayMs: 30_000,
+        delayMs: 41_000,
         nextAttempt: 2,
         reason: "rate_limited",
         type: "model_retry_scheduled",
       });
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(41_000);
       await expect(resultPromise).resolves.toMatchObject({
         text: "ok after provider retry-after",
       });
@@ -576,14 +576,14 @@ describe("AiSdkModelAdapter provider business network retries", () => {
       await waitForRetryEvents(events, 1);
 
       expect(events[2]).toMatchObject({
-        delayMs: 30_000,
+        delayMs: 37_000,
         nextAttempt: 2,
         reason: "rate_limited",
         type: "model_retry_scheduled",
       });
       expect(attempts).toBe(1);
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(37_000);
       await expect(resultPromise).resolves.toMatchObject([
         { id: "1", text: "ok after provider retry-after", type: "text_delta" },
         { finishReason: "stop", type: "finish" },

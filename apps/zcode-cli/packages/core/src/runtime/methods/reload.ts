@@ -28,7 +28,7 @@ import { resolveBuiltInToolAllowlist } from "../helpers/tool-allowlist.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { TurnResult } from "../types.js";
 import { builtInTools } from "../../tool/index.js";
-import { rebuildContextPrefix } from "./context-refresh.js";
+import { rebuildContextPrefix, refreshRestoredAnnouncements } from "./context-refresh.js";
 import { refreshForkMcpToolRegistrations } from "./mcp.js";
 
 /** `/refresh` 的执行结果摘要（日志与测试用）。 */
@@ -141,6 +141,8 @@ export async function reloadForkOverrides(
   // 3) 前缀重建：新身份段 + 新 guidanceToolNames（工具面已在上一步定型）。
   if (this.identityPresetPort || this.forkToolModePort) {
     rebuildContextPrefix(this);
+    // FORK(reload-command): 上游公告已迁入会话历史；只重建 prefix 会让旧 skills/动态信息继续生效。
+    refreshRestoredAnnouncements(this);
   }
 
   this.logger?.info("Fork overrides reloaded", {

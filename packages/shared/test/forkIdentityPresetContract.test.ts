@@ -182,7 +182,7 @@ test("动态段开关：缺省注入，显式 false 才关，非布尔值回落�
 test("模板常量非空且骨架含四个小节与安全声明", () => {
   assert.match(
     FORK_IDENTITY_PRESET_DEFAULT_TEMPLATE,
-    /^You are ZCode, an interactive coding agent\n/,
+    /^You are ZCode, an interactive agent\n/,
   );
   assert.match(FORK_IDENTITY_PRESET_DEFAULT_TEMPLATE, /# Harness/);
   for (const heading of ["# 角色", "# 沟通风格", "# 工作方式", "# 边界"]) {

@@ -44,6 +44,7 @@ export const FORK_TOOL_MODE_BASIC_EXTRA_TOOL_NAMES = [
   "CronList",
   "CronUpdate",
   "CronDelete",
+  "CronPauseSelf",
   "CreateWorkflow",
   "AmendWorkflow",
   "SaveWorkflow",

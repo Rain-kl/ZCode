@@ -1,3 +1,4 @@
+// FORK(tool-modes): 外部渠道发送是已有标准档能力，不能随上游未接入入口静默消失。
 import { replyToChannelToolEntry } from "./reply-to-channel.js";
 // ============================================================
 // Built-in Tool Handlers
@@ -41,6 +42,7 @@ import {
   cronCreateToolEntry,
   cronDeleteToolEntry,
   cronListToolEntry,
+  cronPauseSelfToolEntry,
   cronUpdateToolEntry,
 } from "./cron.js";
 // FORK(offpeak-removal): 闲时工具（off-peak）不再注册——它需要云端取号与 Coding Plan 连接，本 fork 不接云账号；
@@ -91,6 +93,7 @@ export const builtInTools: ToolEntry[] = [
   cronListToolEntry,
   cronUpdateToolEntry,
   cronDeleteToolEntry,
+  cronPauseSelfToolEntry,
   // FORK(offpeak-removal): 两个闲时工具（创建 / 列表）原先在此注册；见 FEATURES.md 的 offpeak-removal 条目
   enterPlanModeToolEntry,
   exitPlanModeToolEntry,
@@ -106,6 +109,7 @@ export const builtInTools: ToolEntry[] = [
   taskOutputToolEntry,
   taskStopToolEntry,
   readSessionContextToolEntry,
+  // FORK(tool-modes): 保留标准档的外部渠道发送入口。
   replyToChannelToolEntry,
   skillToolEntry,
   jsToolEntry,
@@ -115,8 +119,10 @@ export const builtInTools: ToolEntry[] = [
   saveWorkflowToolEntry,
   // workflow 创作的实验通道：同步、只读（v1）、完全瞬态。
   evalWorkflowSnippetToolEntry,
-  // run 内省的两个只读工具：always-on、无 gate。它们不进 WORKFLOW_CHILD_DISALLOWED_TOOLS——
-  // 那条禁令的理由是 CreateWorkflow 的 alwaysAsk 在子 runtime 里无窗可弹，只读查询不适用。
+  // run 内省的两个只读工具：主会话 always-on、无 gate。它们不进 WORKFLOW_CHILD_DISALLOWED_TOOLS——
+  // 那条禁令的理由是 CreateWorkflow 的 alwaysAsk 在子 runtime 里无窗可弹，只读查询不适用；但子
+  // runtime 不持有 run 端口，它们在那里必然失败，所以按另一条规则从子 runtime 移除
+  // （runtime/helpers/tool-allowlist.ts 的 RUN_INTROSPECTION_TOOLS）。
   listWorkflowRunsToolEntry,
   getWorkflowRunToolEntry,
   // run 的恢复入口：与上面两个只读内省工具同族（run_id 键、端口探测失败同款），但它是
@@ -249,7 +255,8 @@ export function registerBuiltInTools(
       (entry.metadata.name === "CronCreate" ||
         entry.metadata.name === "CronList" ||
         entry.metadata.name === "CronUpdate" ||
-        entry.metadata.name === "CronDelete") &&
+        entry.metadata.name === "CronDelete" ||
+        entry.metadata.name === "CronPauseSelf") &&
       options.includeAutomation !== true
     ) {
       continue;

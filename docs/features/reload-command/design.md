@@ -134,3 +134,36 @@ interface ForkToolModeOutcome {
 7. workflow actor / `customSystemPrompt` 会话：身份段不变（既有让位规则）。
 8. 无变化时执行 `/refresh`：功能正常，请求前缀逐字节相同（缓存不失效）。
 9. 冷恢复与 `/refresh` 同源同果（都走两个端口的 `loadActive`）。
+
+## 上游公告迁移兼容（2026-11-03）
+
+上游把 skills、环境、Git、日期从 context prefix 移到会话公告历史后，维护入口必须在工具面
+定型、prefix 重建之后，调用同一个 `refreshRestoredAnnouncements` owner 协调公告：
+skills 与指令按当前 builder 原位更新或移除；关闭动态上下文时移除已注入的环境、模型、
+output-style、Git 与日期公告。不能只阻止下一次新增，否则模型仍看到旧清单与旧动态信息。
+
+只改运行时模型历史中的明确 attachment 来源；保留真实用户/助手/工具对话、AGENTS.md、
+memory 索引及其他业务公告，不修改持久化原始记录。冷恢复使用同一协调 owner；重新启用后
+由上游正常请求公告路径重新生成。无设置变化时不改写公告字节。
+
+验收：真实第一轮已产生公告 → `/refresh` 维护轮（零模型请求）→ 第二轮旧关闭项缺席，
+真实消息与指令保留；重新启用后正常再公告。标准切极简档移除 Skill 时同样撤回旧清单。
+
+## 2026-11-03 冷恢复回执修复（用户已批准）
+
+真实 FRR01 发现原完成事件只在内存 eventStore：`/refresh` 成功后 marker 可见，但 `/reload` 重建实例后消失。CLI transcript 是唯一持久所有者；选择复用上游 `persistAssistantTimelinePartForSession`，将每次完成写成**独立** assistant `timeline_event` message + fork `fork_refresh_completed` typed timeline part，不新建 session_entry 类型或第二账本。不能给已有对话 anchor 追加 part，否则 rewind 到同 anchor 会错误保留发生在 cut 后的动作。
+
+```text
+refresh maintenance → appendEvent → existing timeline message/part persistence → live success event
+                                      ↓
+restart / rewind / fork → selectActiveConversationBranch → same transcript hydration → reload marker
+```
+
+- `event.id` 是完成幂等键，派生稳定 messageID/partID；message 与 part 均写成功后才通知 live sinks。写失败沿原维护轮错误路径，不发布成功回执。
+- part 只含 completion eventId、可缺省的 sourceCommandId、完成时刻；保持既有事件名 `fork_reload_completed` 和 UI marker type `reload`，无历史格式迁移。
+- carrier provider-hidden，不进模型输入、不产生用户气泡或空 Agent 工作轮；首条输入就是 refresh 时也只有 marker。
+- 冷恢复按物理 message 顺序独立消费 carrier；实时+冷事实按完成 eventId 去重，既不按文本猜身份，也不把全部 marker 堆到末尾。
+- rewind/rollback/fork 直接沿用 active branch 与 message clone，不另造 generation/anchor过滤。相同对话 anchor 前后多个 refresh 由不同独立 message 区分；截断后只保留前缀内的 marker。
+- 回归先红：真实 FRR01 维持 marker 跨 reload 的断言；另补真实 SQLite 写读、live/durable 去重、多 marker 顺序、无空轮、空历史、同 anchor 截断与 fork 前缀测试。
+
+持久 part 的 completionEventId 必须非空；sourceCommandId 可缺省，但存在时同样必须为非空字符串，与共享 strict wire schema 对齐。非法时间、身份或宿主语义必须带 session/message/part 上下文抛错。已裁剪分支的完整 model-only/controlOnly 维护三联（start/completion/end）应一起从冷恢复材料中移除，不留下空 turnHeader；只有匹配已知持久完成事实的维护轮满足该规则，普通轮与未完成轮不受影响。
