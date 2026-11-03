@@ -21,7 +21,10 @@ pnpm --filter @zcode/fork-remote-relay exec wrangler deploy --config wrangler.js
 
 ```sh
 read -s -p "Relay password: " ZCODE_RELAY_PASSWORD; echo
-printf '%s\n' "$ZCODE_RELAY_PASSWORD" | pnpm --filter @zcode/fork-remote-relay password-hash
+(
+  cd packages/fork-remote-relay
+  printf '%s\n' "$ZCODE_RELAY_PASSWORD" | ../../node_modules/.bin/tsx scripts/password-hash.ts
+)
 unset ZCODE_RELAY_PASSWORD
 ```
 

@@ -18,7 +18,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 `packages/fork-remote-relay/src/worker.ts` 提供：
 
-- `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 210000 次，HMAC 会话为两段 `payload.signature`，有效期 12 小时，响应字段是 `token`、`expiresAt`、`userInfo`。
+- `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，有效期 12 小时，响应字段是 `token`、`expiresAt`、`userInfo`。
 - 复用 shared 的 V2 register/list/delete/token 和 `/api/v1/remote/ws2`；浏览器和 Server 不进入官方 OAuth。
 - 静态资源直接来自 `packages/web/dist`；`/remote/v4` 使用 SPA fallback，未知 `/api/*` 返回 JSON 404。
 - 有 `Origin` 时要求同源；Node/CLI 请求可以省略 Origin，WS 仍必须使用一次性票据。
@@ -83,7 +83,7 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 
 ## 7. 已执行验证
 
-- Relay：5/5（真实 workerd、认证/V2、票据单次消费、owner 替换、离线 meta、alarm 清理）；
+- Relay：6/6（真实 workerd、认证/V2、票据单次消费、owner 替换、离线 meta、alarm 清理、Workers-safe KDF 预算）；
 - Connector：10/10；Server CLI 定向 13/13；tsup 工程测试 4/4；
 - Web 认证/transport 定向 19/19；self-hosted auth 错误语义回归 7/7；UI Root startup 回归纳入 fork 合同清单；
 - `pnpm test:unit:fork` 10 组通过；补齐 CLI 构建产物后 `pnpm test:unit:contracts` 53 文件/1165 测试通过；

@@ -10,7 +10,7 @@
 
 ## 2. 账号密码与持久凭据
 
-部署设置固定用户名、加盐密码 KDF 校验信息及会话签名/认证版本配置；当前实现为 PBKDF2-SHA256 210000 次、HMAC-SHA256 会话和 `AUTH_EPOCH` 撤销版本。无注册、多租户或组织系统。
+部署设置固定用户名、加盐密码 KDF 校验信息及会话签名/认证版本配置；当前实现为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算）、HMAC-SHA256 会话和 `AUTH_EPOCH` 撤销版本。无注册、多租户或组织系统。
 
 新增 POST `/api/fork-remote/auth/login`：账号密码认证后返回 `{token, expiresAt, userInfo}`。`token` 是两段 `payload.signature` 的 HMAC 会话，不是三段 JWT；有效期 12 小时，`userInfo` 固定为 `{id, username, displayName}`。不要求 data.zai/data.bigmodel 模型 token。手机只替换登录入口与凭据适配。
 
