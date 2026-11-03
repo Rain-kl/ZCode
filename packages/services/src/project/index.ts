@@ -134,7 +134,8 @@ export function createProjectService(options: {
   data?: { port: ProjectDataPort; repository(): Promise<ProjectDataRepositoryContract> };
 }): IProjectService {
   const route = async (hostId?: string) => {
-    if (!hostId || hostId === (options.ownerHostId ?? "local")) return null;
+    // FORK(cloud-web-access): 浏览器以 local 表示当前 attachment 的 owner host；内部稳定 identity 不下发到 UI。
+    if (!hostId || hostId === "local" || hostId === (options.ownerHostId ?? "local")) return null;
     if (!options.resolveHost) throw new Error("project.host-offline");
     return options.resolveHost(hostId);
   };

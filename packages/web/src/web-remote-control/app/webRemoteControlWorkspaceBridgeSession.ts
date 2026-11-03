@@ -39,6 +39,7 @@ export function replayWebRemoteControlWorkspaceBridgeFrames(params: {
 export async function connectWebRemoteControlWorkspaceBridgeServices(params: {
   relayProtocol: AcknowledgedWebRemoteControlRelayProtocolAdapter;
   windowProjectDirectory: boolean;
+  windowControllerService: boolean;
   activateTransport(): () => void;
   isCurrent(): boolean;
   signal?: AbortSignal;
@@ -61,6 +62,7 @@ export async function connectWebRemoteControlWorkspaceBridgeServices(params: {
   try {
     const services = connectViaProtocol(params.relayProtocol.protocol, {
       windowProjectDirectory: params.windowProjectDirectory,
+      windowControllerService: params.windowControllerService,
       signal: params.relayProtocol.signal,
     });
     // 事件监听没有就绪回包。若先等待 RPC 再接入收帧，回复会落到旧 bridge 而永久等待。

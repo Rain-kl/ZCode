@@ -63,6 +63,10 @@ headless workspace 列表由 Server 自身 `IProjectService.readProjects()` 的�
 `workspacePath`。connector 不建立第二份项目数据库或缓存。没有项目时返回一个仅用于会话 cwd 的本机 fallback
 workspace；它不是新的持久项目事实。
 
+项目向导的 `local` 表示当前 Server attachment 的 owner host：目录读取与项目写入都由 Server 本机执行。
+内部稳定 host identity 只用于存储隔离，不要求浏览器回传。local bridge 的 channel 清单不包含桌面专用
+`window-controller`，客户端不得在清单到达前把可选通道当作已存在并发送请求。
+
 平台请求按最小能力公开：无窗口、Docker/WSL/SSH 枚举、系统文件选择器与桌面更新器能力均明确返回
 unsupported 或安全空结果，不能挂起等待 Electron handler。
 
