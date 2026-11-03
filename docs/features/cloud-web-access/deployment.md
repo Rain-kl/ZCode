@@ -53,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/instal
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-安装器只放置运行文件与命令，不配置 Relay、不启动服务。升级先 down，安装后再 up；不覆盖其他来源的 zcode，不删除旧版本或业务数据。详细合同见 [server-installer.md](../../specs/server-installer.md)。
+安装器与 SSH 共用 `~/.zcode/server` 的安装、版本指针和稳定入口，`~/.local/bin/zcode` 只做转发。安装不配置 Relay，新装不启动服务；更新沿用既有任务保护、降级检查与空闲实例重启流程，不传 force 参数。需要停止窗口时先 down、安装后再 up。旧脚本的命令可迁移，旧运行包和业务数据保留，其他来源的 zcode 不覆盖。详细合同见 [server-installer.md](../../specs/server-installer.md)。
 
 交互配置：
 

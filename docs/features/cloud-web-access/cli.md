@@ -1,6 +1,6 @@
 # zcode server 命令行与生命周期合同
 
-状态：2026-11-03 已接入当前源码入口；正式稳定 launcher/发行包分发仍待验收。以下记录命令行为、错误、资源归属和验收边界。
+状态：2026-11-03 已接入当前源码入口；统一安装与稳定 launcher 已完成本机 darwin-arm64 实包验证，Linux 实机与公网发行安装仍待验收。以下记录命令行为、错误、资源归属和验收边界。
 
 ## 1. 命令组
 
@@ -79,7 +79,9 @@ down 停止的是整个 Server，包括远控连接与 Core，不是仅退出 Re
 
 ## 8. 开发与发行包接线
 
-当前 Source Server CLI 已在源码入口接入 server 子命令，并复用 serve/stop/status/restart/update 等既有生命周期接口。正式稳定 launcher/发行包仍在验收清单中，不能只凭开发入口通过就宣称发行环境已覆盖。
+curl 安装和 SSH 共用 `~/.zcode/server` 的稳定入口、releases、current 指针与安装 owner；PATH 命令仅转发，不绑定另一份 archive。CLI 先移除全局 `--server-root`，再归一化 server 子命令，避免无子命令帮助和显式 root 被误分发。完整 Server 包及 agent-runtime 组件均包含同次构建的 `runtime/provider/zcode-builtin.json`。安装合同见 [server-installer.md](../../specs/server-installer.md)。
+
+当前 Source Server CLI 已在源码入口接入 server 子命令，并复用 serve/stop/status/restart/update 等既有生命周期接口。本机 darwin-arm64 实包已验证统一安装、稳定 launcher、server 帮助及 Agent 协议启动；Linux 实机、在线更新和新版本公网分发仍需独立验收。
 
 实施需明确一个公开 `zcode server <subcommand>` 分发入口，并验证稳定 launcher、发行包入口及开发运行入口都能达到同一个 Server CLI；内部 `serve --daemon --json`、`server proxy-stdio` 等桌面调用继续工作。不得用递归 legacyDelegate 造成 TUI 与 Server CLI 循环。
 

@@ -25,6 +25,12 @@
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
 - **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。当前已通过本地 workerd、Connector、CLI/Web 定向测试和浏览器进入工作区；真实 Cloudflare、发行包、公网手机及模型回复未验证。
 
+### Server 安装路径与资源统一（2026-11-03）
+
+- **背景与行为**：一键安装与 SSH 自动安装共用 `~/.zcode/server`、`current.json`、稳定启动入口和既有生命周期/任务/降级保护，避免双版本树。迁移旧脚本拥有的 PATH 命令，保留旧文件与业务数据。补齐独立 Agent 所需的同次构建 provider 配置，整包与 agent-runtime 组件共用资源身份。
+- **文件与标记**：`scripts/install-server.sh`、Server `packaging/stage.ts`、发布校验与回归、README；上游产品接线使用 `FORK(cloud-web-access)`。
+- **设计与落地**：[安装合同](docs/specs/server-installer.md)、[实现记录](docs/features/cloud-web-access/implementation.md)、[部署](docs/features/cloud-web-access/deployment.md)。
+
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留六工具与共享控制器唯一所有者；接入上游单 session closeOwnedWork/close 清理，旧 runner/四工具继续缺席，删除已无消费者的 `core/src/subagent/completion-notification.ts` 并登记移除守卫；运行中输入保持安全边界 guide，不采用上游 stop-then-start；用户确认 Retry-After 按上游接受最长 5 分钟的提示并增加最多 5 秒正向 jitter，普通退避仍最多 30 秒、共享预算仍最多 21 次物理请求；吸收 session features 与上下文投影修复。处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。

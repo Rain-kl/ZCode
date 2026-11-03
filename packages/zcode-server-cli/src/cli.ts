@@ -130,12 +130,14 @@ export async function runServerCli(
   io: CliIO = {},
   runtimeOptions: ServerCliRuntimeOptions = {},
 ): Promise<number> {
-  // FORK-BEGIN(cloud-web-access): server 子命令进入原解析器前先归一化为既有生命周期命令。
+  // FORK-BEGIN(cloud-web-access): server 命令组与全局参数复用原解析器及生命周期。
   let json = argv.includes("--json");
   try {
-    const normalizedArgv = normalizeServerCommandGroup(argv);
+    // 原因：包装器附加的全局 root 会被 `server` 当作子命令；先移除全局参数再分发。
+    const scopedArguments = parseServerCliArguments(argv);
+    const normalizedArgv = normalizeServerCommandGroup(scopedArguments.argv);
     json = normalizedArgv.includes("--json");
-    const parsed = parseServerCliArguments(normalizedArgv);
+    const parsed = { argv: normalizedArgv, layout: scopedArguments.layout };
     // FORK-END(cloud-web-access)
     const command = parsed.argv[0];
     if (command === "version" || command === "--version") {

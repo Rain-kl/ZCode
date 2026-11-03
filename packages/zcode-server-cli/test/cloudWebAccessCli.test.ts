@@ -50,6 +50,35 @@ async function temporaryServerRoot(): Promise<string> {
   return root;
 }
 
+test("global server-root is removed before server subcommand dispatch", async () => {
+  const root = await temporaryServerRoot();
+  for (const argv of [
+    ["server", "--server-root", root],
+    ["--server-root", root, "server"],
+  ]) {
+    let output = "";
+    let error = "";
+    const code = await runServerCli(argv, {
+      stdout: {
+        write: (value) => {
+          output += value;
+        },
+      },
+      stderr: {
+        write: (value) => {
+          error += value;
+        },
+      },
+      legacyDelegate: async () => {
+        throw new Error("Server help must not delegate to Agent CLI");
+      },
+    });
+    assert.equal(code, 0, error);
+    assert.match(output, /Usage: zcode server/);
+    assert.equal(error, "");
+  }
+});
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })));
 });

@@ -121,7 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/instal
 curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh -s -- dev
 ```
 
-脚本从 GitHub Releases 下载与系统、架构对应的 Server 包，校验大小、SHA-256 和包内版本后安装。默认运行文件放在 `~/.local/share/zcode-server`，命令放在 `~/.local/bin/zcode`。若命令目录不在 PATH，按脚本提示配置，例如：
+脚本从 GitHub Releases 下载与系统、架构对应的完整 Server 包，校验后调用与桌面 SSH 安装相同的安装接口。统一目录为 `~/.zcode/server`：运行包在 `releases/`，当前版本由 `current.json` 管理，稳定入口为 `bin/zcode`；`~/.local/bin/zcode` 仅转发到该入口。若命令目录不在 PATH，按脚本提示配置，例如：
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
@@ -133,7 +133,9 @@ zcode server down
 
 安装后需按自己的模型服务配置 provider；安装不会配置账号或自动启动。浏览器访问所连接 Relay 的域名，登录后选择在线设备。完整部署说明见 [自建 Relay 部署](docs/features/cloud-web-access/deployment.md)。
 
-可用 `ZCODE_SERVER_INSTALL_DIR`、`ZCODE_SERVER_BIN_DIR` 指定绝对安装路径和命令目录（使用管道时将环境变量放在 `sh` 前）。脚本拒绝覆盖其他来源的 `zcode` 命令。升级前先 `zcode server down`，重新执行对应通道的安装命令，再 `zcode server up -d`；旧运行包、项目、会话及连接配置保留。
+可用 `ZCODE_DATA_BASE_DIR` 指定数据基目录，Server 位于其下 `.zcode/server`；`ZCODE_SERVER_BIN_DIR` 指定命令目录，均需绝对路径（使用管道时将环境变量放在 `sh` 前）。不再支持旧的 `ZCODE_SERVER_INSTALL_DIR`。安装会接管旧脚本创建的命令，但保留旧 `.local/share/zcode-server` 文件、项目、会话及连接配置；其他来源的 `zcode` 命令拒绝覆盖。
+
+升级仍执行同一安装命令，由 Server 的既有任务保护、降级检查及更新流程处理；运行任务未结束时会拒绝更新，不强制中断。需要自行安排停止窗口时，可先 `zcode server down`，安装后再 `zcode server up -d`。SSH 后续切换当前版本时，此命令入口也会跟随。
 
 当前最新正式版尚无配套 Server 包，请使用 `dev`；缺少正式版产物时脚本会明确失败，不自动改装开发版。此脚本安装独立 Server，用于 `zcode server` 命令组；上方 TUI / `--web` 命令行发行包仍使用其单独的打包与安装方式。
 
