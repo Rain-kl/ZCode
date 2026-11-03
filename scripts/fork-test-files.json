@@ -38,6 +38,7 @@
   "packages/ui/test/modelProviderCodingPlan.test.ts",
   "packages/ui/test/providerFamilyConnectionVisibility.test.ts",
   "packages/ui/test/rootOAuthReauthentication.test.ts",
+  "packages/ui/test/rootWebRemoteStartup.test.ts",
   "packages/ui/test/settingsPageConfig.test.ts",
   "packages/ui/test/storeOAuthRestoreState.test.ts",
   "packages/ui/test/toolCallBlocks.test.ts",
@@ -49,5 +50,6 @@
   "packages/ui/test/v4SessionDataLayer.test.ts",
   "packages/ui/test/v4ToolCallRowAdapter.test.ts",
   "packages/ui/test/zcodeSessionProjection.test.ts",
-  "packages/web/test/webRemoteControlTransportV2.test.ts"
+  "packages/web/test/webRemoteControlTransportV2.test.ts",
+  "packages/web/test/selfHostedRemoteAuth.test.ts"
 ]

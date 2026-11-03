@@ -1,10 +1,10 @@
 # 自建 Cloudflare Relay 与 ZCode Server 接入设计
 
-版本：2.0，2026-11-03；功能 id：`cloud-web-access`。状态：根据用户最新范围修订的设计稿，未实现、未部署。
+版本：2.1，2026-11-03；功能 id：`cloud-web-access`。状态：分支内最小实现完成，本地 workerd + Server + 浏览器闭环已验证；未部署、未验证真实模型和公网手机。
 
 本稿取代此前多对多、离线只读与 Tunnel 草案。用户明确要求：本期保留官方连接替换和离线页面行为，只做对应 Relay、Server 连接层与 `zcode server` 命令组。
 
-配套文档：[命令行规格](cli.md)、[协议设计](protocol.md)、[验收矩阵](acceptance.md)、[实施计划](implementation.md)、[影响分析](impact.md)。
+配套文档：[命令行规格](cli.md)、[协议设计](protocol.md)、[验收矩阵](acceptance.md)、[实施记录](implementation.md)、[部署与运行](deployment.md)、[影响分析](impact.md)。
 
 ## 1. 本期目标
 
@@ -61,12 +61,12 @@ Server 连接器由既有 Core 组合根装配，不创建第二份 `createServe
 - shared 的 Relay V2 类型、HTTP 响应、心跳以及 raw RPC 分片/CRC/ACK/重放机制可以复用。
 - 本期保持官方 V2 外层格式与单 owner 行为，不新增 channelId 多路外壳、不新增 Fork Relay v1 数据协议。
 - 账号密码登录是自建的新增入口；替换官方 OAuth 的必要适配独立放在 fork 入口，不伪造 Z.AI/BigModel 模型业务令牌。
-- Source Server 普通 `/ws` 和 Electron 手机 attachment 的服务暴露面不保证相同；实施前必须对比 manifest 与方法白名单，复用已审阅的手机能力集合，不能把完整 ServiceCollection 直接开放给浏览器。
+- Source Server 普通 `/ws` 与 headless connector 只开放已审阅的手机 bootstrap/bridge/RPC 能力；不把完整 ServiceCollection 或 Electron handler 直接暴露给浏览器。
 - `packages/server`/`zcode --web` 是另外的 Web HTTP 宿主，本期不再起它与 Source Server 并跑，不让两个服务争用同一数据目录。
 
 ## 5. 使用流程
 
-下列是拟实现的产品命令，当前不能据此宣称已存在。精确语义见 [cli.md](cli.md)。
+下列产品命令已经接入当前源码入口并映射到既有生命周期。正式发行包分发仍需单独验收；精确语义见 [cli.md](cli.md)。
 
 ```text
 zcode server connect
@@ -140,15 +140,15 @@ connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner
 
 | 阶段             | 交付                                                     | 完成证据                                                       |
 | ---------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
-| A：合同与 Relay  | 单租户登录、兼容 V2 的设备/票据/配对/透明转发            | 真实 workerd HTTP/WS、owner 替换、票据原子消费、休眠与故障测试 |
-| B：Server 与 CLI | connect/up/down/logs、Core 接入、持久日志与生命周期复用  | CLI 进程测试、真实 Core、停止/重启/日志轮转与锁验证            |
-| C：手机真实闭环  | 同账号登录、项目/任务、模型回复、权限与官方离线/替换行为 | 真实浏览器+Server+受控模型、公网 Worker、手机网络验收          |
+| A：合同与 Relay  | 单租户登录、兼容 V2 的设备/票据/配对/透明转发            | workerd 已通过认证、V2、单次票据、owner 替换和 alarm；eviction 未验收 |
+| B：Server 与 CLI | connect/up/down/logs、Core 接入、持久日志与生命周期复用  | 本地真实 Core、连接、bootstrap 和 down 已通过；发行包/完整矩阵未验收 |
+| C：手机真实闭环  | 同账号登录、项目/任务、模型回复、权限与官方离线/替换行为 | 本地浏览器已进入工作区；真实模型、公网 Worker 和手机网络未验收 |
 
 整个本期完成需要 A/B/C；纯 WebSocket echo、单测通过、或者命令帮助能打印不能视作产品完成。多设备同账号分别配对可作为隔离回归，但不是多手机同控的产品承诺。
 
 ## 12. 改动布局、迁移与发布
 
-独立 fork 合同、Worker/DO 与 Node 连接器优先分包；Core/CLI/Web 只留最小组合根接线，新增模块登记 managed 与公开入口。新产品入口在正式实现时登记 FEATURES 与 FORK(cloud-web-access) 标记。
+独立 fork 合同、Worker/DO 与 Node 连接器已经分包；Core/CLI/Web 只保留最小组合根接线，新增模块登记 managed 与公开入口。相关上游产品入口已登记 FEATURES 与 `FORK(cloud-web-access)` 标记。
 
 `zcode server` 分发必须同时覆盖实际发行包稳定 launcher 与对应开发入口，不能只给 Agent TUI 加一个同名帮助而运行包不支持。安装身份、原数据根和现有版本更新逻辑保留。
 
@@ -164,4 +164,4 @@ connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner
 
 Cloudflare 官方资料：[DO WebSocket/休眠](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)、[DO state](https://developers.cloudflare.com/durable-objects/api/state/)、[静态资源与 API 路由](https://developers.cloudflare.com/workers/static-assets/)。
 
-当前只有文档。所有验收均 planned；本仓库没有可供审计的官方线上 Relay 后端，本稿只承诺自建方案不持久化业务正文，不替官方生产服务作数据保留声明。
+当前分支已有 Relay、connector、Server 命令和 Web 登录入口；验收按 [acceptance.md](acceptance.md) 区分本地自动化、本地运行时和未执行。没有可供审计的官方线上 Relay 后端，本稿只承诺自建方案不持久化业务正文，不替官方生产服务作数据保留声明。部署步骤见 [deployment.md](deployment.md)。

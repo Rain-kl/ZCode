@@ -1,0 +1,26 @@
+{
+  "name": "@zcode/fork-remote-connector",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./module": "./src/module.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "lint": "oxlint src test"
+  },
+  "dependencies": {
+    "@zcode/client": "workspace:*",
+    "@zcode/rpc": "workspace:*",
+    "@zcode/shared": "workspace:*",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.4",
+    "typescript": "^6.0.2"
+  }
+}

@@ -62,6 +62,8 @@ import { reportUiLaunchToInput } from "@/lib/uiPerfArmsTelemetry.js";
 import {
   isProviderStartupSyncPending,
   shouldEnableProviderAvailabilityLoginEntryGuard,
+  // FORK(cloud-web-access): 自建 Relay 已完成认证，官方 OAuth 不能阻塞工作区启动。
+  shouldRestoreOAuthAtRootStartup,
   shouldResolveProviderStartupState,
   shouldBlockRootRender,
   shouldShowRootStartupLoading,
@@ -585,7 +587,6 @@ function RootInner({
 
   const shouldPreferDirectoryBrowser = Boolean(preferDirectoryBrowser);
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
-  const isResolvingStartupAuthState = isRestoringOAuthSession;
   const rootProviderAvailability = resolveProviderAvailabilityState({
     modelSelectionView: rootModelSelectionView,
   });
@@ -595,6 +596,9 @@ function RootInner({
       rootProviderAvailability.hydrated || rootModelSelectionRead.state.status === "error",
   });
   const isWebRemoteControlRoot = Boolean(webRemoteControlWorkspaceSwitcher);
+  // FORK(cloud-web-access): /remote/v4 的首屏等待由 Relay 会话决定，而非官方 OAuth 恢复。
+  const isResolvingStartupAuthState =
+    shouldRestoreOAuthAtRootStartup({ isWebRemoteControlRoot }) && isRestoringOAuthSession;
   const providerAvailabilityLoginEntryGuardEnabled =
     shouldEnableProviderAvailabilityLoginEntryGuard({
       isWebRemoteControlRoot,

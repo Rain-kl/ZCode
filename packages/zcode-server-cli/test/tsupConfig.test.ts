@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { SERVER_CLI_DEFINES } from "../tsup.config.js";
+import { SERVER_CLI_DEFINES, SERVER_CLI_NO_EXTERNAL } from "../tsup.config.js";
 import { loadBuiltinProviderConfig } from "../../../scripts/builtin-provider-config.mjs";
 
 describe("server cli tsup config", () => {
@@ -28,6 +28,10 @@ describe("server cli tsup config", () => {
     expect(JSON.parse(SERVER_CLI_DEFINES.__ZCODE_MIN_COMPATIBLE_VERSION__)).toBe(
       rootPackageJson.zcodeCompatibility?.minCompatibleVersion ?? rootPackageJson.version,
     );
+  });
+
+  it("bundles the fork remote connector with the Server Core runtime", () => {
+    expect(SERVER_CLI_NO_EXTERNAL).toContain("@zcode/fork-remote-connector");
   });
 });
 
@@ -51,6 +55,12 @@ it("loads the real ESM Server CLI bundle before handling a version probe", async
       join(runtimeDir, "node_modules"),
       process.platform === "win32" ? "junction" : "dir",
     );
+    const serverCoreBundle = await readFile(join(runtimeDir, "server-core.js"), "utf8");
+    // 发布归档只收集 Server CLI 声明的外置生产闭包；workspace 包不能作为裸 import 留给目标机解析。
+    expect(serverCoreBundle).not.toMatch(
+      /(?:from\s*|import\s*\()\s*["']@zcode\/fork-remote-connector(?:\/module)?["']/u,
+    );
+    expect(serverCoreBundle).toContain("ZCode Server Relay startup failed");
     const { stdout } = await execFileAsync(
       process.execPath,
       [join(runtimeDir, "server-cli.js"), "--version", "--json"],

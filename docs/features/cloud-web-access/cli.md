@@ -1,6 +1,6 @@
 # zcode server 命令行与生命周期合同
 
-状态：拟实现规格，当前子命令并未全部存在。用户已指定命令面；以下补齐默认行为、错误、资源归属与验收。
+状态：2026-11-03 已接入当前源码入口；正式稳定 launcher/发行包分发仍待验收。以下记录命令行为、错误、资源归属和验收边界。
 
 ## 1. 命令组
 
@@ -37,7 +37,7 @@ connect 只配置，不负责首次 Server daemon 启动。运行中改变 endpo
 
 前台从开始启动即输出日志：本地初始化、Core ready、认证/登记、Relay waiting、手机匹配与断开，以及具体错误。不打印包含密码/token 的连接 URL。
 
-首次网络/Relay 暂不可达时按现有有界退避尝试，启动等待建议 30 秒；期限到仍未就绪则本次启动失败，清理本命令新建的服务并返回非零。停止/清理失败必须另行报告并保留诊断，不能声称已经完全退出。不得停止启动前已存在的其他 owner。
+首次网络/Relay 暂不可达时按现有有界退避尝试，等待 `auth_ack` 的启动期限固定为 30 秒；期限到仍未就绪则本次启动失败，清理本命令新建的服务并返回非零。停止/清理失败必须另行报告并保留诊断，不能声称已经完全退出。不得停止启动前已存在的其他 owner。
 
 成功就绪后，短暂 Relay 断线不退出整个 Server；Core/任务继续，日志提示重连。认证失效停止该远控认证重试并明确要求 down/connect/up，不能伪装成模型失败。
 
@@ -79,7 +79,7 @@ down 停止的是整个 Server，包括远控连接与 Core，不是仅退出 Re
 
 ## 8. 开发与发行包接线
 
-当前 Source Server CLI 直接提供 serve/stop/status/restart/update 等接口，而统一 Node launcher 主要分流 --web 与 Agent CLI。不能假定新增 server 子命令已有完整分发。
+当前 Source Server CLI 已在源码入口接入 server 子命令，并复用 serve/stop/status/restart/update 等既有生命周期接口。正式稳定 launcher/发行包仍在验收清单中，不能只凭开发入口通过就宣称发行环境已覆盖。
 
 实施需明确一个公开 `zcode server <subcommand>` 分发入口，并验证稳定 launcher、发行包入口及开发运行入口都能达到同一个 Server CLI；内部 `serve --daemon --json`、`server proxy-stdio` 等桌面调用继续工作。不得用递归 legacyDelegate 造成 TUI 与 Server CLI 循环。
 

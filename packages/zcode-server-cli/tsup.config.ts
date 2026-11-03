@@ -22,6 +22,14 @@ export const SERVER_CLI_DEFINES = {
   __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: JSON.stringify(zcodeBuiltinProviderConfigJson),
 };
 
+export const SERVER_CLI_NO_EXTERNAL = [
+  "@zcode/shared",
+  "@zcode/rpc",
+  "@zcode/services",
+  // FORK(cloud-web-access): 发布目标没有 pnpm workspace，Connector 必须进入 Core 单文件产物。
+  "@zcode/fork-remote-connector",
+] as const;
+
 export default defineConfig({
   entry: {
     "server-cli": "src/main.ts",
@@ -38,7 +46,8 @@ export default defineConfig({
   banner: {
     js: 'import { fileURLToPath as __zcodeFileURLToPath } from "node:url"; import { dirname as __zcodeDirname } from "node:path"; const __filename = __zcodeFileURLToPath(import.meta.url); const __dirname = __zcodeDirname(__filename);',
   },
-  noExternal: ["@zcode/shared", "@zcode/rpc", "@zcode/services"],
+  // FORK(cloud-web-access): 发布目标没有 pnpm workspace，Connector 必须进入 Core 单文件产物。
+  noExternal: [...SERVER_CLI_NO_EXTERNAL],
   define: SERVER_CLI_DEFINES,
   external: [
     "node-pty",

@@ -14,6 +14,17 @@
 
 标记自查：`rg -n "FORK\(|FORK-BEGIN\(" --glob '!AGENTS.md' --glob '!FEATURES.md'`
 
+## 自建云端网页远控 (cloud-web-access)
+
+- **状态**：开发中（2026-11-03）。设计与验收合同已冻结；Relay、Server 主动连接层、`zcode server` 命令和网页闭环均须以实际验证结果逐项转正。
+- **需求背景**：在云主机运行 ZCode Server，不开放入站端口、不依赖 Cloudflare Tunnel；Server 主动连接用户自建的 Cloudflare Worker/DO，手机或电脑浏览器以同一套单租户账号密码登录并远程操作现有项目、任务和 Agent。
+- **本期范围**：保持官方 Relay V2 与单 owner 语义；同 SID 新手机替换旧手机，旧端收到 `KICKED`。Relay 只负责认证、设备、一次性票据、配对、心跳和透明转发，不保存任务、快照、队列或业务正文。Server 复用既有 Core/Supervisor/锁/control endpoint，提供 `connect`、`up [-d]`、`down`、`logs [-f]`；网页沿用现有手机远控 UI、缓存和离线行为。
+- **明确不做**：本期不增加多手机同时控制同一实例、不增加离线只读、不移除 WebDAV、不把账号密码当模型平台令牌、不恢复上游云账号依赖。
+- **修改文件**：新增 `packages/fork-remote-relay/**`、`packages/fork-remote-connector/**`、`packages/zcode-server-cli/src/fork/cloud-web-access/**` 和 Web/UI 自建认证入口；在 `packages/zcode-server-cli`、`packages/web`、`packages/ui`、根 typecheck/架构/测试清单保留最小接线。
+- **上游改动标记**：触及上游既有产品代码时使用 `FORK(cloud-web-access)`；独立 fork 包和新增文件无需逐行标记。
+- **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
+- **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。当前已通过本地 workerd、Connector、CLI/Web 定向测试和浏览器进入工作区；真实 Cloudflare、发行包、公网手机及模型回复未验证。
+
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
 

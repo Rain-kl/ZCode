@@ -1,6 +1,6 @@
 # 本期功能影响与状态边界
 
-模式：设计文档修订；不修改产品代码。主方案为官方V2兼容Relay、headless Server connector和zcode server命令组。
+模式：fork 独立包加最小上游接线。主方案为官方 V2 兼容 Relay、headless Server connector 和 `zcode server` 命令组。
 
 ## UI与命令入口
 
@@ -38,6 +38,6 @@
 
 ## 证据与图谱
 
-本轮用精确源码读取/rg核对直接调用深度1–2，未运行codegraph。当前事实图尚无headless Relay能力；实施采用真实模块路径后登记确认过的节点/入口并做graph校验。本次不把尚不存在的连接器和命令标为已实现。
+本轮用精确源码读取/rg核对直接调用深度1–2，未运行codegraph。已落地的直接节点是 `fork-remote-relay`、`fork-remote-connector`、`server-cloud-web-access`、Web 自建登录入口及其上行接线；发行包分发、公网 Worker 和真实模型仍未验证。
 
-此前多路外壳、byte-credit、IndexedDB/离线app shell和多对多阶段全部删除；专属验收目录以acceptance.md为准。真实E2E尚未编写，covered计数不变。
+此前多路外壳、byte-credit、IndexedDB/离线 app shell 和多对多阶段不再属于本期。验证覆盖以 acceptance.md 为准；本地浏览器闭环有证据，但真实公网手机和模型回复仍为未验证。

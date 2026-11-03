@@ -1,6 +1,6 @@
 # 自建 Relay 协议：沿用官方 V2
 
-状态：待实现合同。用户已明确不改配对与手机离线行为，本稿取代先前 Fork Remote Relay v1 多路外壳设计。
+状态：2026-11-03 已实现并由本地 workerd 验证；尚未部署公网。用户已明确不改配对与手机离线行为，本稿取代先前 Fork Remote Relay v1 多路外壳设计。
 
 ## 1. 复用与新增边界
 
@@ -10,13 +10,13 @@
 
 ## 2. 账号密码与持久凭据
 
-部署设置固定用户名、加盐密码 KDF 校验信息及会话签名/认证版本配置；算法与成本必须通过真实 Workers 自检。无注册、多租户或组织系统。
+部署设置固定用户名、加盐密码 KDF 校验信息及会话签名/认证版本配置；当前实现为 PBKDF2-SHA256 210000 次、HMAC-SHA256 会话和 `AUTH_EPOCH` 撤销版本。无注册、多租户或组织系统。
 
-拟新增 POST `/api/fork-remote/auth/login`：账号密码认证后返回本部署的有效用户身份、Relay API 登录凭据与过期时间。凭据使用自建签发的 JWT/明确等价的 auth port，必须满足既有入口真正依赖的 expiry/user 字段；不要求 data.zai/data.bigmodel 模型 token。实施以依赖契约测试固定最终形状，手机只替换登录入口与凭据适配。
+新增 POST `/api/fork-remote/auth/login`：账号密码认证后返回 `{token, expiresAt, userInfo}`。`token` 是两段 `payload.signature` 的 HMAC 会话，不是三段 JWT；有效期 12 小时，`userInfo` 固定为 `{id, username, displayName}`。不要求 data.zai/data.bigmodel 模型 token。手机只替换登录入口与凭据适配。
 
 Server connect 保存 endpoint、userId、可撤销/可轮换凭据及 V2 设备身份；不默认持久保存密码。浏览器使用既有凭据边界接入自建登录，密码本身不入 localStorage。凭据失效时停止认证重试；设备 SID 按 endpoint/user 隔离，换地址/账号不复用旧身份。
 
-认证修改请求检查来源/CSRF；浏览器 WS 校验 Origin，Node device 用合法登录与票据认证。登录限速与密码错误是明确结果。可选的凭据续期/撤销接口在实施认证合同中固定，不顺带新增管理后台。
+Worker 对存在的 `Origin` 校验同源；Node device 可以不带 Origin，但仍须合法登录与一次性票据。当前 Worker 不提供 IP 登录限速，生产部署必须在 Cloudflare WAF/网关配置限速或等价保护。密码错误返回 401；没有账号注册或管理后台。
 
 ## 3. 原样支持的 HTTP 合同
 
@@ -29,13 +29,41 @@ Server connect 保存 endpoint、userId、可撤销/可轮换凭据及 V2 设备
 | POST `/api/v1/remote/device/delete` | device_sid              | 仅自己离线设备可删除；不存在幂等成功；在线/无归属按官方业务码返回 |
 | POST `/api/v1/remote/token`         | role=device 或 terminal | 16 随机字节、22 字符无填充 Base64URL token，expires_in 正整数     |
 
-设备记录含 device_sid、device_mid、online、created_at（Unix 秒）、meta；在线 meta 为可选 name/platform/version，离线 meta 为空。token 绑定用户和角色、不绑定 SID，60 秒有效，Upgrade 前原子单次消费，失败不恢复，响应 no-store。token 到期不影响已经建立的连接，重连必须重新申请。
+设备记录含 device_sid、device_mid、online、created_at（Unix 秒）、meta；在线 meta 为可选 name/platform/version，设备断开后 meta 为空，设备记录仍保留供列表展示。token 绑定用户和角色、不绑定 SID，60 秒有效，Upgrade 前原子单次消费，失败不恢复，响应 no-store。token 到期不影响已经建立的连接，重连必须重新申请。
 
 本期单租户仍校验登录、角色、设备归属、状态与删除条件；不能因一个账号而把所有校验删掉。registered sourceServerId 与 wire device_sid/device_mid 分开处理，沿用 V2 身份持久化与重新注册规则。
 
 ## 4. 原样支持的 WS 合同
 
 路径 `/api/v1/remote/ws2?token=...`，可带 mid 路由提示；票据无效/过期/重用在 Upgrade 前返回 401。角色来自票据，不接受 auth_init 改写。
+
+### 4.1 Headless Server attachment
+
+Server connector 是外层 AppPayload 与现有 Core replayable RPC 的唯一适配 owner，不创建第二份
+`ServiceCollection`、Agent、Host 或任务队列。事件顺序固定为：
+
+1. Core 创建 loopback HTTP/WS 与既有 services；
+2. connector 使用持久 `device_sid` 获取 device ticket 并主动连接 Relay；
+3. 收到合法 `auth_ack` 后，Core 才向 Supervisor 报 ready；`waiting` 已算 Relay 就绪，手机是否在线不是启动条件；
+4. 手机发送 `bootstrap-request` / `workspace-list-request`，connector 从注入的项目目录端口生成快照；
+5. `workspace-bridge-open` 先建立到同一 Core `/ws` 的 `web-remote-replayable` attachment，再返回
+   `workspace-bridge-ready`；ready 进入普通 AppPayload 后才允许 queued raw frame 发出；
+6. `rpc-frame` / `rpc-frame-ack` 只由 acknowledged raw adapter 处理，正文不经过业务解析或持久化；
+7. terminal 被替换、断线或新 bridge supersede 旧 bridge 时，先 abort 旧 RPC，再释放 loopback socket；已被
+   Core 接纳的任务继续运行。
+
+每个当前 terminal 只有一个 active bridge。bridge 身份使用
+`bridgeSessionId + bridgeGeneration + recoveryId`；旧代 frame、ACK、异步 open 结果不得推进新代。短线重连保留
+当前 acknowledged replay buffer，并在重新 matched 后只重放未 ACK 的 frame；明确 KICKED 或 connector 停止才终结
+该 terminal owner。
+
+headless workspace 列表由 Server 自身 `IProjectService.readProjects()` 的可用 primary root 派生；
+`workspaceIdentity` 仍按 `workspaceIdentity?.trim() || workspacePath` 作为 key，路径 IO 只使用
+`workspacePath`。connector 不建立第二份项目数据库或缓存。没有项目时返回一个仅用于会话 cwd 的本机 fallback
+workspace；它不是新的持久项目事实。
+
+平台请求按最小能力公开：无窗口、Docker/WSL/SSH 枚举、系统文件选择器与桌面更新器能力均明确返回
+unsupported 或安全空结果，不能挂起等待 Electron handler。
 
 | 方向           | 消息              | 关键内容                                              |
 | -------------- | ----------------- | ----------------------------------------------------- |
@@ -90,7 +118,7 @@ Relay 不解析 task/workspace，不持久化 data.payload，不对业务命令�
 
 ## 7. DO 休眠、持久化与日志
 
-DO 持久保存设备、认证元数据和一次性票据消费事实；活跃 owner 从已认证 socket attachment 恢复。计时/expiry 不只存在于 Worker 全局 Map。一个聚合 alarm 处理必要到期清理，避免每连接无限定时器。
+DO 持久保存设备、认证元数据和一次性票据消费事实；活跃 owner 从已认证 socket attachment 恢复。计时/expiry 不只存在于 Worker 全局 Map。签发票据会安排最早的到期 alarm，alarm 清理过期票据后重新安排下一到期点，避免每连接无限定时器。
 
 使用 hibernation 不等于所有连接必然不掉线；发布、平台中断或错误仍走已有重连。不能让休眠重建自动复活已消费票据、已删除 SID 或已被替换 owner。
 

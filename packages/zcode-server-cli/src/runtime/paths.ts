@@ -21,6 +21,9 @@ export interface ServerLayout {
   readonly uninstalledFile: string;
   readonly updateTransactionFile: string;
   readonly updateLockFile: string;
+  // FORK(cloud-web-access): 自建 Relay 配置和运维日志必须绑定 canonical Server 实例。
+  readonly remoteConnectionFile: string;
+  readonly logsDir: string;
 }
 
 export function getDefaultServerDataRoot(): string {
@@ -53,6 +56,9 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
     uninstalledFile: join(root, "uninstalled.json"),
     updateTransactionFile: join(root, "update-transaction.json"),
     updateLockFile: join(runDir, "update.lock"),
+    // FORK(cloud-web-access): 配置/日志不放入 runDir，down 后仍可读取并保留。
+    remoteConnectionFile: join(root, "config", "remote-connection.json"),
+    logsDir: join(root, "logs"),
   };
 }
 
