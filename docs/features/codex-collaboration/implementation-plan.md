@@ -122,19 +122,24 @@ list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内�
 
 ## Task 4: 客户端投影与端到端回归
 
-- [ ] 写 V4/TUI 与实际协议进程回归：steer、child 终态、续跑和子会话下钻。
+- [x] 写 V4/TUI 与实际协议进程回归：steer、child 终态、续跑和子会话下钻。
   本地 HTTP 故障场景覆盖首 token 前和输出中途断开，检查进程存活和实际后续请求。
-- [ ] 六工具事件映射到既有 subagent/background work；不把 UI 作为调度所有者。
+- [x] 六工具事件映射到既有 subagent/background work；不把 UI 作为调度所有者。
   desktop continuous 和 mobile replayable 从同一序列恢复，不重复完成、不倒退状态。
-- [ ] 运行受影响包测试和完整 CLI typecheck/lint；明确标注环境阻塞，不伪称实机验证。
-- [ ] 更新 FEATURES.md、implementation.md 和笔记中的接线、限制、实际验证记录，提交 fix(agent)。
+- [x] 运行受影响包测试和完整 CLI typecheck/lint；明确标注环境阻塞，不伪称实机验证。
+  CLI32包类型通过；Lint实际5个max-lines错误，详见implementation与client Note，不记为通过。
+- [x] 更新 FEATURES.md、implementation.md 和笔记中的接线、限制、实际验证记录，提交 fix(agent)。
 
 ## Task 5: 收尾
 
-- [ ] 全功能规范审查，再做最终代码质量审查，所有严重问题先修复。
-- [ ] 执行根 typecheck/lint、architecture:check 和 fork:check-removals；CLI 独立检查不可省略。
-- [ ] 检查 git diff、FORK 标记、许可证和干净状态。每个功能提交只包含本任务文件。
-- [ ] 本地合回当前 main（无冲突时 fast-forward），不推送、不发版；汇报 commit 与验证结果。
+- [x] 全功能规范审查，再做最终代码质量审查，所有严重问题先修复。
+  最后paired child具体错误丢失经actualRED→56/56GREEN修复，规范与质量均APPROVE。
+- [x] 执行根 typecheck/lint、architecture:check 和 fork:check-removals；CLI 独立检查不可省略。
+- [x] 检查 git diff、FORK 标记、许可证和干净状态。每个功能提交只包含本任务文件。
+  用户.gitignore与未跟踪codex参考目录保留，不宣称共享工作区完全干净。
+- [x] 本地提交保留当前 `canary`，不移动 `main`、不推送、不发版；汇报 commit 与验证结果。
+  本次实施在共享工作区的 canary 上进行，并行任务已产生独立发布/WebDAV提交；整体合入 main 会
+  同时移动其他任务的提交，超出本功能收尾范围，不以整理分支为由改变其历史或工作区。
 
 ## 状态与证据
 

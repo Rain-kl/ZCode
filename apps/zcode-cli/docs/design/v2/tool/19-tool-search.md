@@ -234,7 +234,7 @@ runtime schema 仍接受省略 max_results，沿既有执行链先补默认值 5
 | ExitPlanMode  | present plan for approval and start coding (plan mode only) |
 | TaskOutput    | read output/logs from a background task                     |
 | TaskStop      | kill a running background task                              |
-| SendMessage   | send messages to agent teammates                            |
+| spawn_agent / send_message / followup_task / interrupt_agent / list_agents / wait_agent | agent teammates collaboration |
 | CronCreate    | schedule a recurring or one-shot prompt                     |
 | CronList      | list active cron jobs                                       |
 | CronDelete    | cancel a scheduled cron job                                 |

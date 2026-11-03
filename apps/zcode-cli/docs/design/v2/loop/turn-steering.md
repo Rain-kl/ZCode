@@ -246,6 +246,15 @@ user row 之后。
 
 ## 消息来源与 provider 投影（2026-09-11）
 
+> **二开现行边界（2026-11-03，codex-collaboration）**：本节的 coordinator/peer 模板、
+> SendMessage/RespondToCoordinator 和 BG25 轨迹仅保留为旧合同记录，不是可调用入口。
+> 六工具协作由根 controller 的 durable mailbox 在安全边界消费，并通过私有来源投影为
+> assistant 的 MESSAGE/FINAL_ANSWER/STATUS 信封；`send_message` 不唤醒 idle 接收者，
+> `followup_task` 才启动原 child 会话。当前合同见
+> [六工具](../tool/07-subagent.md) 与根目录
+> [runtime-integration](../../../../../../docs/features/codex-collaboration/runtime-integration.md)。
+> 本节 human guide 与普通后台通知规则继续适用，不新增旧子代理历史适配。
+
 CLI/runtime 是唯一队列与消费时机权威。只对齐现有 human guide / 运行中立即发送、主到子的 coordinator 消息、子到主的主动回信、后台任务通知；不新增 mailbox、channel、observer，不修改审批反馈、goal continuation、TODO 全量更新或强制续跑规则。用户带附件输入保留现有路径。
 
 ```text

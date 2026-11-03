@@ -315,6 +315,8 @@ async function assertMailboxEnvelope(
 }
 
 async function uniqueChildSession(): Promise<string> {
+  // 父轮结束可折叠工作历史；现有 helper 通过真实点击展开，身份仍只取实际 child 摘要。
+  await waitForToolCallBlockByToolCallId("csc-spawn");
   let ids: string[] = [];
   await browser.waitUntil(
     async () => {

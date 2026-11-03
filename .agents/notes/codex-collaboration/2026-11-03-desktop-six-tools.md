@@ -28,6 +28,12 @@
 - cleanup 修复后复用最新 bundle 再验 CSC01 1/1、50.6 秒，artifact
   `desktop-e2e-20261102-164341-233`，日志 `/tmp/zcode-csc-desktop-cleanup-run.log`。
   规范增量和质量均批准；没有将分批通过相加冒充更多 case。
+- 最后客户端新构建：正式 steer 5/5、48.2 秒（`desktop-e2e-20261102-165743-477`）；
+  同轮 CSC01 发现测试没有展开父 completed 的工作历史，摘要不挂 DOM。源码确认既有折叠合同后，
+  先补 spec，再复用真实点击展开的 `waitForToolCallBlockByToolCallId`；不改产品、不放松身份断言。
+  同 bundle CSC01 再验 1/1、19 秒（`desktop-e2e-20261102-170402-103`，
+  `/tmp/zcode-collaboration-expanded-desktop.log`）。该构建含冷 seed work 修复，最后 ordinary fork
+  自身 root 的隔离组合由单测验证；没有因 GUI 未覆盖该组合而宣称其已实机验证。
 
 ## 证据边界
 

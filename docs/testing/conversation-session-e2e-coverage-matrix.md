@@ -23,6 +23,10 @@ artifact `desktop-e2e-20261102-163823-235`，2026-11-03 本地时间）。候选
 质量审查的 attempt-all cleanup 修复后，同一最新 bundle 再验 1/1、50.6 秒，artifact
 `desktop-e2e-20261102-164341-233`；清理失败路径另由 node:test 1/1 证明。
 cold-seed 非法关联 backgroundWork 清除的后续修复由定向测试验证，此 GUI case 不覆盖该冷恢复路径。
+最终客户端源码重新构建后，`desktop-e2e-20261102-165743-477` 的正式 steer 为 5/5、48.2 秒；
+同轮 CSC01 因父 completed 工作历史默认折叠而未找到未挂载的摘要。测试按现有真实 UI 展开历史，
+保持原断言；同 bundle 再验 CSC01 1/1、19 秒，artifact `desktop-e2e-20261102-170402-103`。
+该构建含 cold seed work 修复；最后普通 fork 已有自身 root 的读隔离组合仅由新增 UT 验证。
 
 ## BG46–BG47 子代理回传交错
 

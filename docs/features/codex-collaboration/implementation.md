@@ -5,7 +5,9 @@
 2026-11-03：Task 1（有界模型 API 恢复）、Task 2 控制器、Task3a 六工具合同与角色均已通过双审。
 Task3b 已切换实际 runtime，删除旧协作执行路径并接入同根调度、持久邮箱和冷恢复；
 独立规范和质量审查均批准至 `205a7ff6`，所有已确认问题均已关闭。
-Task4 客户端工具呈现与冷身份查询已开始实施，尚未验收，不代表本功能已经全部交付。
+Task4 六工具真实桌面主路径已通过 CSC01；客户端冷身份、代际、旧展示入口清理及最后错误详情修复
+已通过独立规范与质量审查。原需求没有剩余必需开发项，验证限制在末节逐项记录。
+下文按阶段保留当时的验证边界；曾标记“待后续”的项目，以本节和末尾收尾记录为当前状态。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
 Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
 2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；
@@ -342,7 +344,7 @@ flush也在原enqueue通道重试，清理与admission互斥，不递归等待�
 模块，避免测试文件超过800行，不新增调度owner。3个新场景先RED，另补关闭后abort reject/迟到completion的无异步错误与generation保护验证，最终3文件53/53 GREEN；
 core typecheck、模块lint、架构0违规与diff check通过。未运行冗余根全局检查，未改真实runtime或E2E。
 
-### Task 3b：真实 prepared runtime、邮箱与生命周期接线（待独立审查）
+### Task 3b：真实 prepared runtime、邮箱与生命周期接线（阶段记录，已完成独立双审）
 
 `core/src/fork/codex-collaboration-runtime` 将六工具绑定到同一 root controller，child 复用标准
 reserved prompt command：prepare 先创建/恢复 session，installMailbox 安装 durable sink，admit
@@ -503,3 +505,56 @@ undefined；源只读已初始化controller快照中的精确child，root/未知
 running但无init时0IO、live/terminal/interrupt、错误child与仍运行兄弟的精确区分、无额外模型请求。
 core typecheck/build与scoped lint通过；架构当时仅client并行施工的bootstrap/app/subagent-observation.ts
 未登记新文件1项失败，runtime所有自有源无违规，未改或暂存client的policy。此有限入口单独交spec/quality。
+
+## Task4 最终客户端与真实桌面证据（2026-11-03）
+
+六工具 shared identity、中文/英文 UI、TUI、canonical 冷查询与 generation 投影已接线。
+旧 Agent/Task/SendMessage/RespondToCoordinator 的专用 renderer、ACK/output_file 解析与旧消息 display
+discriminant 已删除；普通历史保留通用展示，不新增历史兼容处理。具体落点、单一 owner 与测试先红后绿
+见 [client-implementation](client-implementation.md) 及客户端 Agent Note。
+
+客户端定向验证分批记录：UI/shared 11文件398/398、bootstrap 7文件448/448、managed reader1/1、
+TUI25/25、CLI observation12/12、contracts metadata20/20、客户端移除守卫1/1。相同 controller
+事件序列实际经过 publisher→renderer store，在 desktop continuous/mobile replayable 两种交付下验证
+parent steer、重复帧、丢帧恢复、followup 和旧代终态；这是协议/投影测试，没有手机 GUI 证据。
+
+独立协议 HTTP 进程以最终 runtime 重新构建：9/9依赖 build、4/4真实进程测试（14.16秒）。
+覆盖首 token 前 HTTP500、可见输出后的断流、持续失败精确21次物理请求后仍能接续健康请求，
+以及 send_message 空成功 tool result 与 assistant MESSAGE。未扩大为所有 provider 协议验证。
+日志 `/tmp/zcode-collaboration-complete-{runtime-build,wire}.log`。
+Task4原子提交 `478f3541`（包含最后 ordinary fork reader 修复）后再次build9/9、HTTP4/4，
+11.41秒；日志 `/tmp/zcode-collaboration-committed-{build,wire}.log`。
+
+最终客户端 fresh Desktop/Agent 运行的正式 steer 5/5、48.2秒，artifact
+`desktop-e2e-20261102-165743-477`。同轮 CSC01 的首次失败证实测试没展开已完成工作历史；
+既有 UI 折叠会卸载全部工具/child DOM，后台 badge仍为1。按真实 history trigger展开后保留全部
+opaque identity、原 spawn anchor、模型 wire 和 native Stop断言，同 bundle CSC01 1/1、19秒，
+artifact `desktop-e2e-20261102-170402-103`。最后 ordinary fork 已有自身 root 的读取隔离组合，
+在该构建之后修复，以 query/448项定向测试证明，不冒充 GUI覆盖。CSC01继续为 manual-review/pending。
+
+根最终 `pnpm typecheck` exit0、CLI typecheck32/32、`pnpm lint` 102warnings/0errors；架构0违规、
+fork移除守卫39758文件通过（10个大于5MB的文件按工具规则跳过）。根较早一次typecheck曾被并行用户
+WebDAV施工阻塞，保留原失败日志；其完成后复跑通过，没有代改用户文件。
+CLI Lint原入口不能将 native pnpm作为JS执行；使用只转调原pnpm的临时JS wrapper执行原检查器后，
+实际5个max-lines错误/71warnings：adapters/fs1642、core/background-tasks942、本任务触碰的
+cold-event-merge805、transcript-hydration1722、product-projection5241。后三者仍为既有大模块，
+不将这些检查失败写成通过，也不把触碰文件笼统称为无关错误。没有全量UT、手机/Windows/Linux实机
+或全部模型协议验收；没有push、发版或移动main。
+
+### 最终规范审查增量：配对卡片具体失败正文
+
+独立规范探针确认成功 spawn 后的 child 失败虽已保存 canonical summaryText，配对卡片却仅转发
+status并隐藏裸child行，导致具体原因不可见。先补client acceptance与正式React DOM回归，实际
+1fail/10pass，再在既有只读卡片投影中同时派生failed summary为error；不改原成功spawn ACK，
+不新增状态owner。正式真实output.text fixture还验证同failed状态summary更新、running后新旧错误
+均清除；三文件56/56通过。日志 `/tmp/zcode-final-child-error-{red,final}.log`。
+原独立探针1/1通过，最终规范审查APPROVE；增量根typecheck exit0、rootlint102warnings/0errors。
+此项只读展示由DOM回归验证，不将之前GUI构建扩大为包含此后修复。
+独立提交 `56d3fac1`；增量架构0违规、移除守卫36961文件通过（9个超过5MB按原规则跳过）。
+
+### 最终审查结论
+
+Task4与整合规范审查APPROVE，随后最终质量审查APPROVE，没有剩余必需开发项或质量阻断。
+质量独立复跑UI3文件114/114、bootstrap2文件16/16、客户端移除契约1/1及diff whitespace检查通过。
+日志 `/tmp/zcode-finalquality-{ui,bootstrap,removals}.log`。CLI的5个max-lines错误继续作为检查失败记录，
+不是“所有检查全绿”；没有因收尾扩大为超长宿主文件重构。全部本功能提交均仅本地保留。

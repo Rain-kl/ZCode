@@ -8,6 +8,8 @@ CSC01 通过真实 Electron、Agent bundle、SQLite、回放 HTTP provider 检�
 1. 父模型调用 spawn_agent、list_agents、send_message 后结束；child 仍在受控流中运行。
    spawn 工具完成只表示 accepted，界面必须保留一个 running child。
 2. 从摘要读取实际 childSessionId 并下钻，不能从 task_name 或工具 ID 构造 session。
+   父轮正常完成后工作历史可默认折叠；先用真实 UI 展开原 spawn 所在历史，再读取摘要，
+   不能把未挂载的折叠内容当作 child 丢失，也不能改产品默认展开状态让测试通过。
 3. 释放 child 的响应（带成功 TodoRead 结果边界）后，下一真实 provider 请求包含完整响应尾部及
    assistant MESSAGE。child 回复父代理并结束；idle 父代理不隐式另起 turn。
 4. 新的用户输入由父模型调用 followup_task，原 childSessionId、原 spawn anchor 重新 running。

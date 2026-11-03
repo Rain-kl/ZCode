@@ -16,7 +16,7 @@
 
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
-- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界并通过桌面5/5回放；Task 2 独立协作控制器已通过规格/质量双审及53项测试。六工具、角色与真实 runtime/mailbox 接线正在 Task 3 实施，尚未宣称整体交付。
+- **状态**：2026-11-03，模型恢复、steer 安全边界、协作控制器、六工具/角色/真实 runtime/mailbox、客户端冷投影与旧展示入口清理均已实施，通过独立规格与质量审查。六工具真实桌面会话 CSC01 已验收；完整验证及未覆盖边界见实现文档。
 - **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
   用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
 - **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
@@ -29,10 +29,10 @@
 - **上游改动标记**：`FORK(codex-collaboration)`；新模块均登记 managed/public entrypoints。
 - **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
-- **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
-- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
-- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。默认 runtime driver 仍待 Task3b，不代表迁移完成；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
-- **Task3b（2026-11-02，待独立审查）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。实际相关388项、controller53项、Bash/fork2项通过；CLI lint与独立旧产品断言的失败边界如实记录，客户端整体交付仍待Task4。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
+- **已知边界**：手机 GUI、Windows/Linux 与全部 provider 协议没有实机验收。桌面 CSC01 保持 manual-review/pending，不自动提升正式准入；CLI 全量 Lint 的既有超长文件错误如实记录。
+- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。已废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留 Bash/workflow 用途；原生子任务 Stop 直接进入新 controller interrupt。没有历史工具适配、数据迁移或用户数据删除。
+- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。此阶段只完成工具合同，真实 driver 随下述 Task3b 接线；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
+- **Task3b（2026-11-03，独立双审通过）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。补齐原 command 排空、父权限交集、整树驻留、prepare 失败资源归属、取消边界和具体错误保留；每个修正均有先红后绿及增量双审。分批测试与旧产品断言边界分别记录，不相加冒充同一次全量通过。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
 - **Task3b 配置收口**：删除无行为的 `features.subagent` 公开键/类型/默认值/存储映射；直接 set/get/merge 和配置文件明确拒绝旧键，removal guard 与依赖契约测试防止同步后静默恢复。统一保留 `subagents` 参数，内部 workflow 的能力隔离不使用旧开关。
 
 ### 持久协作控制器（2026-11-02）
@@ -40,7 +40,14 @@
 - **背景与修改**：旧子任务的取消与父轮耦合，失败后缺少稳定身份和原会话续跑边界。新增根所有的身份树、调用去重、durable ACK 邮箱、独立 signal/generation、容量与驻留控制，以及原会话恢复的有限 driver 合同。
 - **修改文件**：CLI `core/src/fork/codex-collaboration/**`、测试 driver 与 `architecture-policy.yaml`；新增模块不修改上游产品代码，无逐行标记。
 - **错误与生命周期**：拒绝会破坏已接受历史的损坏快照；失败清理保留原因，重试与 admission 串行；关闭先取消全部 child，保存失败仍尝试释放全部资源。
-- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；53测试与独立竞态探针通过，spec/quality 均批准。真实 driver 和客户端投影仍须后续接线验证。
+- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；控制器定向测试与独立竞态探针通过，spec/quality 均批准。真实 driver 已接线，客户端验收独立记录。
+
+### 六工具桌面会话验收（2026-11-03）
+
+- **行为与证据**：真实 Electron/Agent/SQLite/HTTP provider 驱动六工具，父轮结束后 child 继续，原始响应尾部完整进入邮箱消费边界，双方消息只进入 assistant 信封；idle 父不被消息隐式启动。读取真实 childSessionId 下钻，再以原 session/原 spawn anchor 续跑，原生 Stop 只中断目标 child，父可继续输入。list/wait 不呈现为 Stop 或额外 child。
+- **修改文件与标记**：新增 pending CSC01 用例、case-local fixtures、cleanup helper/失败路径测试与 catalog/matrix；新增测试无上游产品接线标记。
+- **文档与验证**：[desktop-client-acceptance](docs/features/codex-collaboration/desktop-client-acceptance.md)。最终客户端 bundle 正式steer5/5、48.2秒；CSC01按真实交互展开历史后1/1、19秒。不同构建的结果分别保留，不合并计数。独立规格与质量审查通过；用例未人工转正，手机 GUI 与 cold seed 由各自证据边界约束。
+- **客户端接线**：[client-implementation](docs/features/codex-collaboration/client-implementation.md)。shared六工具身份、UI/TUI详情、canonical冷身份查询、同会话续跑、代际防回退与双交付重放已验证；删除旧专属renderer及ACK/output_file解析。配对卡片派生child具体失败原因，保持原成功spawn结果不变，先红后绿56项回归及最终双审通过。
 
 ### steer 安全边界更正（2026-11-02）
 
