@@ -17,6 +17,8 @@ the Relay's device catalog.
   a fresh acknowledgement before queued bridge frames can replay.
 - Bridge generation is checked before and after asynchronous open. A late open or frame from an old
   generation is closed or ignored.
+- The loopback bridge retains Core frames emitted between socket open and router subscription, then
+  delivers them once in arrival order. The RPC `Initialize` frame cannot be lost at this boundary.
 - Raw RPC frames enter the existing acknowledged replay adapter only after `workspace-bridge-ready`;
   no second ServiceCollection, Host, Agent, or task queue is created.
 - `stop()`, timeout, `AUTH_FAILED`, repeated `KICKED`, and a superseded bridge all release the
