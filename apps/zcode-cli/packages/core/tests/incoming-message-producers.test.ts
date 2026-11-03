@@ -18,7 +18,7 @@ describe("incoming message trusted producers", () => {
     "keeps a background batch raw with one marker midTurn=%s",
     async (midTurn) => {
       const target = runtime();
-      await persistBackgroundTaskNotificationBatch.call(
+      const persisted = await persistBackgroundTaskNotificationBatch.call(
         target as never,
         [
           { id: "1", text: "one", traceContext: {} },
@@ -26,9 +26,15 @@ describe("incoming message trusted producers", () => {
         ] as never,
         midTurn,
       );
+      const content = midTurn
+        ? "one\n\ntwo"
+        : [
+            { type: "text", text: "one" },
+            { type: "text", text: "two" },
+          ];
       expect(target.messageHistory.toRuntimeEntries()).toEqual([
         {
-          message: { role: "user", content: "one\n\ntwo" },
+          message: { role: "user", content },
           metadata: {
             source: "legacy_synthetic",
             inputPresentation: midTurn ? "task_notification_steer" : "task_notification",
@@ -36,6 +42,10 @@ describe("incoming message trusted producers", () => {
         },
       ]);
       expect(target.persistSyntheticUserNoticeForSession).toHaveBeenCalledOnce();
+      expect(target.persistSyntheticUserNoticeForSession).toHaveBeenCalledWith(
+        expect.objectContaining({ text: midTurn ? "one\n\ntwo" : ["one", "two"] }),
+      );
+      expect(persisted.text).toBe("one\n\ntwo");
     },
   );
   it.each(["local_agent", "local_bash", "local_workflow", "monitor_mcp"] as const)(

@@ -4,13 +4,12 @@ import { toolResultDisplaySchema } from "./zcode-protocol-v4/toolDisplay.js";
 // 从正式 display 的严格成员派生公开白名单，不另造工具结果协议。
 const OMIT = new Set(["outputPath", "input", "targetApp", "media", "ui", "permissionStatus"]);
 // 工作流专用成员沿用既有公开 workflow 块；这里承载其余终态 display。
+// FORK(codex-collaboration): 分享契约与六工具展示一致，不重新导出旧消息显示协议。
 const PUBLIC_KINDS = new Set([
   "bash_output",
   "file_diff",
-  "local_agent_message",
   "task_stop",
   "task_output",
-  "respond_to_coordinator",
   "mcp_tool",
   "cua",
 ]);

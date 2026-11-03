@@ -9,7 +9,7 @@ import type {
   TraceId,
   TurnId,
 } from "@zcode/contracts";
-import { HookEventName, SessionEventType } from "@zcode/contracts";
+import { HookEventName, SessionEventType, ModelErrorCode } from "@zcode/contracts";
 import type {
   ConversationDelta,
   ConversationSnapshot,
@@ -1412,6 +1412,184 @@ describe("ProductProjection 黄金测试（L1）", () => {
     });
   });
 
+  it("BG26：不带 <error> 的失败通知按 originMeta.subagentResult 取失败原因，不解析 summary", () => {
+    const turnId = "turn-agent-launch";
+    const toolCallId = "tool-agent-rate-limit";
+    const error = "Requests are too frequent. Request id: bg26";
+    // 失败通知不带 <error>；失败原文由 originMeta.subagentResult 结构化下发，
+    // hover 只显示 provider 原文。
+    const summary = `Agent "分析世界杯" failed: ${error}`;
+    const notification = [
+      "<task-notification>",
+      `<tool-use-id>${toolCallId}</tool-use-id>`,
+      "<status>failed</status>",
+      `<summary>${summary}</summary>`,
+      "</task-notification>",
+    ].join("\n");
+    const toolRowFor = (originMeta?: Record<string, unknown>) => {
+      const log = new EventLog();
+      log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+      log.push(
+        SessionEventType.TurnStarted,
+        { turnNumber: 1, input: "launch agent", messageId: "user-agent-launch" },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.ToolCallScheduled,
+        {
+          toolCallId,
+          toolName: "Agent",
+          input: {
+            description: "分析世界杯",
+            run_in_background: true,
+            subagent_type: "general-purpose",
+          },
+          schedule: { parallelGroups: [[toolCallId]], executionOrder: [toolCallId] },
+        },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.ToolCallStarted,
+        { toolCallId, toolName: "Agent", startedAt: new Date(1_700_000_003_000) },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.ToolCallResult,
+        {
+          toolCallId,
+          result: { success: true, content: "Async agent launched successfully." },
+          duration: 1,
+        },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.TurnComplete,
+        { response: "", tokenCount: 0, toolCallCount: 1, duration: 1, resultType: "success" },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.TurnStarted,
+        {
+          turnNumber: 2,
+          input: notification,
+          inputSource: "background_task",
+          inputVisibility: "model-only",
+          messageId: "user-agent-notification",
+          ...(originMeta ? { originMeta } : {}),
+        },
+        { turnId: "turn-agent-notification" },
+      );
+
+      const rows = runAll(log.events).projection.getSnapshot().rows.window;
+      expect(rows.filter((row) => row.kind === "userInput")).toHaveLength(1);
+      return rows.find((row) => row.kind === "toolCall" && row.toolCallId === toolCallId);
+    };
+
+    expect(
+      toolRowFor({
+        backgroundSource: "subagent",
+        workId: "agent-bg26",
+        title: "分析世界杯",
+        subagentResult: { status: "failed", error },
+      }),
+    ).toMatchObject({
+      error: { code: "fault.runtime.backgroundTaskFailed", message: error },
+      output: { text: summary },
+      status: "error",
+    });
+    // 产品数据不依赖模型可见文案：没有结构化结果（合并轮）时不从 summary 猜原因，
+    // 失败详情退回整句 summary。
+    expect(toolRowFor()).toMatchObject({
+      error: { code: "fault.runtime.backgroundTaskFailed", message: summary },
+      status: "error",
+    });
+  });
+
+  it("BG26：合并通知按块投影，失败任务不读下一条通知的结果", () => {
+    const turnId = "turn-agent-launch";
+    const failedSummary = 'Agent "A" failed: Permission denied';
+    const notification = (toolCallId: string, lines: string[]) =>
+      [
+        "<task-notification>",
+        `<tool-use-id>${toolCallId}</tool-use-id>`,
+        ...lines,
+        "</task-notification>",
+      ].join("\n");
+    const log = new EventLog();
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+    log.push(
+      SessionEventType.TurnStarted,
+      { turnNumber: 1, input: "launch agents", messageId: "user-agent-launch" },
+      { turnId },
+    );
+    for (const toolCallId of ["tool-agent-a", "tool-agent-b"]) {
+      log.push(
+        SessionEventType.ToolCallScheduled,
+        {
+          toolCallId,
+          toolName: "Agent",
+          input: {
+            description: toolCallId,
+            run_in_background: true,
+            subagent_type: "general-purpose",
+          },
+          schedule: { parallelGroups: [[toolCallId]], executionOrder: [toolCallId] },
+        },
+        { turnId },
+      );
+      log.push(
+        SessionEventType.ToolCallResult,
+        {
+          toolCallId,
+          result: { success: true, content: "Async agent launched successfully." },
+          duration: 1,
+        },
+        { turnId },
+      );
+    }
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "", tokenCount: 0, toolCallCount: 2, duration: 1, resultType: "success" },
+      { turnId },
+    );
+    // 合并轮的 originMeta 只有基字段，没有逐任务的结构化结果。
+    log.push(
+      SessionEventType.TurnStarted,
+      {
+        turnNumber: 2,
+        input: [
+          notification("tool-agent-a", [
+            "<status>failed</status>",
+            `<summary>${failedSummary}</summary>`,
+          ]),
+          notification("tool-agent-b", [
+            "<status>completed</status>",
+            '<summary>Agent "B" finished</summary>',
+            "<result>Tests passed</result>",
+          ]),
+        ].join("\n\n"),
+        inputSource: "background_task",
+        inputVisibility: "model-only",
+        messageId: "user-agent-notification",
+        originMeta: { backgroundSource: "subagent", workId: "agent-a", title: "A · B" },
+      },
+      { turnId: "turn-agent-notification" },
+    );
+
+    const rows = runAll(log.events).projection.getSnapshot().rows.window;
+    const toolRow = (toolCallId: string) =>
+      rows.find((row) => row.kind === "toolCall" && row.toolCallId === toolCallId);
+    expect(toolRow("tool-agent-a")).toMatchObject({
+      error: { code: "fault.runtime.backgroundTaskFailed", message: failedSummary },
+      output: { text: failedSummary },
+      status: "error",
+    });
+    expect(toolRow("tool-agent-b")).toMatchObject({
+      output: { text: "Tests passed" },
+      status: "success",
+    });
+  });
+
   // ── B 组：stop / 迟到终态 ──
 
   it("B：cancelled turn —— streaming 行收口为 interrupted，phase=completedInterrupted", () => {
@@ -1723,13 +1901,6 @@ describe("ProductProjection 黄金测试（L1）", () => {
         retrievalStatus: "not_ready",
         taskStatus: "running",
         output: "partial output",
-      } as const,
-    },
-    {
-      toolName: "RespondToCoordinator",
-      display: {
-        kind: "respond_to_coordinator",
-        status: "success",
       } as const,
     },
     {
@@ -2934,7 +3105,7 @@ describe("ProductProjection 黄金测试（L1）", () => {
     });
   });
 
-  it("SAT12：SendMessage resumed spawn 在同一次投影中恢复原 row 和 cancellable work", () => {
+  it("SAT12：followup_task resumed spawn 在同一次投影中恢复原 row 和 cancellable work", () => {
     const turnId = "turn-send-message-resume";
     const log = new EventLog();
     log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
@@ -2977,7 +3148,8 @@ describe("ProductProjection 黄金测试（L1）", () => {
         background: true,
         childSessionId: "sess-child-resume",
         description: "恢复到后台",
-        parentToolCallId: "call-send-message",
+        parentToolCallId: "call-agent",
+        generation: 2,
         resumed: true,
         status: "running",
       },
@@ -3044,7 +3216,8 @@ describe("ProductProjection 黄金测试（L1）", () => {
           agentType: "general-purpose",
           background: true,
           childSessionId: "sess-child-resume",
-          parentToolCallId: "call-send-message",
+          parentToolCallId: "call-agent",
+          generation: 2,
           status: "cancelled",
         },
         { turnId },
@@ -3860,6 +4033,21 @@ describe("V4 API 重试状态投影", () => {
     };
   }
 
+  it("配置读取重试保留错误类别，桌面与手机使用同一状态", () => {
+    const { log, projection } = runningProjection();
+    const deltas = projection.applyEvent(log.push(
+      SessionEventType.ModelNetworkStatus,
+      modelStatus({ type: "model_retry_scheduled", delayMs: 2000, nextAttempt: 2,
+        reason: "network_error", errorCode: ModelErrorCode.ModelRequestVerificationConfigNetwork }),
+      { turnId: "turn-retry-1" },
+    ));
+    expect(projection.getSnapshot().control.apiRetry?.reasonCode).toBe("request_verification_config_network");
+    expect(() => conversationSnapshotSchema.parse(projection.getSnapshot())).not.toThrow();
+    for (const profile of [DELIVERY_PROFILES.continuous, DELIVERY_PROFILES.replayable]) {
+      expect(filterConversationDeltasForProfile(deltas, profile)).toEqual(deltas);
+    }
+  });
+
   it("429 重试在两个 delivery profile 中可见，并保持到首次有效模型进展", () => {
     const { log, projection } = runningProjection();
     const scheduledAt = 1_721_000_000_000;
@@ -4635,7 +4823,7 @@ describe("结构性4：两 profile 终态一致", () => {
     );
   });
 
-  it("BG26：真实失败 lifecycle 归并 hydration 合成行并补齐 child session 身份", () => {
+  it("BG26：真实失败 lifecycle 按 opaque agent 身份更新唯一 child 行", () => {
     const turnId = "turn-background-agent-rate-limit";
     const parentToolCallId = "call-background-agent-rate-limit";
     const realAgentId = "agent-background-rate-limit";
@@ -4651,11 +4839,10 @@ describe("结构性4：两 profile 终态一致", () => {
       SessionEventType.ToolCallScheduled,
       {
         toolCallId: parentToolCallId,
-        toolName: "Agent",
+        toolName: "spawn_agent",
         input: {
-          description: "Trigger provider rate limit",
-          prompt: "Trigger provider rate limit",
-          run_in_background: true,
+          task_name: "rate_limit",
+          message: "Trigger provider rate limit",
         },
         schedule: {
           parallelGroups: [[parentToolCallId]],
@@ -4666,22 +4853,10 @@ describe("结构性4：两 profile 终态一致", () => {
     );
     log.push(
       SessionEventType.ToolCallStarted,
-      { toolCallId: parentToolCallId, toolName: "Agent", startedAt: new Date() },
+      { toolCallId: parentToolCallId, toolName: "spawn_agent", startedAt: new Date() },
       { turnId },
     );
-    // transcript hydration 只能从文本 tool output 合成出 toolCallId 身份，拿不到 childSessionId。
-    log.push(
-      SessionEventType.SubagentSpawned,
-      {
-        agentId: parentToolCallId,
-        agentType: "general-purpose",
-        description: "Trigger provider rate limit",
-        parentToolCallId,
-        status: "running",
-      },
-      { turnId },
-    );
-    // hydration await 窗口内补回的真实 spawned 也必须复用合成行，并建立真实 agentId 映射。
+    // child 身份完全来自控制器事件，禁止从 spawn 的模型结果推断。
     log.push(
       SessionEventType.SubagentSpawned,
       {
@@ -6442,6 +6617,7 @@ describe("fork / modelChange marker", () => {
         input: "第一条",
         inputPreview: "第一条",
         inputSize: 9,
+        automationId: "automation-queued",
         queueLength: 1,
         targetTurnId: "t1",
         intent: {
@@ -6500,6 +6676,7 @@ describe("fork / modelChange marker", () => {
     expect(items.map((i) => i.queueItemId)).toEqual(["q1", "q2"]);
     expect(items[0]).toMatchObject({
       text: "第一条改",
+      automationId: "automation-queued",
       botGroupSource: { senderId: "member", chatId: "group" },
       sourceCommandId: "command-q1",
       clientId: "mobile-client",
@@ -8171,6 +8348,168 @@ describe("P2 productTurn 切分（S1/S3/S5）", () => {
       .filter((row) => row.kind === "assistantText" || row.kind === "userInput")
       .map((row) => (row.kind === "assistantText" || row.kind === "userInput" ? row.text : ""));
     expect(order).toEqual(["问题一", "回答一", "问题二", "回答二"]);
+  });
+
+  it.each([
+    ["一个 drained 事件带两条 guide", true, false],
+    ["每条 guide 各一个 drained 事件（冷恢复形态）", false, false],
+    ["每条 guide 各一个 drained 事件且逐事件原子发布（live 形态）", false, true],
+  ])("M06f：%s时，相邻 guide 共用第一条开启的工作段", (_label, together, atomic) => {
+    const log = new EventLog();
+    const at = (seconds: number) => ({
+      turnId: "turn-1",
+      timestampMs: 1_700_000_000_000 + seconds * 1000,
+    });
+    const text = (delta: string, seconds: number) => {
+      log.push(
+        SessionEventType.ModelStreaming,
+        { kind: "text_start", delta: "", done: false },
+        at(seconds),
+      );
+      log.push(
+        SessionEventType.ModelStreaming,
+        { kind: "text_delta", delta, done: false },
+        at(seconds),
+      );
+      log.push(
+        SessionEventType.ModelStreaming,
+        { kind: "text_end", delta: "", done: false },
+        at(seconds),
+      );
+    };
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 }, at(1));
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "问题一" }, at(2));
+    text("回答一", 3);
+    const guides = ["g1", "g2"].map((id) => ({
+      pendingInputId: `p-${id}`,
+      messageId: `msg-${id}`,
+      text: `引导-${id}`,
+      delivery: "guide" as const,
+    }));
+    const drain = (items: typeof guides) =>
+      log.push(
+        SessionEventType.TurnSteerDrained,
+        {
+          pendingInputIds: items.map((item) => item.pendingInputId),
+          injectedMessageIds: items.map((item) => item.messageId),
+          drainedInputs: items,
+          targetTurnId: "turn-1",
+        },
+        at(7),
+      );
+    if (together) drain(guides);
+    else for (const guide of guides) drain([guide]);
+    text("回答二", 9);
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "", tokenCount: 0, toolCallCount: 0, duration: 9000, resultType: "success" },
+      at(11),
+    );
+
+    const projection = new ProductProjection("session-1", "epoch-1");
+    for (const event of log.events) {
+      if (atomic) projection.applyEventAtomically(event, () => true);
+      else projection.applyEvent(event);
+    }
+    const rows = projection.getSnapshot().rows.window;
+    expect(rows.find((row) => row.kind === "turnHeader")).toMatchObject({
+      workSegments: [
+        {
+          segmentId: "turn-1:initial",
+          startedAt: 1_700_000_002_000,
+          endedAt: 1_700_000_007_000,
+          activeMs: 5000,
+        },
+        {
+          segmentId: "msg-g1",
+          triggerEntityId: "msg-g1",
+          startedAt: 1_700_000_007_000,
+          endedAt: 1_700_000_011_000,
+          activeMs: 4000,
+        },
+      ],
+    });
+    expect(
+      rows
+        .filter((row) => row.kind === "userInput" || row.kind === "assistantText")
+        .map((row) => (row.kind === "userInput" || row.kind === "assistantText" ? row.text : "")),
+    ).toEqual(["问题一", "回答一", "引导-g1", "引导-g2", "回答二"]);
+  });
+
+  it("M06f：两次取出之间有一个没有可见行的模型 step 时，后一条 guide 开新工作段", () => {
+    const log = new EventLog();
+    const at = (seconds: number) => ({
+      turnId: "turn-1",
+      timestampMs: 1_700_000_000_000 + seconds * 1000,
+    });
+    const guide = (id: string, seconds: number) =>
+      log.push(
+        SessionEventType.TurnSteerDrained,
+        {
+          pendingInputIds: [`p-${id}`],
+          injectedMessageIds: [`msg-${id}`],
+          drainedInputs: [
+            {
+              pendingInputId: `p-${id}`,
+              messageId: `msg-${id}`,
+              text: `引导-${id}`,
+              delivery: "guide" as const,
+            },
+          ],
+          targetTurnId: "turn-1",
+        },
+        at(seconds),
+      );
+    const stream = (kind: string, delta: string, seconds: number) =>
+      log.push(SessionEventType.ModelStreaming, { kind, delta, done: false }, at(seconds));
+    const text = (delta: string, seconds: number) => {
+      stream("text_start", "", seconds);
+      stream("text_delta", delta, seconds);
+      stream("text_end", "", seconds);
+    };
+    log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 200_000 }, at(1));
+    log.push(SessionEventType.TurnStarted, { turnNumber: 1, input: "问题一" }, at(2));
+    text("回答一", 3);
+    guide("g1", 5);
+    // 这一步只有隐藏内容：没有任何可见行，但它是两次取出之间的模型 step。
+    stream("start", "", 6);
+    log.push(
+      SessionEventType.ModelComplete,
+      {
+        content: "",
+        stopReason: "end_turn",
+        querySource: "main_turn",
+        toolCallCount: 0,
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      },
+      at(6),
+    );
+    guide("g2", 7);
+    text("回答二", 9);
+    log.push(
+      SessionEventType.TurnComplete,
+      { response: "", tokenCount: 0, toolCallCount: 0, duration: 9000, resultType: "success" },
+      at(11),
+    );
+
+    const rows = runAll(log.events).projection.getSnapshot().rows.window;
+    expect(rows.find((row) => row.kind === "turnHeader")).toMatchObject({
+      workSegments: [
+        { segmentId: "turn-1:initial", startedAt: 1_700_000_002_000, endedAt: 1_700_000_005_000 },
+        {
+          segmentId: "msg-g1",
+          triggerEntityId: "msg-g1",
+          startedAt: 1_700_000_005_000,
+          endedAt: 1_700_000_007_000,
+        },
+        {
+          segmentId: "msg-g2",
+          triggerEntityId: "msg-g2",
+          startedAt: 1_700_000_007_000,
+          endedAt: 1_700_000_011_000,
+        },
+      ],
+    });
   });
 
   it("兼容：旧 runtime 事件（无 drainedInputs/delivery）回退 queue 查表，按 followupMode 兜底切轮", () => {
@@ -10241,5 +10580,26 @@ describe("userInput 行的 epilogueStart（热路径）", () => {
     const rows = projection.getSnapshot().rows.window.filter((row) => row.kind === "userInput");
     expect(rows[0]).toMatchObject({ text: "Summarize\n\n---\nStandard", epilogueStart: 9 });
     expect(rows[1]).not.toHaveProperty("epilogueStart");
+  });
+});
+
+// FORK(reload-command): 保留 typed refresh，不能降级成可编辑的普通输入。
+it("projects settings refresh as a maintenance queue item", () => {
+  const log = new EventLog();
+  log.push(SessionEventType.SessionCreated, { mode: "default", contextWindow: 1000 });
+  log.push(SessionEventType.TurnSteerQueued, {
+    pendingInputId: "queue-refresh",
+    inputId: "command-refresh",
+    input: "/refresh",
+    inputPreview: "/refresh",
+    inputSize: 8,
+    targetTurnId: "turn-existing",
+    queueLength: 1,
+    delivery: "queue",
+    commandKind: "refresh",
+  });
+  const { projection } = runAll(log.events);
+  expect(projection.getSnapshot().queue.items[0]).toMatchObject({
+    kind: "refresh", text: "/refresh", sourceCommandId: "command-refresh",
   });
 });

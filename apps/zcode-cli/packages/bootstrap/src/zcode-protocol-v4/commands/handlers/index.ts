@@ -11,8 +11,8 @@ import { sessionFlowHandlers } from "./session-flow.js";
 import { sessionMgmtHandlers } from "./session-mgmt.js";
 import { selectionSideSessionHandlers } from "./selection-side-session.js";
 import { assistantFeedbackHandlers } from "./assistant-feedback.js";
-// FORK(reload-command): /reload 原生命令组（重读 fork 设置并就地重建提示词与工具面）
-import { reloadHandlers } from "./reload.js";
+// FORK(reload-command): /refresh 原生命令组（重读 fork 设置并就地重建提示词与工具面）
+import { refreshHandlers } from "./reload.js";
 import { highspeedMetricsHandlers } from "./highspeed-metrics.js";
 
 export const NATIVE_HANDLERS = {
@@ -26,7 +26,7 @@ export const NATIVE_HANDLERS = {
   ...forkEditRetryHandlers,
   ...fileRewindHandlers,
   ...assistantFeedbackHandlers,
-  ...reloadHandlers,
+  ...refreshHandlers,
   ...highspeedMetricsHandlers,
 } as const;
 

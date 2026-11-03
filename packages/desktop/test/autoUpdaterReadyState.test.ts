@@ -288,7 +288,6 @@ describe("autoUpdater ready state sync", () => {
     );
   });
 
-
   it("开发态默认不初始化自动更新", async () => {
     appMock.isPackaged = false;
 
@@ -319,7 +318,6 @@ describe("autoUpdater ready state sync", () => {
     expect(autoUpdaterMock.checkForUpdates).toHaveBeenCalledTimes(1);
     expect(loggerInfoMock).toHaveBeenCalledWith("[auto-update] dev update enabled version=3.3.1");
   });
-
 
   it("preview 冷启动检查不会把合法 preview 更新误判为 stale", async () => {
     settingServiceMock.get.mockResolvedValue({
@@ -678,11 +676,7 @@ describe("autoUpdater ready state sync", () => {
 
     expect(
       resolveUpdateFeedSourceFromStartupConfig({
-        argv: [
-          "ZCode",
-          "--zcode-update-feed-url",
-          "https://arg.example.test/updates/custom-feed",
-        ],
+        argv: ["ZCode", "--zcode-update-feed-url", "https://arg.example.test/updates/custom-feed"],
         env: {
           ZCODE_UPDATE_FEED_URL: "https://env.example.test/updates/custom-feed",
         },
@@ -692,10 +686,7 @@ describe("autoUpdater ready state sync", () => {
     });
     expect(
       resolveUpdateFeedSourceFromStartupConfig({
-        argv: [
-          "ZCode",
-          "--zcode-update-feed-url=https://equals.example.test/updates/custom-feed",
-        ],
+        argv: ["ZCode", "--zcode-update-feed-url=https://equals.example.test/updates/custom-feed"],
         env: {},
       }),
     ).toEqual({
@@ -713,7 +704,40 @@ describe("autoUpdater ready state sync", () => {
     });
   });
 
+  it("更新源参数遇到 -- 后不再解释外部 URL 的附带开关", async () => {
+    appMock.isPackaged = false;
+    const { resolveUpdateFeedSourceFromStartupConfig } = await import("../src/main/autoUpdater.js");
+    expect(
+      resolveUpdateFeedSourceFromStartupConfig({
+        argv: ["ZCode", "--", "--zcode-update-feed-url=https://untrusted.example.test/feed"],
+        env: {},
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveUpdateFeedSourceFromStartupConfig({
+        argv: ["ZCode", "--", "--zcode-update-feed-url", "https://untrusted.example.test/feed"],
+        env: { ZCODE_UPDATE_FEED_URL: "https://dev.example.test/feed" },
+      }),
+    ).toEqual({ url: "https://dev.example.test/feed" });
+  });
 
+  it("正式包忽略 argv、环境变量和内部传入的调试更新源", async () => {
+    const { initAutoUpdater, resolveUpdateFeedSourceFromStartupConfig } =
+      await import("../src/main/autoUpdater.js");
+    expect(
+      resolveUpdateFeedSourceFromStartupConfig({
+        argv: ["ZCode", "--zcode-update-feed-url=https://untrusted.example.test/argv"],
+        env: { ZCODE_UPDATE_FEED_URL: "https://untrusted.example.test/env" },
+      }),
+    ).toBeUndefined();
+    await initAutoUpdater({ updateFeedSource: { url: "https://untrusted.example.test/internal" } });
+    expect(autoUpdaterMock.setFeedURL).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "generic",
+        url: "https://github.com/Rain-kl/ZCode/releases/latest/download/",
+      }),
+    );
+  });
 
   it("下载完成后会缓存版本，并补发给后续窗口", async () => {
     const firstWindow = {
@@ -2153,7 +2177,7 @@ describe("autoUpdater ready state sync", () => {
     );
   });
 
-  it("Windows 安装更新恢复 electron-updater 原生入口，不再启动 PowerShell launcher", async () => {
+  it("Windows 正式包允许未签名更新进入原生安装，不启动签名校验或 PowerShell launcher", async () => {
     mockProcessPlatform("win32");
     const onBeforeQuitAndInstall = vi.fn();
     const { initAutoUpdater } = await import("../src/main/autoUpdater.js");
@@ -2498,7 +2522,6 @@ describe("autoUpdater ready state sync", () => {
     });
   });
 
-
   it("开发态自动更新安装请求会重启当前 dev app", async () => {
     mockProcessPlatform("darwin");
     appMock.isPackaged = false;
@@ -2529,8 +2552,4 @@ describe("autoUpdater ready state sync", () => {
       "[auto-update] dev update install fallback: relaunch app",
     );
   });
-
-
-
-
 });

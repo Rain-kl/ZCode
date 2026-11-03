@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BashInputJsonSchema, BashOutputJsonSchema } from "@zcode/contracts";
 import { bashToolEntry } from "../src/tool/handlers/bash.js";
 import { editToolEntry } from "../src/tool/handlers/edit.js";
@@ -11,13 +11,6 @@ import { writeToolEntry } from "../src/tool/handlers/write.js";
 import { formatTaskNotification } from "../src/runtime-task/notification.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { buildExploreSystemPrompt } from "../src/subagent/explore.js";
-
-function normalizeWebSearchDynamicDate(description: string | undefined): string {
-  return (description ?? "").replace(
-    /The current month is [A-Z][a-z]+ \d{4}/u,
-    "The current month is <current-month>",
-  );
-}
 
 const DIRECT_BRANCH_REFERENCE_SEARCH_DESCRIPTIONS = {
   Glob: 'Fast file pattern matching. Supports glob patterns like "**/*.js" or "src/**/*.ts". Returns matching file paths sorted by modification time.',
@@ -38,15 +31,16 @@ const DIRECT_BRANCH_EXPECTED_PROVIDER_TOOL_ORDER = [
   "Glob",
   "Grep",
   "Read",
+  // ToolSearch 与名单内其他工具一起按名字排序。
   "Skill",
   "TaskOutput",
   "TaskStop",
   "TodoRead",
   "TodoWrite",
+  "ToolSearch",
   "WebFetch",
   "WebSearch",
   "Write",
-  "ToolSearch",
   "DeferredToolCall",
   "spawn_agent",
   "send_message",
@@ -84,11 +78,13 @@ const EMBEDDED_SEARCH_EXPECTED_PROVIDER_TOOL_ORDER =
   );
 
 const SOURCE_DERIVED_WEBFETCH_DESCRIPTION = [
-  "Fetches a URL, converts the page to markdown, and answers `prompt` against it using a small fast model.",
+  "Fetches a URL and returns the page content as markdown (plain text for non-HTML).",
   "",
   "- Fails on authenticated/private URLs — use an authenticated MCP tool or `gh` for those instead.",
+  "- Fails on localhost and other hostnames without a dot; for a local server, use curl via Bash.",
   "- HTTP is upgraded to HTTPS. Cross-host redirects are returned to you rather than followed; call again with the redirect URL.",
   "- Responses are cached for 15 minutes per URL.",
+  "- Very large pages are truncated to a preview; the full content is saved to a file and its path is reported in the result.",
 ].join("\n");
 
 const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
@@ -96,13 +92,25 @@ const SOURCE_DERIVED_READ_SHORT_DESCRIPTION = [
   "",
   "- `file_path` must be an absolute path.",
   "- Reads up to 2000 lines by default.",
-  "- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters",
+  "- When you already know which part of the file you need, only read that part. This can be important for larger files.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
   // video 输入一期新增能力行：Read 支持读取视频作为模型输入。
   "- Reads videos (MP4, MOV, WEBM, …) and presents them as video input (subject to ZCode's video input limit).",
   "- Reading a directory, a missing file, or an empty file returns an error or system reminder rather than content.",
   "- Do NOT re-read a file you just edited to verify — Edit/Write would have errored if the change failed, and the harness tracks file state for you.",
+].join("\n");
+
+const EXPECTED_SKILL_DESCRIPTION = [
+  "Invoke a skill.",
+  "",
+  "A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in a system-reminder listing with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach. Users may also ask for one by name (`/<name>`, or \"slash command\"); that's a request to invoke it.",
+  "",
+  "- `skill`: exact name from the listing, no leading slash. Plugin skills use `plugin:skill`.",
+  "- `args`: optional arguments to pass through.",
+  "",
+  "Only names from the listing (or that the user typed explicitly) are valid. Built-in CLI commands (`/help`, `/clear`, …) aren't skills. If a `<command-name>` block is already present this turn, the skill is loaded — follow it directly rather than calling again.",
+  "",
 ].join("\n");
 
 function getSchemaPath(schema: unknown, path: readonly string[]): unknown {
@@ -159,6 +167,48 @@ describe("tool contract declarations", () => {
     ).toEqual(["Bash", "Read", "TodoRead", "TodoWrite", "Task", "ReadSessionContext"]);
   });
 
+  it("sorts MCP tools by name after the local-only tools", () => {
+    expect(
+      orderProviderVisibleToolContracts([
+        { name: "mcp__beta__search" },
+        { name: "Bash" },
+        { name: "mcp__alpha__write" },
+        { name: "ReadSessionContext" },
+        { name: "mcp__alpha__read" },
+        { name: "Read" },
+      ]).map((tool) => tool.name),
+    ).toEqual([
+      "Bash",
+      "Read",
+      "ReadSessionContext",
+      "mcp__alpha__read",
+      "mcp__alpha__write",
+      "mcp__beta__search",
+    ]);
+  });
+
+  it("sorts MCP tools by the same rule whatever the process locale is", () => {
+    // 模拟默认语言为 da-DK 的进程：不带 locale 的比较按 da-DK，丹麦语把 "aa" 排在 "z" 之后。
+    const localeCompare = vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (
+      this: string,
+      other: string,
+      locales?: Intl.LocalesArgument,
+    ) {
+      return new Intl.Collator(locales ?? "da-DK").compare(this, other);
+    });
+    try {
+      expect(new Intl.Collator("da-DK").compare("mcp__x__aa_tool", "mcp__x__b_tool")).toBe(1);
+      expect(
+        orderProviderVisibleToolContracts([
+          { name: "mcp__x__b_tool" },
+          { name: "mcp__x__aa_tool" },
+        ]).map((tool) => tool.name),
+      ).toEqual(["mcp__x__aa_tool", "mcp__x__b_tool"]);
+    } finally {
+      localeCompare.mockRestore();
+    }
+  });
+
   it("orders optional Workflow with the shared provider tool partition when it is present", () => {
     expect(
       orderProviderVisibleToolContracts([
@@ -210,11 +260,6 @@ describe("tool contract declarations", () => {
         toolName: "WebFetch",
         path: ["properties", "url", "description"],
         expected: "The URL to fetch content from",
-      },
-      {
-        toolName: "WebFetch",
-        path: ["properties", "prompt", "description"],
-        expected: "The prompt to run on the fetched content",
       },
       {
         toolName: "WebSearch",
@@ -324,8 +369,8 @@ describe("tool contract declarations", () => {
     expect(byName.get("WebFetch")?.permission?.sideEffectScope).toBe("network");
     expect(byName.get("WebFetch")?.needsApproval).toBe(true);
     expect(byName.get("WebFetch")?.description).toBe(SOURCE_DERIVED_WEBFETCH_DESCRIPTION);
-    expect(normalizeWebSearchDynamicDate(byName.get("WebSearch")?.description)).toContain(
-      "Search the web. Returns result blocks with titles and URLs. US-only.",
+    expect(byName.get("WebSearch")?.description).toContain(
+      "Search the web. Returns result blocks with titles and URLs.",
     );
     expect(byName.get("TodoRead")?.permission?.sideEffectScope).toBe("none");
     expect(byName.get("TodoWrite")?.permission?.sideEffectScope).toBe("session");
@@ -383,7 +428,8 @@ describe("tool contract declarations", () => {
         "",
         "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
         "- IMPORTANT: Avoid using this tool to run `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
-        "- `timeout` is in milliseconds: default 120000, max 600000.",
+        "- Command output is displayed to you, not reliably to the user.",
+        "- `timeout` is in milliseconds: default 120000, max 600000 for a foreground command.",
         "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
         "",
         "# Git",
@@ -392,7 +438,7 @@ describe("tool contract declarations", () => {
         "- Commit or push only when the user asks. If on the default branch, branch first.",
       ].join("\n"),
     );
-    expect(byName.get("Skill")?.description).toContain("available skills");
+    expect(byName.get("Skill")?.description).toBe(EXPECTED_SKILL_DESCRIPTION);
     expect(byName.get("Skill")?.inputSchema).not.toHaveProperty("_def");
     const workflow = byName.get("Workflow");
     if (workflow) {
@@ -441,8 +487,9 @@ describe("tool contract declarations", () => {
     expect(notification).toContain("<tool-use-id>toolu_123</tool-use-id>");
     expect(notification).toContain("<output-file>/tmp/agent_done/output.txt</output-file>");
     expect(notification).toContain("<status>completed</status>");
+    // 只转义 & < >，引号原样；summary 后固定跟一行 <note>。
     expect(notification).toContain(
-      "<summary>Agent code-reviewer task &quot;review diff&quot; completed.</summary>",
+      '<summary>Agent code-reviewer task "review diff" completed.</summary>\n<note>A task-notification fires each time this agent stops',
     );
     expect(notification).toContain("<result>Done &lt;ok&gt;</result>");
     expect(notification).toContain(
@@ -571,13 +618,12 @@ describe("tool contract declarations", () => {
 
     const skillDescription = byName.get("Skill")?.description ?? "";
     const normalizedSkillDescription = skillDescription.toLowerCase();
-    expect(skillDescription).toContain("available skills");
+    expect(normalizedSkillDescription).toContain("available skills");
     expect(skillDescription).toContain("slash command");
     expect(skillDescription).toContain("exact name");
-    expect(skillDescription).toContain("Never guess or invent");
-    expect(normalizedSkillDescription).toContain("blocking requirement");
-    expect(normalizedSkillDescription).toContain("already been loaded");
-    expect(skillDescription).toContain("built-in CLI commands");
+    expect(skillDescription).toContain("Only names from the listing");
+    expect(skillDescription).toContain("the skill is loaded");
+    expect(normalizedSkillDescription).toContain("built-in cli commands");
   });
 
   it("projects preview guidance and direct Explore search instructions", () => {
@@ -680,7 +726,8 @@ describe("tool contract declarations", () => {
         "",
         "- Working directory persists between calls, but prefer absolute paths — `cd` in a compound command can trigger a permission prompt. Shell state (env vars, functions) does not persist; the shell is initialized from the user's profile.",
         "- IMPORTANT: Avoid using this tool to run `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.",
-        "- `timeout` is in milliseconds: default 120000, max 600000.",
+        "- Command output is displayed to you, not reliably to the user.",
+        "- `timeout` is in milliseconds: default 120000, max 600000 for a foreground command.",
         "- `run_in_background` runs the command detached: it keeps running across turns and re-invokes you when it exits. No `&` needed.",
         "",
         "# Git",
@@ -757,9 +804,7 @@ describe("tool contract declarations", () => {
     expect(editInput.properties.file_path.description).not.toMatch(/relative|session cwd/iu);
     const webFetchInput = byName.get("WebFetch")?.inputSchema as any;
     expect(webFetchInput.properties.url.description).toBe("The URL to fetch content from");
-    expect(webFetchInput.properties.prompt.description).toBe(
-      "The prompt to run on the fetched content",
-    );
+    expect(webFetchInput.properties).not.toHaveProperty("prompt");
     const webSearchInput = byName.get("WebSearch")?.inputSchema as any;
     expect(webSearchInput.properties.query.description).toBe("The search query to use");
     expect(webSearchInput.properties.allowed_domains.description).toBe(

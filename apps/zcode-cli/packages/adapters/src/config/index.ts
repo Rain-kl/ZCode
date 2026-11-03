@@ -18,6 +18,14 @@ import {
 type Handler<K extends ConfigKey> = (value: ConfigValue<K>, prev: ConfigValue<K>) => void;
 type AllHandler = (key: ConfigKey, value: unknown, prev: unknown) => void;
 
+// FORK-BEGIN(codex-collaboration)
+// 动态配置调用也必须遵守公开键集合，防止被删除的开关继续被存储为“成功”。
+const configKeys: ReadonlySet<string> = new Set(Object.values(ConfigKey));
+function assertConfigKey(key: string): void {
+  if (!configKeys.has(key)) throw new Error(`Unknown config key: ${key}`);
+}
+// FORK-END(codex-collaboration)
+
 // ============================================================
 // Config Store - Internal state
 // ============================================================
@@ -39,6 +47,8 @@ class ConfigStore {
   }
 
   get<K extends ConfigKey>(key: K): ConfigValue<K> | undefined {
+    // FORK(codex-collaboration): 非类型化调用不能绕过已删除配置键的拒绝边界。
+    assertConfigKey(key);
     const entry = this.store.get(key);
     return entry?.value as ConfigValue<K>;
   }
@@ -76,6 +86,12 @@ class ConfigStore {
   }
 
   merge(config: RuntimeConfigPatch, scope: ConfigScope): void {
+    // FORK-BEGIN(codex-collaboration)
+    // 在写入任何 patch 前校验有限 feature 键，避免部分成功后才发现无效开关。
+    for (const feature of Object.keys(config.features ?? {})) {
+      assertConfigKey(`features.${feature}`);
+    }
+    // FORK-END(codex-collaboration)
     // FORK(codex-collaboration): patch 按当前值补全，保留层级覆盖的已接受策略。
     if (config.subagents)
       this.set(
@@ -127,8 +143,6 @@ class ConfigStore {
         this.set(ConfigKey.FeatureCompact, config.features.compact, scope);
       if (config.features.rewind !== undefined)
         this.set(ConfigKey.FeatureRewind, config.features.rewind, scope);
-      if (config.features.subagent !== undefined)
-        this.set(ConfigKey.FeatureSubagent, config.features.subagent, scope);
       if (config.features.memory !== undefined)
         this.set(ConfigKey.FeatureMemory, config.features.memory, scope);
       if (config.features.skill !== undefined)
@@ -294,7 +308,6 @@ export class ConfigPortImpl implements ConfigPort {
       features: {
         compact: this.store.get(ConfigKey.FeatureCompact) ?? true,
         rewind: this.store.get(ConfigKey.FeatureRewind) ?? true,
-        subagent: this.store.get(ConfigKey.FeatureSubagent) ?? true,
         memory: this.store.get(ConfigKey.FeatureMemory) ?? true,
         skill: this.store.get(ConfigKey.FeatureSkill) ?? true,
         mcp: this.store.get(ConfigKey.FeatureMcp) ?? true,
@@ -408,8 +421,6 @@ function getDefaultValue(key: ConfigKey): unknown {
       return defaults.features.compact;
     case ConfigKey.FeatureRewind:
       return defaults.features.rewind;
-    case ConfigKey.FeatureSubagent:
-      return defaults.features.subagent;
     case ConfigKey.FeatureMemory:
       return defaults.features.memory;
     case ConfigKey.FeatureSkill:

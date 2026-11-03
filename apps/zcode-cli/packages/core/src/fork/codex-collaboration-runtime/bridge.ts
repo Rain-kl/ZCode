@@ -5,6 +5,9 @@ import {
   createMessageId,
   createSessionEvent,
   SessionEventType,
+  CoreErrorType,
+  createCoreError,
+  isCoreError,
   type SessionId,
   type CollaborationConfig,
   type CollaborationToolPort,
@@ -35,6 +38,7 @@ import { createRuntimeMailbox } from "./mailbox.js";
 import { prepareCollaborationTurn } from "./admission.js";
 import { prepareChild } from "./prepared-child.js";
 import { CollaborationError } from "../codex-collaboration/contract.js";
+import { selectExecutionErrorMessage } from "../../errors/error-payload.js";
 async function withRuntimeErrorContext<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -71,12 +75,15 @@ export function createRuntimeCollaborationBinding(
   const preparingBrowsers = new Map<string, BrowserControlPort>();
   const bindings = new Map<string, RuntimeCollaborationBinding>();
   const mailboxes = new Map<string, ReturnType<typeof createRuntimeMailbox>>();
-  const runningCommands = new Map<string, Promise<RunResult>>();
+  const runningCommands = new Map<
+    string,
+    { completion: Promise<RunResult>; signal: AbortSignal }
+  >();
   async function drainCommand(agentId: string) {
     const command = runningCommands.get(agentId);
     // 这里只观察 IO 已成功或失败结算；原始拒绝继续由 admission.run 返回 controller/turn 错误链。
     // 不能等 controller.finish：release 本身位于 controller 的串行通道内。
-    if (command) await Promise.allSettled([command]);
+    if (command) await Promise.allSettled([command.completion]);
   }
   const published = new Map<string, string>();
   function hasRunningWork(path: string): boolean {
@@ -92,6 +99,12 @@ export function createRuntimeCollaborationBinding(
   }
   const savedEntry = () =>
     (savedRoot ??= readCollaborationRootEntry(rootRuntime.sessionStore, rootRuntime.sessionId));
+  function getAgentStatus(agentId: string) {
+    // 冷文件里的 running 不是实时存活证据；只读已建立 controller 的当前快照，不触发 ready。
+    if (!controller) return undefined;
+    return snapshot.agents.find((agent) => agent.agentId === agentId && agent.path !== "/root")
+      ?.status;
+  }
   function role(
     runtime: AgentRuntimeInternal,
     path: string,
@@ -171,11 +184,34 @@ export function createRuntimeCollaborationBinding(
           cancel: () => admission.cancel(),
           async run() {
             const command = admission.run();
-            runningCommands.set(identity.agentId, command);
+            const handle = { completion: command, signal };
+            runningCommands.set(identity.agentId, handle);
             try {
               return await command;
+            } catch (error) {
+              // 普通 turn 的 wrapper 摘要不含真正原因；在 runtime 边界复用既有正文选择，保留整条原 cause。
+              // 纯 controller 只读 Error.message，不能让其依赖 runtime error payload 或丢掉 ModelError 身份。
+              if (error instanceof Error) {
+                const message = selectExecutionErrorMessage(error);
+                if (message !== error.message)
+                  throw createCoreError(
+                    isCoreError(error) ? error.type : CoreErrorType.UnknownError,
+                    message,
+                    {
+                      cause: error,
+                      ...(isCoreError(error)
+                        ? {
+                            context: error.context,
+                            retryable: error.retryable,
+                            recoverable: error.recoverable,
+                          }
+                        : {}),
+                    },
+                  );
+              }
+              throw error;
             } finally {
-              if (runningCommands.get(identity.agentId) === command)
+              if (runningCommands.get(identity.agentId) === handle)
                 runningCommands.delete(identity.agentId);
             }
           },
@@ -280,7 +316,8 @@ export function createRuntimeCollaborationBinding(
               handle as unknown as import("../../runtime/agent-runtime.js").AgentRuntime;
             child.beginShutdown();
             await drainCommand(identity.agentId);
-            await child.closeBrowserSession({ propagateErrors: true });
+            // 重启要求等待 child 全部所属工作与真实写入，不能只释放浏览器。
+            await child.close();
             handles.delete(identity.agentId);
             bindings.delete(identity.agentId);
             mailboxes.delete(identity.agentId);
@@ -321,22 +358,26 @@ export function createRuntimeCollaborationBinding(
   }
   const ready = () => (startup ??= initialize());
   function scheduleProjection() {
-    projectionTail = projectionTail.then(async () => {
-      try {
-        while (pendingProjections.length) {
-          await publish(pendingProjections[0]!);
-          pendingProjections.shift();
+    // 终态 register 早于投影移出队列，retire 在此间醒来会再次等待；真实 flight 必须入账，
+    // 由 ledger 在整批移出后发出最终唤醒，不能用延时或轮询掩盖所有权交接。
+    projectionTail = rootRuntime.trackResidencyBlockingWork(
+      projectionTail.then(async () => {
+        try {
+          while (pendingProjections.length) {
+            await publish(pendingProjections[0]!);
+            pendingProjections.shift();
+          }
+          projectionError = undefined;
+        } catch (error) {
+          // 只截获异步投影失败以避免 unhandled；保留待重放快照，并由所有 await 边界明确抛出。
+          projectionError = error;
+          rootRuntime.logger?.error(
+            "Collaboration projection failed; durable snapshot retained for retry",
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
-        projectionError = undefined;
-      } catch (error) {
-        // 只截获异步投影失败以避免 unhandled；保留待重放快照，并由所有 await 边界明确抛出。
-        projectionError = error;
-        rootRuntime.logger?.error(
-          "Collaboration projection failed; durable snapshot retained for retry",
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-    });
+      }),
+    );
   }
   async function awaitProjection() {
     scheduleProjection();
@@ -520,10 +561,14 @@ export function createRuntimeCollaborationBinding(
     };
     const binding: RuntimeCollaborationBinding = {
       port,
+      getAgentStatus,
       hasRunningWork: () => hasRunningWork(identity.path),
       async beforeModel(tools) {
         const tree = await ready();
         await awaitProjection();
+        // 中断后 release 在 controller lane 等原 run，旧模型边界不能再排到 release 后形成互等。
+        // 原准入 signal 是执行资源句柄；检查与 deliver 同步 enqueue 之间不能插入 await。
+        runningCommands.get(identity.agentId)?.signal.throwIfAborted();
         await tree.deliver(identity.agentId, identity.agentId);
         const entries = mailboxes.get(identity.agentId)?.consume() ?? [];
         return { entries, role: role(runtime, identity.path, tools, config) };
@@ -564,6 +609,7 @@ export function createRuntimeCollaborationBinding(
   };
   return {
     port,
+    getAgentStatus,
     hasRunningWork: () => hasRunningWork("/root"),
     beforeModel: async (tools) => {
       if (!startup && !(await savedEntry())) {

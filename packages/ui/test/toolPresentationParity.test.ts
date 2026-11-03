@@ -12,7 +12,8 @@ const cases = [
   ["Read", { file_path: "/Users/dev/example.ts" }, "Read"],
   ["Bash", { command: "echo hello" }, "Terminal"],
   ["Skill", { skill: "test-skill" }, "Skill"],
-  ["Agent", { subagent_type: "researcher", description: "Investigate" }, "researcher"],
+  // 六工具切换后只验证新 spawn 合同；旧 Agent 已删除，不能靠恢复展示兼容满足断言。
+  ["spawn_agent", { task_name: "researcher", message: "Investigate" }, "researcher"],
 ] as const;
 describe("common readonly tool renderer", () => {
   for (const [toolName, input, label] of cases)

@@ -11,6 +11,22 @@ import type { McpToolDescriptor, PluginReferenceCatalog } from "@zcode/contracts
 
 const MCP_SESSION_OAUTH_AUTHORIZATION_TIMEOUT_MS = 15_000;
 
+export async function refreshWorkspaceTrustAdmission(
+  runtime: AgentRuntimeInternal,
+  traceContext: TraceContext,
+): Promise<void> {
+  try {
+    await runtime.mcpPort?.refreshWorkspaceTrustAdmission?.();
+  } catch (error) {
+    // 提示发布失败不能阻断普通聊天；执行权限仍由 MCP gate 独立检查。
+    runtime.logger?.warn("MCP trust admission publication failed", {
+      ...traceContextToLogContext(traceContext),
+      event: "mcp.trust.admission.failed",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /**
  * 只有同时携带 resolver 注入的官方 plugin id 和本进程私有 authority 的 server 才能共享
  * Computer Use 项目授权。server 名、tool 名和 manifest env 都可被第三方仿造，不能单独作为信任依据。
@@ -73,6 +89,7 @@ export function startMcpStartup(
     .connectConfiguredServers(servers, {
       // authorization_code MCP 无人完成浏览器授权时，session 启动过去会等默认 5 分钟，
       // 导致模型请求迟迟不发出；session 只等 15s，授权入口由设置页 mcp/list 展示。
+      signal: this.shutdownSignal,
       oauthAuthorizationTimeoutMs: MCP_SESSION_OAUTH_AUTHORIZATION_TIMEOUT_MS,
       trace: traceContext,
       workingDirectory: this.workingDirectory,
@@ -135,8 +152,10 @@ export async function initializeMcp(
   const serverCount = Object.keys(this.config.mcp?.servers ?? {}).length;
 
   try {
+    await refreshWorkspaceTrustAdmission(this, traceContext);
     const snapshot = await startup;
-    // FORK(reload-command): /reload 复用已发现的描述符，不重连 MCP 服务。
+    this.shutdownSignal.throwIfAborted();
+    // FORK(reload-command): /refresh 复用已发现的描述符，不重连 MCP 服务。
     this.mcpToolDescriptors = snapshot.tools;
     const registered = registerMcpTools(this.registry, mcpPort, snapshot.tools, {
       allowedTools: this.config.toolAllowlist,
@@ -247,7 +266,7 @@ export async function refreshMcpToolsIfChanged(
 }
 
 /**
- * FORK(reload-command): 按当前 `config.toolAllowlist` 重新过滤 MCP 工具（`/reload` 的工具面差量）。
+ * FORK(reload-command): 按当前 `config.toolAllowlist` 重新过滤 MCP 工具（`/refresh` 的工具面差量）。
  *
  * 不重连：复用启动期描述符快照（MCP 服务器配置本身是会话创建期配置，增删/改服务器仍需新会话）；
  * 先把上一次注册的名字显式注销，再按新名单重新注册——收窄方向注册表不会自动回收，

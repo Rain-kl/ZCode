@@ -107,7 +107,8 @@ pnpm fork:check-removals
 同步完成后逐条执行，**全部通过**才算完成：
 
 ```bash
-pnpm test:unit            # 依赖契约与功能单测（依赖 API 变更的第一信号）
+pnpm test:engineering:affected # 受影响工程测试，不恢复已退役的 App 业务测试
+pnpm test:unit:contracts # 显式 fork Vitest 契约项目
 pnpm test:unit:fork       # fork 的 node:test 契约与功能单测
 pnpm typecheck
 pnpm lint
@@ -115,11 +116,12 @@ pnpm architecture:check
 pnpm fork:check-removals
 ```
 
-外加**受影响功能的验收场景**（见各 `docs/features/<feature-id>/design.md` 的验收场景小节）。
+外加受影响 CLI 包的定向测试和**受影响功能的验收场景**（见各 `docs/features/<feature-id>/design.md` 的验收场景小节）。
+完整 `pnpm test:unit`（工程与 fork 契约合集）仅在用户明确要求时运行；不可用它恢复上游退役的 App 业务 UT。
 最后把同步日期、上游提交范围、冲突文件与处理方式记入对应产品条目的「上游同步记录」；
 非产品类冲突写进合并提交信息。
 
-`pnpm test:unit` 变红时先分清两件事，处理方式完全不同：
+依赖契约测试变红时先分清两件事，处理方式完全不同：
 
 - **上游有意变更**（API 形状/默认值/语义改了）→ 改我们的适配层，并同步更新测试与文档；
 - **上游回归**（不该变的东西变了）→ 保留断言，在提交信息里写清，必要时向上游反馈。
@@ -138,5 +140,5 @@ pnpm fork:check-removals
 | `fork:check-removals` 报「文件已复活」 | 把 `modify/delete` 冲突按保留上游解决了 | 确认该文件确实是刻意删除的，`git rm` 掉 |
 | `fork:check-removals` 报「必需内容缺失」 | 上游版本的文件覆盖了我们的接线 | 按 `docs/features/<id>/implementation.md` 重新贴回最小 diff |
 | `fork:check-removals` 报「符号/端点重新出现」 | 上游用新文件重新实现，或异地新增调用 | 走第 5 节：确认是否同一能力，以官方为准去重，并更新规则表 |
-| `pnpm test:unit` 某组失败且报模块找不到 | 该包测试用了打包器别名（如 `@/*`） | 检查 runner 是否传了该包的 tsconfig；仍失败则改用相对路径导入 |
-| 上游改了 `packages/desktop/src/main` 却没人发现类型错误 | 该工程不在 `pnpm typecheck` 覆盖内且带既有错误 | 单独跑 `npx tsc -b packages/desktop/tsconfig.main.json` 对照本次改动 |
+| `pnpm test:unit:fork` 某组失败且报模块找不到 | 该包测试用了打包器别名（如 `@/*`） | 检查 node:test runner 是否传了该包的 tsconfig；仍失败则改用相对路径导入 |
+| desktop main 类型检查被遗漏 | 未使用当前根 `pnpm typecheck`（已覆盖 main/host/E2E） | 运行根命令或定向 `pnpm exec tsc -b packages/desktop/tsconfig.main.json` 对照本次改动 |

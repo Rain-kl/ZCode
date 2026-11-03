@@ -172,9 +172,9 @@ describe("cold conversation three-source merge", () => {
     expect(row?.highspeed).not.toHaveProperty("shareExcludedReason");
   });
 
-  it("preserves SendMessage resumed subagent lifecycle that the transcript cannot synthesize", () => {
-    const foregroundTurnId = "runtime-turn-foreground-agent";
-    const turnId = "runtime-turn-send-message-resume";
+  it("preserves six-tool followup lifecycle with the immutable original spawn anchor", () => {
+    const foregroundTurnId = "runtime-turn-spawn-agent";
+    const turnId = "runtime-turn-followup-resume";
     const foreground = assistantMessage(
       "a-foreground",
       "u-foreground",
@@ -188,24 +188,22 @@ describe("cold conversation three-source merge", () => {
         sessionID: "s1" as never,
         messageID: "a-foreground" as never,
         type: "tool",
-        callID: "call-agent",
-        tool: "Agent",
+        callID: "call-spawn",
+        tool: "spawn_agent",
         state: {
           status: "completed",
           input: {
-            description: "前台任务",
-            prompt: "完成前台任务",
-            subagent_type: "general-purpose",
+            task_name: "worker",
+            message: "完成任务",
+            fork_turns: "none",
+            agent_type: "general-purpose",
           },
           output: JSON.stringify({
-            status: "completed",
-            agentId: "agent-resume",
-            agentType: "general-purpose",
-            childSessionId: "sess-child-resume",
-            description: "前台任务",
-            content: [{ type: "text", text: "前台完成" }],
+            agent_id: "agent-resume",
+            path: "/root/worker",
+            status: "running",
           }),
-          title: "Agent 前台任务",
+          title: "spawn_agent worker",
           metadata: {},
           time: { start: 1_001, end: 1_100 },
         },
@@ -228,7 +226,10 @@ describe("cold conversation three-source merge", () => {
           background: true,
           childSessionId: "sess-child-resume",
           description: "恢复到后台",
-          parentToolCallId: "call-send-message",
+          // 六工具按 accepted spawn 维持身份；followup 只能递增代次，不能改挂新的工具锚点。
+          parentToolCallId: "call-spawn",
+          generation: 2,
+          path: "/root/worker",
           resumed: true,
           status: "running",
         },
@@ -245,6 +246,8 @@ describe("cold conversation three-source merge", () => {
     expect(running.events.some((item) => item.type === SessionEventType.SubagentSpawned)).toBe(
       true,
     );
+    // 冷 transcript 只保留工具展示；没有 canonical graph 时不能从 output 猜测协作身份。
+    // 已验证的 resumed 内存事实仍需补入，不能因历史中出现 spawn 工具而一并去重。
     const runningSnapshot = reduce(running.events).getSnapshot();
     expect(
       runningSnapshot.rows.window.filter(
@@ -253,7 +256,9 @@ describe("cold conversation three-source merge", () => {
     ).toHaveLength(1);
     expect(runningSnapshot.rows.window.find((row) => row.kind === "subagent")).toMatchObject({
       childSessionId: "sess-child-resume",
-      parentToolCallId: "call-agent",
+      parentToolCallId: "call-spawn",
+      generation: 2,
+      path: "/root/worker",
       status: "running",
     });
     expect(runningSnapshot).toMatchObject({
@@ -274,7 +279,7 @@ describe("cold conversation three-source merge", () => {
         ...baseEvents,
         event(4, SessionEventType.BackgroundTaskCompleted, {
           taskId: "agent-resume",
-          toolName: "Agent",
+          toolName: "spawn_agent",
           taskKind: "subagent",
           childSessionId: "sess-child-resume",
           status: "cancelled",
@@ -285,7 +290,9 @@ describe("cold conversation three-source merge", () => {
           agentType: "general-purpose",
           background: true,
           childSessionId: "sess-child-resume",
-          parentToolCallId: "call-send-message",
+          parentToolCallId: "call-spawn",
+          generation: 2,
+          path: "/root/worker",
           status: "cancelled",
         }),
       ],

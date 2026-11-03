@@ -75,6 +75,9 @@ driver 只提供同步只读 hasUnreadMessages；不增加消息所有者或轮�
 模型随后调用 wait 时丢失已发生的唤醒。
 旧 features.subagent/subagents.enabled 不再控制六工具。内部 script workflow 的隔离由有限的
 createCollaborationBinding 宿主注入明确返回 undefined 表达，不创建另一棵树，也不恢复旧模型工具。
+旧 features.subagent 从 ConfigKey、值类型、默认值、文件schema与store映射全部删除。features 是有限
+开关集合，未知键明确报错；不能把删除的subagent键当未知字段静默strip。ConfigPort的untyped set/get
+同样拒绝未知key，merge拒绝旧features字段，不能“保存成功但无行为”。不迁移或修改用户配置文件。
 
 ## 展示与关闭
 
@@ -82,6 +85,13 @@ root 的驻留阻塞查询必须读同一 controller 的整树 running 记录与
 不能只读直系 child registry。child 的同一查询只读自身子树。interrupt 已提交终态但 command 尚未
 结算时仍阻止自动回收；root 派生事件尚在写入时也保持驻留。这些都是既有 owner 的只读查询，不新增
 驻留计时器、状态副本或调度路径。
+
+客户端冷读需要按精确agentId核对实时事实，不能拿任意Bash/兄弟的聚合running证明该child存活。
+公开AgentRuntime.getCollaborationAgentStatus(agentId): CollaborationAgentRuntimeStatus | undefined是同步
+只读入口：仅查询已初始化controller当前快照中的child；root/未知身份/未初始化均undefined。
+不触发ready、不读取持久entry、不启动模型或恢复树；保存running但尚未初始化的冷root仍undefined。
+interrupt提交后即返回interrupted，即使原IO未结算；真实completed/errored按同一canonical状态返回。
+该入口不暴露历史、资源句柄或第二状态owner，与整树资源驻留查询用途不同。
 
 spawn 模型输出只有 task_name。标准 executor 允许记录私有身份到结果 metadata，再由已有 settlement
 写入 completed ToolPart；adapter 不直接修改 pending part。崩溃发生在 accepted 与结果落盘之间时，
@@ -97,10 +107,20 @@ driver.release 必须先等待该身份已接受 admission.run 的原执行 Prom
 资源。abort 事件或 beginShutdown 只发出停止请求，不代表模型/工具已经停止访问共享依赖。
 driver 的临时 drain handle 只观察原 run 的成功/失败结算，不存 accepted/status，也不另设超时；
 执行错误继续沿原 run 返回 controller 和持久 turn 事件，真实 release 错误继续携带原 cause。
+driver把run拒绝交给纯controller前，复用既有wrapper-aware execution error解析选取用户可见具体正文。
+若普通turn包装隐藏了下层原因，用既有CoreError保留原拒绝为cause、原type/context/retryable/recoverable
+并替换摘要；原摘要已正确的ModelError等原样抛出。list_agents、canonical lastError与STATUS使用同一
+具体正文；不修改普通turn wrapper，不在纯controller依赖runtime错误格式，不序列化Error造第二格式。
 interrupt 的状态提交先于实际执行退出；紧接的 followup 先等待同一原 run 结算，再在同一 childSessionId
 预留下一轮，不能用暂时非 idle 报错丢失已接纳的新任务，也不能并行启动两轮。
 followup 的旧 command drain 在进入 controller 串行通道之前等待；关闭请求同步封住新的普通 controller
 调用，使运行中 command 的后续消息边界及时失败，不能形成 dispose→run→controller tail 的等待环。
+显式unload与自动eviction在lane内等待旧command结算时，已中断command在异步投影返回后、
+进入controller邮箱lane之前必须检查原准入AbortSignal并退出，不能排到正等待它的release之后。
+信号只属于原command资源句柄，不新增状态owner/轮询/timeout，保留cleanupPending和同session followup。
+保留用例也必须遵守同一父工具目录：persistent-memory自定义profile使用父实际可用的Bash作为额外
+工具标记，仍真实执行Write并保留scope/deny断言；TaskOutput公开description只指导Bash/workflow，
+不再承诺读取child或引用旧Agent工具。
 冷恢复终态只重建查询投影，不再次追加完成事件；恢复 running→interrupted 属于实际新转换。
 派生事件写失败保留待重放快照，并在 await 边界带上下文失败；成功 append 后才确认投影 receipt。
 

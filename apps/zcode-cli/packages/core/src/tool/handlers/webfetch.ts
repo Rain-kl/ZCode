@@ -41,6 +41,8 @@ const WEBFETCH_DESCRIPTION = [
   "Fetches a URL and returns the page content as markdown (plain text for non-HTML).",
   "",
   "- Fails on authenticated/private URLs — use an authenticated MCP tool or `gh` for those instead.",
+  // URL 校验拒绝单段主机名（见 webfetch-url.ts assertPublicHost），这一句与实际行为一致。
+  "- Fails on localhost and other hostnames without a dot; for a local server, use curl via Bash.",
   "- HTTP is upgraded to HTTPS. Cross-host redirects are returned to you rather than followed; call again with the redirect URL.",
   "- Responses are cached for 15 minutes per URL.",
   "- Very large pages are truncated to a preview; the full content is saved to a file and its path is reported in the result.",

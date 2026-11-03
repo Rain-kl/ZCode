@@ -70,10 +70,6 @@ describe("toolCallRowToLegacyNode", () => {
       taskStatus: "running",
       output: "partial output",
     },
-    {
-      kind: "respond_to_coordinator",
-      status: "success",
-    },
   ] as const)("保留 $kind display 给专属 renderer", (display) => {
     const node = toolCallRowToLegacyNode(
       makeRow({
@@ -157,7 +153,7 @@ describe("toolCallRowToLegacyNode", () => {
   it("background Agent 的终态 output 同时桥接为可展开活动正文", () => {
     const node = toolCallRowToLegacyNode(
       makeRow({
-        toolName: "Agent",
+        toolName: "spawn_agent",
         status: "error",
         output: { text: "Agent task failed. Requests are too frequent." },
         error: {

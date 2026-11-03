@@ -17,7 +17,7 @@
 | `.../local-snapshot.ts`                                                                   | 18 个白名单字段投影、远端快照应用                                                                                                                                                                                                   |
 | `.../sync-engine.ts`                                                                      | 四分支状态机、去重、保留清理、恢复前备份、`allowUpload` 防抖门                                                                                                                                                                      |
 | `.../service.ts` / `index.ts`                                                             | 装配：远端解析、60s 轮询、2 分钟上传防抖、文件锁（含陈旧锁回收）、状态广播                                                                                                                                                          |
-| `packages/ui/src/fork/local-mode/**`                                                      | `useForkWebdav`（服务访问与订阅）、`WebdavConnectionForm`（面板/首屏共用）、`ConfigSyncPanel`（设置栏目）、`FirstRunWebdavScreen`（首屏 + 门禁 hook）、`ForkWebdavConflictDialog` + `conflictDialogBus`、`ForkWebdavStatusMenuItem` |
+| `packages/ui/src/fork/local-mode/**`                                                      | `useForkWebdav`（服务访问与订阅）、`WebdavConnectionForm`（设置面板）、`ConfigSyncPanel`（设置栏目）、`ForkWebdavConflictDialog` + `conflictDialogBus`、`ForkWebdavStatusMenuItem` |
 | `packages/desktop/test/forkWebdav*.test.ts`、`packages/shared/test/forkLocalMode.test.ts` | 内核单测（zip 往返、假 WebDAV 服务端、状态机全分支、保留清理、锁、白名单投影、开关过滤）                                                                                                                                            |
 
 ## 2. 上游接线点（全部带 `FORK(local-mode)` 标记，共 21 个文件、43 处）
@@ -30,7 +30,7 @@
 | `packages/desktop/src/host/index.ts`                                                                                        | 晚注册点注册服务并 `start()`（注入 settingService / credentialService / 网络 transport / configDir）       |
 | `packages/services/src/zcode-agent/zcodeAgentService.ts`                                                                    | 停账号 provider 下发                                                                                       |
 | `packages/ui/src/lib/rootStartupGate.ts`                                                                                    | 关闭云账号登录启动门禁                                                                                     |
-| `packages/ui/src/Root.tsx`                                                                                                  | 首屏 WebDAV 门禁分支、屏蔽手动登录与会话过期、挂载冲突弹窗                                                 |
+| `packages/ui/src/Root.tsx`                                                                                                  | 移除首屏 WebDAV 门禁、屏蔽手动登录与会话过期、保留冲突弹窗                                                 |
 | `packages/ui/src/WorkspaceSidebarFooter.tsx`                                                                                | 隐藏登录/登出；插入 WebDAV 状态项（升级项在 `WorkspaceSidebarFooterUsageSummary.tsx` 内按开关隐藏）        |
 | `packages/ui/src/root/useRootOAuthEffects.ts`、`useAccountConnectionLossNotification.ts`                                    | 停静默恢复、JWT 失效广播、断连提醒                                                                         |
 | `packages/ui/src/settings/model-provider-section/constants.ts`、`ModelProviderSection.tsx`、`useModelProviderNavigation.ts` | 过滤智谱预置/套餐行、禁用套餐深链、跳过空分组标题                                                          |
@@ -40,7 +40,7 @@
 
 ## 3. 数据、状态与接口
 
-- 状态文件：`{configDir}/v2/fork-webdav.json`（url/username/directory/autoSync/retentionLimit/lastUploadedHash/lastSyncAt/lastRemoteKey/pendingConflict/firstRunSkipped/source），原子写、损坏回落默认值。
+- 状态文件：`{configDir}/v2/fork-webdav.json`（url/username/directory/autoSync/retentionLimit/lastUploadedHash/lastSyncAt/lastRemoteKey/pendingConflict/source），原子写、损坏回落默认值。
 - 凭据：`credentials.json` 的 `fork:webdav:password`（机器派生密钥加密，不参与同步）。
 - 远端：`<目录>/zcode-YYYYMMDD-HHmmss.zip`，包内 `manifest.json`（`schemaVersion/createdAt/appVersion/contentHash/source`）+ `setting.json`（白名单字段）+ `provider_config.json`。
 - 同步字段白名单：见设计 6.5（18 个键，`local-snapshot.ts` 落实现）。
@@ -88,3 +88,17 @@
 后续 GUI 启动继续暴露同一根因的 properties 写入口：稳定性、资源、网络配置仍 setConfig。
 三处均在保留本地诊断上下文后，按同一个 `FORK_LOCAL_MODE` 提前返回；分别补启用/禁用合同。
 新增三例先观察到禁用状态仍调用 SDK 的失败，修复后连同身份/init/browser 回归共6文件106例通过。
+
+## 2026-11-03：首次启动不再要求 WebDAV
+
+删除 Root 首屏门禁、专用页面与表单跳过动作。设置、自动同步及冲突弹窗不变。
+复核时发现本地 renderer 产物生成于 00:38，仍含旧首屏；删除页面提交时间为 00:45。
+当前未发现对应 Electron 测试进程，无法追溯截图具体加载路径；不能据此宣称缓存机制有缺陷。
+按用户要求继续删除首屏翻译、firstRunSkipped 字段/状态处理、上次新增的守卫及两个测试文件，
+不新增替代代码或无效断言。
+
+重新执行 `build:no-runtime-assets` 成功；00:50 更新的 renderer 共 2742 个 JS 文件，
+首屏组件/门禁、firstRunSkipped、首屏翻译键与标题文本均无匹配。
+现有 WebDAV 测试 40 条通过，typecheck 与 lint 通过（102 warnings / 0 errors）。
+architecture:check --changed 因非本次改动的 `packages/shared/src/off-peak-execution.ts`
+未受管而失败；未修改该文件或更新架构基线。未重新启动 GUI，不能将产物检查称为 GUI 回放通过。

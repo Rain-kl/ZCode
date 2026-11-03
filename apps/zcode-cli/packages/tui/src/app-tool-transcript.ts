@@ -76,7 +76,12 @@ export function applyToolTranscriptEvent(
         toolName,
         {
           resultDisplay: resultDisplayFromPayload(payload),
-          status: "completed",
+          // FORK(codex-collaboration): 空成功仍成功；可用结果正文必须保留给 TUI 展示。
+          output:
+            typeof asRecord(payload.result).content === "string"
+              ? (asRecord(payload.result).content as string)
+              : undefined,
+          status: asRecord(payload.result).success === false ? "failed" : "completed",
         },
         assistantMessageId,
       ),
@@ -128,7 +133,27 @@ export function buildToolTranscriptProjection(
   if (normalized === "webfetch") return { detailLines: webFetchDetails(record) };
   if (normalized === "todowrite") return { detailLines: todoWriteDetails(record) };
   if (normalized === "todoread") return { detailLines: ["todos: read current state"] };
-  if (normalized === "agent") return { detailLines: agentDetails(record) };
+  // FORK-BEGIN(codex-collaboration)
+  const collaborationTitles: Record<string, string> = {
+    spawn_agent: "Spawn agent",
+    followup_task: "Follow up task",
+    send_message: "Send message",
+    interrupt_agent: "Interrupt agent",
+    list_agents: "List agents",
+    wait_agent: "Wait for agents",
+  };
+  const collaborationTitle = collaborationTitles[normalized];
+  if (collaborationTitle)
+    return {
+      title: `${collaborationTitle}${(stringField(record, "task_name") ?? stringField(record, "target")) ? ` ${stringField(record, "task_name") ?? stringField(record, "target")}` : ""}`,
+      detailLines: compactLines([
+        previewLine(record, "message"),
+        fieldLine(record, "agent_type"),
+        fieldLine(record, "fork_turns"),
+        fieldLine(record, "timeout_ms"),
+      ]),
+    };
+  // FORK-END(codex-collaboration)
   if (normalized === "skill")
     return {
       detailLines: compactLines([fieldLine(record, "name"), fieldLine(record, "args")]),
@@ -213,6 +238,7 @@ function updateOrAppendToolPart(
       toolName,
       type: "tool",
       ...(patch.error ? { error: patch.error } : {}),
+      ...(patch.output !== undefined ? { output: patch.output } : {}),
       ...(patch.resultDisplay ? { resultDisplay: patch.resultDisplay } : {}),
     },
     assistantMessageId,
@@ -314,15 +340,6 @@ function todoWriteDetails(record: Record<string, unknown>): string[] {
     inProgress
       ? `in_progress: ${previewText(stringField(inProgress, "content") ?? "")}`
       : undefined,
-  ]);
-}
-
-function agentDetails(record: Record<string, unknown>): string[] {
-  return compactLines([
-    fieldLine(record, "description"),
-    fieldLine(record, "subagent_type"),
-    booleanField(record, "run_in_background") ? "background: true" : undefined,
-    previewLine(record, "prompt"),
   ]);
 }
 

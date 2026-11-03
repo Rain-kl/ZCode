@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 保持既有 transcript → event 恢复 owner；本次只透传输入快照，不拆分恢复状态机。 */
 // Transcript → SessionEvent 合成（「reduce(transcript) ≡ reduce(events)」）。
 //
 // 动机：v4 投影是事件溯源，但部分历史突变（纯对话 fork 复制 message 不复制 event、
@@ -19,13 +20,15 @@ import type {
   TurnFileChangeSummary,
   TurnInputIntentMetadata,
 } from "@zcode/contracts";
+// FORK(reload-command): 维护回执复用独立 transcript 宿主，不应被恢复成空工作轮。
+import { forkRefreshTimeline, hasForkRefreshTimeline } from "../fork/reload-command/module.js";
+import { INTERRUPT_MARKER_SOURCE, joinTaskNotificationBatch } from "@zcode/core";
 import { isHighspeedProviderId } from "@zcode/shared";
 import type { EventId, SessionEvent, SessionId, TraceId, TurnId } from "@zcode/contracts";
 import {
   CompactTimelineStatus,
   CompactTrigger,
   CoreErrorType,
-  createSessionId,
   ModelErrorCode,
   parseCompletedToolPartMetadata,
   SessionEventType,
@@ -40,6 +43,7 @@ import {
 import {
   conversationInputIntentSchema,
   errorAttributionSchema,
+  subagentResultMetaSchema,
   workflowBlockedMetaSchema,
   workflowLaunchMetaSchema,
   workflowNotificationMetaSchema,
@@ -50,7 +54,6 @@ import { shouldHideInvalidToolCallFromProduct } from "../tool-call-product-visib
 import { ProductProjection } from "./product-projection.js";
 import { HYDRATION_TRACE_ID } from "./projection-state.js";
 
-const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
 const LEGACY_MODEL_REQUEST_CANCELLED_MESSAGE = "Model request was cancelled.";
 const LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE = "ZCode Protocol session stopped";
 const PERSISTED_CANCELLATION_CODES = new Set<string>([
@@ -86,16 +89,6 @@ interface TranscriptFootprint {
   //（footprint 不计数 → 缺这两类 marker 的事件日志被误判为已覆盖）。
   goalVerificationCount: number;
   modelChangeCount: number;
-}
-
-interface ParsedSubagentOutput {
-  agentId?: string;
-  agentType?: string;
-  childSessionId?: string;
-  description?: string;
-  parentToolCallId?: string;
-  prompt?: string;
-  summaryText?: string;
 }
 
 interface SynthesizeOptions {
@@ -143,6 +136,12 @@ function workflowLaunchOfMessage(message: MessageWithParts): WorkflowLaunchMeta 
   return parsed.success ? parsed.data : null;
 }
 
+/** core 停止本轮时写的隐藏提醒记录（`interrupt-marker.ts`）。 */
+function isInterruptMarkerMessage(message: MessageWithParts): boolean {
+  const semantics = message.info.semantics;
+  return semantics?.kind === "system_reminder" && semantics.source === INTERRUPT_MARKER_SOURCE;
+}
+
 function isProviderContextOnlyAssistant(message: MessageWithParts): boolean {
   return (
     message.info.role === "assistant" &&
@@ -150,14 +149,23 @@ function isProviderContextOnlyAssistant(message: MessageWithParts): boolean {
   );
 }
 
-function textOfMessage(parts: readonly MessagePart[]): string {
+function textPartsOfMessage(parts: readonly MessagePart[]): string[] {
   return parts
     .filter(
       (part): part is Extract<MessagePart, { type: "text" }> =>
         part.type === "text" && part.ignored !== true,
     )
-    .map((part) => part.text)
-    .join("");
+    .map((part) => part.text);
+}
+
+function textOfMessage(parts: readonly MessagePart[]): string {
+  return textPartsOfMessage(parts).join("");
+}
+
+// 修复原因：空闲整批的每条通知存为一个文本 part，按 "" 连接时相邻通知粘在一起，
+// 与 live 的轮输入不同。与 live 用同一个连接函数；旧版本只有一个 part，结果不变。
+function backgroundWakeInputOfMessage(parts: readonly MessagePart[]): string {
+  return joinTaskNotificationBatch(textPartsOfMessage(parts));
 }
 
 function finiteTimeMs(value: unknown): number | undefined {
@@ -378,26 +386,6 @@ function compactPayloadFromLegacyCompactionPart(
   };
 }
 
-function parseJsonObject(input: string | undefined): Record<string, unknown> | null {
-  if (!input) return null;
-  try {
-    const parsed = JSON.parse(input) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function stringField(
-  source: Record<string, unknown> | undefined | null,
-  key: string,
-): string | undefined {
-  const value = source?.[key];
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
 function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadata | undefined {
   const persistedHighspeed = highspeedMessageMetaSchema.safeParse(message.info.metadata?.highspeed);
   const fullIntent = conversationInputIntentSchema.safeParse(
@@ -413,6 +401,7 @@ function inputIntentOfMessage(message: MessageWithParts): TurnInputIntentMetadat
       // 可见 text 是展示事实；goal 的 canonical objective 只能读取持久 intent.text，
       // 禁止从 `/goal replace ...` 文案再做大小写/关键字解析。
       text: value.text,
+      genUiContext: value.genUiContext,
       ...(value.modelSelection ? { modelSelection: value.modelSelection } : {}),
       ...(value.mode ? { mode: value.mode } : {}),
       ...(value.planEnabled !== undefined ? { planEnabled: value.planEnabled } : {}),
@@ -479,80 +468,6 @@ function executionKindOfMessage(message: MessageWithParts): "agent" | "controlOn
 function epilogueStartOfMessage(message: MessageWithParts): number | undefined {
   const value = message.info.metadata?.epilogueStart;
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
-function contentBlocksToText(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const chunks = value
-    .map((block) => {
-      if (!block || typeof block !== "object") return "";
-      const text = (block as Record<string, unknown>).text;
-      return typeof text === "string" ? text : "";
-    })
-    .filter((text) => text.length > 0);
-  return chunks.length > 0 ? chunks.join("\n\n") : undefined;
-}
-
-function subagentInfoFromToolPart(
-  part: Extract<MessagePart, { type: "tool" }>,
-): ParsedSubagentOutput | null {
-  if (!SUBAGENT_TOOL_NAMES.has(part.tool)) return null;
-  const input =
-    part.state.input && typeof part.state.input === "object"
-      ? (part.state.input as Record<string, unknown>)
-      : {};
-  const output = part.state.status === "completed" ? parseJsonObject(part.state.output) : null;
-  const metadata = part.metadata && typeof part.metadata === "object" ? part.metadata : {};
-  const explicitAgentId =
-    stringField(output, "agentId") ??
-    stringField(metadata, "agentId") ??
-    agentIdFromToolOutput(part.state.status === "completed" ? part.state.output : undefined);
-  const agentId = explicitAgentId ?? part.callID;
-  return {
-    agentId,
-    agentType:
-      stringField(output, "agentType") ??
-      stringField(metadata, "agentType") ??
-      stringField(input, "agent") ??
-      stringField(input, "agentType") ??
-      "subagent",
-    childSessionId:
-      stringField(output, "childSessionId") ??
-      stringField(metadata, "childSessionId") ??
-      // 后台 Agent 的持久化 tool output 是人类可读文本而非 JSON；cold merge
-      // 会抑制重复 durable spawned，若不从稳定 agentId 行恢复 child session，侧栏入口会丢失。
-      (explicitAgentId ? createSessionId(`subagent_${agentId}`) : undefined),
-    description:
-      stringField(output, "description") ??
-      stringField(input, "description") ??
-      stringField(metadata, "description"),
-    parentToolCallId: part.callID,
-    prompt: stringField(output, "prompt") ?? stringField(input, "prompt"),
-    summaryText:
-      contentBlocksToText(output?.content) ??
-      stringField(output, "result") ??
-      stringField(output, "summary") ??
-      stringField(input, "description") ??
-      stringField(input, "prompt"),
-  };
-}
-
-function agentIdFromToolOutput(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return /(?:^|\r?\n)agentId:\s*([^\s(]+)/u.exec(value)?.[1];
-}
-
-function subagentStatusFromToolPart(
-  part: Extract<MessagePart, { type: "tool" }>,
-): "completed" | "failed" | "cancelled" {
-  switch (part.state.status) {
-    case "completed":
-      return "completed";
-    case "error":
-      return "failed";
-    default:
-      return "cancelled";
-  }
 }
 
 /**
@@ -717,42 +632,6 @@ function synthesizeReasoningPart(
   );
 }
 
-function synthesizeSubagentLifecycle(
-  info: ParsedSubagentOutput,
-  status: "completed" | "failed" | "cancelled",
-  push: PushEvent,
-  turnId: string,
-): void {
-  const agentId = info.agentId ?? `subagent-${turnId}`;
-  push(
-    SessionEventType.SubagentSpawned,
-    {
-      agentId,
-      agentType: info.agentType ?? "subagent",
-      childSessionId: info.childSessionId,
-      description: info.description ?? info.summaryText ?? info.prompt ?? agentId,
-      parentToolCallId: info.parentToolCallId,
-      prompt: info.prompt,
-      status: "running",
-    },
-    turnId,
-  );
-  push(
-    SessionEventType.SubagentStopped,
-    {
-      agentId,
-      agentType: info.agentType ?? "subagent",
-      childSessionId: info.childSessionId,
-      description: info.description,
-      parentToolCallId: info.parentToolCallId,
-      prompt: info.prompt,
-      summaryText: info.summaryText,
-      status,
-    },
-    turnId,
-  );
-}
-
 function synthesizeToolPart(
   part: Extract<MessagePart, { type: "tool" }>,
   assistantMessageId: string,
@@ -805,10 +684,7 @@ function synthesizeToolPart(
   // （2026-09-12）：历史 transcript 里残留的 metadata.widgetState 不再合成事件，
   // 冷恢复直接忽略（widgetState 只留 renderer 内存）。
 
-  const subagentInfo = subagentInfoFromToolPart(part);
-  if (subagentInfo && started) {
-    synthesizeSubagentLifecycle(subagentInfo, subagentStatusFromToolPart(part), push, turnId);
-  }
+  // FORK(codex-collaboration): spawn accepted 不等于 child terminal；生命周期只从 canonical seed/真实事件进入。
 
   if (part.state.status === "completed") {
     push(
@@ -1196,25 +1072,6 @@ function assistantMessageHasSynthesizableContent(message: MessageWithParts): boo
   });
 }
 
-function synthesizeSubtaskPart(
-  part: Extract<MessagePart, { type: "subtask" }>,
-  push: PushEvent,
-  turnId: string,
-): void {
-  synthesizeSubagentLifecycle(
-    {
-      agentId: String(part.id),
-      agentType: part.agent,
-      description: part.description,
-      prompt: part.prompt,
-      summaryText: part.description,
-    },
-    "completed",
-    push,
-    turnId,
-  );
-}
-
 function synthesizeAssistantParts(
   message: MessageWithParts,
   emittedCompactOperations: Set<string>,
@@ -1280,7 +1137,7 @@ function synthesizeAssistantParts(
         );
         break;
       case "subtask":
-        synthesizeSubtaskPart(part, push, turnId);
+        // FORK(codex-collaboration): 旧 subtask 不再合成缺少真实身份的 child。
         break;
       default:
         break;
@@ -1321,6 +1178,8 @@ function steerDeliveryOfMessage(message: MessageWithParts): "guide" | "queue" | 
  * 事实区分，统一按边界处理——内容不丢、无气泡，仅轮归属与 live 合流场景有已知差异。
  */
 function isTurnBoundaryStarter(message: MessageWithParts): boolean {
+  // FORK(reload-command): 前一普通轮必须先收尾，再按独立宿主顺序消费维护回执。
+  if (hasForkRefreshTimeline(message)) return true;
   if (isRealUserTurnStarter(message)) {
     return steerDeliveryOfMessage(message) !== "guide";
   }
@@ -1359,12 +1218,15 @@ function backgroundResultOriginMetaOfMessage(
   const workflowNotification = parseWorkflowNotificationMeta(record.workflowNotification);
   // 空闲提醒的载荷在它自己的键上（contracts 的 WorkflowBlockedMeta），同样畸形只丢载荷。
   const workflowBlocked = workflowBlockedMetaSchema.safeParse(record.workflowBlocked);
+  // 后台 Agent 的结构化终态也要过冷恢复，否则恢复后失败详情退回整句 summary。
+  const subagentResult = subagentResultMetaSchema.safeParse(record.subagentResult);
   return {
     backgroundSource,
     title,
     workId,
     ...(workflowNotification ? { workflowNotification } : {}),
     ...(workflowBlocked.success ? { workflowBlocked: workflowBlocked.data } : {}),
+    ...(subagentResult.success ? { subagentResult: subagentResult.data } : {}),
   };
 }
 
@@ -1492,6 +1354,12 @@ function collectTurnOutput(options: {
       continue;
     }
     if (message.info.role !== "assistant") {
+      // 修复原因：最终文本已完整输出后再停止时，assistant 是 finish=stop、没有 error，
+      // live 记为 cancelled，冷恢复却按 success 收口。中断标记是停止的持久化事实，以它为准；
+      // 已有持久化错误时 finishTurn 仍优先显示错误（宿主故障也写标记）。
+      if (isInterruptMarkerMessage(message)) {
+        resultType = normalizeTurnResult(resultType, "cancelled");
+      }
       index += 1;
       continue;
     }
@@ -1527,6 +1395,14 @@ function collectTurnOutput(options: {
     if (messageEnd !== undefined) {
       turnEndedAtMs = Math.max(turnEndedAtMs, messageEnd);
     }
+    // live 每次模型请求都有 start 流事件；cold 为每条 assistant 消息合成同一个事件。
+    // 修复原因：没有可见内容的 assistant 不产生任何事件，投影看不到两次 guide 取出之间的
+    // 模型 step，会把后一次取出的 guide 并进前一段工作段。
+    push(
+      SessionEventType.ModelStreaming,
+      { kind: "start", delta: "", done: false, assistantMessageId: String(message.info.id) },
+      turnId,
+    );
     const synthesized = synthesizeAssistantParts(
       message,
       options.emittedCompactOperations,
@@ -1753,6 +1629,21 @@ export function synthesizeEventsFromMessages(
 
   while (index < messages.length) {
     const message = messages[index]!;
+    // FORK-BEGIN(reload-command)
+    const refreshCompletions = forkRefreshTimeline.completions(message);
+    if (refreshCompletions.length > 0) {
+      for (const part of refreshCompletions) {
+        push(
+          SessionEventType.ForkReloadCompleted,
+          part.sourceCommandId ? { sourceCommandId: part.sourceCommandId } : {},
+          undefined,
+          part.time?.end ?? messageCreatedAtMs(message),
+        );
+      }
+      index += 1;
+      continue;
+    }
+    // FORK-END(reload-command)
     if (isProviderContextOnlyAssistant(message)) {
       index += 1;
       continue;
@@ -1858,7 +1749,8 @@ export function synthesizeEventsFromMessages(
             // cold hydration 曾把 model-only background wake 的原文清空，
             // 导致 ProductProjection 即使能消费 task-notification，恢复时也拿不到
             // tool-use-id 与失败详情。输入仍是 model-only，不会生成用户气泡。
-            input: wakeSource === "background_task" ? textOfMessage(message.parts) : "",
+            input:
+              wakeSource === "background_task" ? backgroundWakeInputOfMessage(message.parts) : "",
             inputVisibility: "model-only",
             inputSource: wakeSource,
             ...(wakeSource === "background_task"
@@ -2066,14 +1958,6 @@ function transcriptFootprint(
       if (part.type === "tool") {
         if (shouldHideInvalidToolCallFromProduct(part.tool, part.metadata)) continue;
         footprint.toolCallIds.push(part.callID);
-        const subagentInfo = subagentInfoFromToolPart(part);
-        if (subagentInfo && part.state.status !== "pending") {
-          footprint.subagentCount += 1;
-        }
-        continue;
-      }
-      if (part.type === "subtask") {
-        footprint.subagentCount += 1;
         continue;
       }
       if (part.type === "timeline" && part.timelineType === "goal_verification") {

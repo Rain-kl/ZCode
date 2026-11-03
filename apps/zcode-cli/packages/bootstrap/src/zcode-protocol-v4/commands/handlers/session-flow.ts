@@ -1,3 +1,4 @@
+import { normalizeGenUiInput } from "@zcode/core";
 // 会话流命令组：sendText / stop（模式样板）。
 // 每个命令组一个文件：handler 纯函数 (host, envelope) → CommandResult|undefined，
 // 决策逻辑直驱 core，环境能力走 host 钩子（见 ../types.ts 的过渡标注）。
@@ -48,7 +49,11 @@ async function sendText(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
 ): Promise<CommandResult | undefined> {
-  const rawPayload = envelope.payload as CommandPayloadMap["sendText"];
+  const originalPayload = envelope.payload as CommandPayloadMap["sendText"];
+  const rawPayload = {
+    ...originalPayload,
+    ...normalizeGenUiInput(originalPayload.text, originalPayload.genUiContext),
+  };
   const record = requireRecord(host, envelope.sessionId);
   // Bug 根因：旧校验只看正文，UI 已允许的 attachment-only query 会在 CLI 被误判为空。
   if (
@@ -59,7 +64,6 @@ async function sendText(
   }
   const activeAutomationId = resolveTurnAutomationId({
     automationId: rawPayload.automationId,
-    inputId: envelope.commandId,
   });
   // Bug 根因：Highspeed admission 与 automation 派发来自不同上游；契约漂移时可能把
   // automationId、highspeedMeta 和加速执行材料同时送到同一轮。定时执行身份必须优先：
@@ -77,11 +81,15 @@ async function sendText(
       }
     : rawPayload;
   // canonical intent 必须和 admission 看同一份净荷，否则 transcript 会留下没有凭据的加速标记。
-  const intentEnvelope = dropsHighspeed ? ({ ...envelope, payload } as CommandEnvelope) : envelope;
+  const intentEnvelope = { ...envelope, payload } as CommandEnvelope;
   const attachments = await mapAttachmentRefsToTurnAttachments(record.app, payload.attachments);
   const submittedExecutionState = resolveSubmittedExecutionState(record, payload);
   const submissionIntent = (options: Parameters<typeof inputIntentMetadata>[1]) =>
-    inputIntentMetadata(intentEnvelope, { ...options, ...submittedExecutionState });
+    inputIntentMetadata(intentEnvelope, {
+      ...options,
+      ...submittedExecutionState,
+      genUiContext: payload.genUiContext,
+    });
   const routingMode = host.getInputRoutingMode?.(envelope.sessionId ?? "") ?? null;
   const forceStartNow = payload.requestedDelivery === "startNow";
   // 加速本轮由「标准 Selection 指向加速 Provider + 单次执行材料」表达；判定必须用 Family
@@ -362,7 +370,6 @@ export async function waitForSessionIdle(record: V4SessionRecordView): Promise<v
   }
 }
 
-/** 等待旧执行释放，返回 Core 是否实际取消了前台执行。 */
 export async function preemptActiveTurnAndWait(
   host: V4CommandCoreHost,
   record: V4SessionRecordView,
@@ -371,7 +378,7 @@ export async function preemptActiveTurnAndWait(
     goalPausedMutationReason: string;
     preserveQueueAutoDrainOnCancel?: boolean;
   },
-): Promise<boolean> {
+): Promise<void> {
   const bootstrapAbortController = record.activeAbortController;
   // background notification 的 model-only turn 由 Core runtime command
   // 独立持有 foreground authority，不会创建 Bootstrap activeAbortController。
@@ -390,7 +397,6 @@ export async function preemptActiveTurnAndWait(
     }
   }
   await waitForSessionIdle(record);
-  return runtimeStop?.kind === "stopped";
 }
 
 export const sessionFlowHandlers = { sendText, stop };

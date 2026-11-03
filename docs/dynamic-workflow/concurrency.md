@@ -301,16 +301,55 @@ title sidecar, or a memory agent all pass the gate without knowing it exists. Th
 answers "who is calling", which the runtime knows when it builds the handle; the call site
 answers only "why".
 
+When one runtime's handle is wrapped by another runtime's layer, the **outer** layer wins,
+that is the runtime that actually makes the call: a subagent that inherits its parent's model
+reuses the parent's handle (`createInheritedSubagentModelFactory`), and the parent's layer,
+being nearer the adapter, used to override the subagent's, so the subagent's requests carried
+the parent's port, retry budget and session type (`main`, which also reached the provider as
+the session-type header). An inner runtime layer now passes through when an outer one has
+already applied; a runtime layer still overrides the call site. The "already applied" marker
+travels inside the invocation context itself, because an inner layer can be reached late: the
+off-peak wrapper's `streamText` is an async generator that calls the handle inside it only on
+the first `next()`, after it has waited for a ticket, and only the invocation context is carried
+across that boundary (`runWithModelInvocationContext` re-enters it for every `next()`).
+
 | Runtime | Port | Effect |
 |---|---|---|
 | a workflow subagent (`taskType` `workflow_child` or `nested_workflow_child`) | the driver's per-subagent wrapper over the run's seat gate and the governor | takes a seat when the run's own bound was lowered under it ("Retuning a live run"), then queues at the governor's gate; feeds signals |
 | the main agent, and its tools and sidecars | the governor's **observer** | never queues, never waits for cooldown; counts in flight and feeds signals |
+| a subagent of the main agent (`taskType` `subagent_child`, the `Agent` tool), and its tools and sidecars | the governor's **session subagent pool**, one per parent session | queues at the governor's gate and waits for cooldown like a workflow run; feeds signals |
 | a subagent of the legacy `Workflow` tool | none | ungoverned: no gate, no signals |
 | a snippet evaluation (`EvalWorkflowSnippet`) | none | its driver has no ask path |
 
 The main agent is an observer because its turn must never block behind workflow traffic,
 and it still feeds the controller because the provider sees its requests too: a 429 on the
 user's own conversation lowers the workflow cap.
+
+A subagent of the main agent is **not** an observer. It used to inherit the observer from its
+parent, and a turn that fans out ten `Agent` calls then sent ten request streams that neither
+queued nor honoured a Retry-After, each retrying on its own backoff: in production the
+subagents were the largest source of rate-limit refusals (2026-10-20: 46% of the sampled
+1302s, against 21% for main-agent turns), and they kept refusing the workflow runs and the
+user's own turn too. The main-agent rule protects the user's turn, which a subagent is not:
+it is delegated work, the same kind of work a workflow subagent does, so it takes the same
+gate. The governor exposes one admission per parent session, `sessionSubagents(parentSessionId)`:
+
+- Its run identity is `\0subagents:<parentSessionId>`, so all the subagents of a session share
+  **one** queue and take one turn in the round robin (below) next to each workflow run. A turn
+  that fans out ten subagents gets one share of a saturated bucket, not ten.
+- It neither registers a bound nor subscribes; it does not join a bucket's `runs`, so it never
+  lifts the growth limit and leaves nothing behind when the session goes away.
+- `tryAcquire` is the fast path, so a queued subagent request publishes `model_request_queued`
+  and `model_request_admitted` like a workflow subagent's, and a tool deadline pauses for the wait.
+  The `Agent` tool itself has no deadline, so a long cooldown cannot time a subagent out.
+- A user cancel aborts the request signal, which takes the waiter out of the queue.
+- The parent's foreground `Agent` call holds no ticket while it waits for its subagents (tool
+  execution holds no ticket), so the parent waiting on a queued subagent cannot deadlock.
+
+The runtime binds it at spawn time: `AgentRuntimeDeps.subagentModelRequestAdmission` is a
+factory the core calls with its current session id when it builds a subagent runtime; an
+assembly without it leaves the subagent on the parent's port, as before. Subagents cannot
+spawn subagents, so the pool has no nesting.
 
 ### One attempt, start to end
 
@@ -451,7 +490,7 @@ instead.
 ### Cooldown and idle reset
 
 A throttle with a Retry-After sets `cooldownUntil` to the later of its current value and
-`now + min(retryAfterMs, 30 seconds)`. The status event keeps the provider's original value for
+`now + retryAfterMs` only for finite positive hints no greater than 300 seconds. Invalid or larger hints do not extend cooldown. Ordinary adapter exponential backoff remains capped at 30 seconds; accepted provider hints independently add upstream positive jitter of up to 5 seconds (maximum actual wait 305 seconds), so admission cannot add a second, longer wait. The status event keeps the provider's original value for
 diagnostics, while the governor uses the bounded value for actual admission waiting. Cooldown
 gates **new admissions only**; requests already in flight are untouched, and a retry that wakes
 during cooldown simply waits at the gate.
@@ -584,7 +623,7 @@ use (`resolveWorkflowModelFailurePolicy`), so the three layers cannot disagree a
 failures are `stop`.
 
 The off-peak queue (`offpeak_queued`) is a 429 with a Retry-After from a provider's idle
-plan; it counts as a throttle, uses the same 30-second admission ceiling, and, in the runner,
+plan; it counts as a throttle, uses the same accepted-provider-hint ceiling of 300 seconds, and, in the runner,
 does not consume a retry attempt.
 
 ## Retry budget and the model-error policy
@@ -607,7 +646,7 @@ Adapter options and environment values can tighten the bound, never increase it 
 21 requests (first request plus 20 retries).
 
 Backoff defaults to 2/4/8/16/30 seconds, with existing jitter and a 30 second hard ceiling
-for every delay, including Retry-After. A configured factor must exceed 1; invalid values
+for ordinary backoff. Provider Retry-After independently accepts finite hints within 0..300 seconds plus upstream upward jitter up to 5 seconds (305 seconds maximum actual delay). Larger hints are rejected, even below the uncapped exponential value. A configured factor must exceed 1; invalid values
 fall back according to the existing configuration precedence. Abort interrupts backoff
 and admission waits. Visible stream output moves recovery to the core safe anchor without
 replaying completed tool effects; it does not create a new counter.
@@ -639,7 +678,8 @@ take precedence over the legacy provider table below.
 | error code `model_not_found` | `stop`, kind `model_unavailable` |
 | reason `context_exceeded` | `context_exceeded` |
 | reason `invalid_request`, unless the code is `invalid_model_response` | `stop`, kind `invalid_request` |
-| anything else: rate limits, overload, 5xx, timeouts, network and TLS errors, unknown provider codes, a response the adapter could not parse | `retry` |
+| reason `unknown` with a provider code (a code the classifier does not know, such as `1113`), the 10th time in a row within one request | `stop`, kind `other` |
+| anything else: rate limits, overload, 5xx, timeouts, network and TLS errors, an unknown provider code fewer than 10 times in a row, a response the adapter could not parse | `retry` |
 
 Every actual API error first uses the shared bounded classifier. The table describes
 how the driver contains a terminal error; it grants no extra requests. Context overflow
@@ -835,7 +875,7 @@ carries it.
 |---|---|
 | `dynamic-workflow/tests/engine/concurrency.test.ts` | the constants; current-epoch throttle cuts by 0.75 to the floor and turns the epoch; a cut clears `lastGood` and records `lastBad`; old-epoch throttles move nothing, emit nothing, still reset the streak; thirteen epoch-0 refusals cut once; Retry-After cooldown, including from old epochs; K current-epoch successes prove `lastGood` with or without waiters; a raise needs waiters and headroom; old-epoch successes do not count; `failedTransient` and `ended`; idle reset after five minutes with nothing in flight, back to `initial`; growth stops at `growthLimit`, a raised limit is climbed step by step, a lowered one pulls the cap down (`limit_lowered`) and turns the epoch; `seed` jumps to the target within the growth limit, clears `lastGood` so the next refusal cuts by the factor, and is refused for a target at or below the cap or within five minutes of any refusal; the 16→12→13 and 13→9→6→4→5→6→5 sequences |
 | `dynamic-workflow/tests/engine/engine-concurrency-observations.test.ts` | the three sink methods each record one event and are ignored after settlement |
-| `bootstrap/tests/workflow-concurrency-governor.test.ts` | buckets per key; first run starts at D; auto-growth stops at 2D; a registered bound above 2D lifts the growth limit only for keys that run used and seeds the cap to it at once, a refusal in the last five minutes suppresses the seed, a default run never seeds, and clearing it pulls a higher cap down with `limit_lowered` fanned out to the runs still engaged; the observer never lifts it; a new run inherits a cap the observer's 429s lowered; idle reset; `tryAdmit` misses while anyone waits; round-robin across runs; the ticket's event mapping and double-count guard; a `stop`-class failure (quota code with a Retry-After) moves neither the cap nor the cooldown, from a run's ticket or the observer's, while a terminal 429 outside the stop set still throttles; raw Retry-After remains observable while the actual cooldown is capped at 30 seconds; `release()` as `ended`; abort dequeues; fan-out only to engaged runs; cooldown wake |
+| `bootstrap/tests/workflow-concurrency-governor.test.ts` | buckets per key; first run starts at D; auto-growth stops at 2D; a registered bound above 2D lifts the growth limit only for keys that run used and seeds the cap to it at once, a refusal in the last five minutes suppresses the seed, a default run never seeds, and clearing it pulls a higher cap down with `limit_lowered` fanned out to the runs still engaged; the observer never lifts it; a new run inherits a cap the observer's 429s lowered; idle reset; `tryAdmit` misses while anyone waits; round-robin across runs; the ticket's event mapping and double-count guard; a `stop`-class failure (quota code with a Retry-After) moves neither the cap nor the cooldown, from a run's ticket or the observer's, while a terminal 429 outside the stop set still throttles; raw Retry-After remains observable while only accepted finite positive hints up to 300 seconds extend cooldown; `release()` as `ended`; abort dequeues; fan-out only to engaged runs; cooldown wake |
 | `bootstrap/tests/workflow-driver-concurrency.test.ts` | slot and backoff waits, executing on the first and post-wait `started`, per-ask reset; chain aggregation with parallel tool requests; wait deduplication; the driver-side policy split (stop / `ContextLimit` / redrive); the stall clock's 19-minute silence, 20-minute fire, and re-arm |
 | `dynamic-workflow/tests/engine/engine-retune-concurrency.test.ts`, `dynamic-workflow-runtime/tests/control.test.ts` | the setter: a raise pumps and dispatches within the same slice, a cut leaves live asks alone and stops the next dispatch, an unchanged value and a settled run both answer false and write neither row nor event; one `run-caps-changed` carrying `caps` and `previous`, one `updateRunCaps`; the scheduler reads `host.caps` on every pump, so a bound changed between two pumps is the one the second pump enforces; the harness binds the control to the engine it just built, and a binding never bound answers false |
 | `bootstrap/tests/workflow-seat-gate.test.ts` | the gate alone: park on a turn step over the limit (`tryAcquire` misses → `model_request_queued` → `waiting(slot)`), seat before governor, FIFO unpark on an ask settling and on a raise, one at a time; `activeAsks = working + parked`; limit 1 keeps one subagent working and deadlocks nothing; a tool-side request never parks and a subagent with no live ask never parks; abort dequeues, rejects with the signal's reason and returns the subagent to `working`, its later settlement frees no phantom seat, an already-aborted signal never enters the FIFO, and a settle that beats the abort refuses the waiter without freeing a seat; a settle for an instance never seen started is a strict no-op; a cut inside the `ensureSession` window still parks the late subagent and counts nobody twice; two asks in a row on one subagent join idempotently; a run never lowered is a pure pass-through and the governor sees every call |
@@ -932,3 +972,5 @@ carries it.
 - A per-project default for the run's own bound, which `max_concurrency` would override and
   the hub launch would read too. Today a user who always wants this project's runs throttled
   has to say so on every call that starts one.
+
+Fork sync 2026-11-03: ordinary backoff remains capped at 30 seconds. User-authorized provider Retry-After accepts up to 300 seconds plus upstream positive jitter up to 5 seconds; the governor accepts the same hint interval without jitter. Terminal workflow containment cannot reopen an exhausted model chain.

@@ -188,6 +188,29 @@ function completionAgentCompositions(
   );
 }
 
+it("attributes native child terminal usage to the canonical spawn tool", async () => {
+  const { platform, reportTelemetryEvent } = createPlatform();
+  const supervisor = new ConversationTelemetrySupervisor({
+    platform,
+    workspaceScopeKey: "six-tool-native",
+  });
+  spawnBackgroundSubagent(supervisor, {
+    agentId: "agent-opaque-a7",
+    childSessionId: "session-random-f91",
+  });
+  supervisor.handleFact({
+    ...commonFact("native-terminal", 10, "session-random-f91"),
+    sourceCommandId: undefined,
+    kind: "turn.terminal",
+    status: "success",
+  });
+  await supervisor.flushReportsForTest();
+  expect(reportsByElement(reportTelemetryEvent, "agent_step")).toMatchObject([
+    { eventExtraDetail: { tool_name: "spawn_agent", agent_role: "background subagent" } },
+  ]);
+  supervisor.dispose();
+});
+
 describe("ConversationTelemetrySupervisor", () => {
   it.each([
     ["resolved", "completed", "pptx"],
@@ -553,6 +576,7 @@ describe("ConversationTelemetrySupervisor", () => {
       plan_product_id: "product-1",
       message_source: "chat",
       task_trigger: "",
+      ui_mode: "unknown",
     });
   });
 
@@ -1807,7 +1831,7 @@ describe("ConversationTelemetrySupervisor", () => {
         messageId: "parent-command",
         eventExtraDetail: expect.objectContaining({
           step_type: "tool_call",
-          tool_name: "Agent",
+          tool_name: "spawn_agent",
           tool_call_id: "tool_subagent_agent-background_agent-background-parent-tool",
           loop_index: "2",
           agent_id: "agent-background",
@@ -1922,7 +1946,7 @@ describe("ConversationTelemetrySupervisor", () => {
       expect(background).toHaveLength(3);
       for (const [index, step] of background.entries()) {
         expect(step.eventExtraDetail).toMatchObject({
-          tool_name: "Agent",
+          tool_name: "spawn_agent",
           loop_index: "1",
           model_request_count: "2",
           token_usage_scope: "subagent_requests",
@@ -2009,7 +2033,7 @@ describe("ConversationTelemetrySupervisor", () => {
           eventExtraDetail: expect.objectContaining({
             agent_id: "bg",
             agent_role: "background subagent",
-            tool_name: "Agent",
+            tool_name: "spawn_agent",
             tool_call_id: "tool_subagent_bg_bg-parent-tool",
             child_session_id: "child-bg",
             parent_tool_call_id: "bg-parent-tool",
@@ -2182,7 +2206,7 @@ describe("ConversationTelemetrySupervisor", () => {
     const aggregate = reportsByElement(reportTelemetryEvent, "agent_step");
     expect(aggregate).toHaveLength(1);
     expect(aggregate[0]?.eventExtraDetail).toMatchObject({
-      tool_name: "Agent",
+      tool_name: "spawn_agent",
       loop_index: "3",
       status: "fail",
       total_tokens: "120",
@@ -2291,7 +2315,7 @@ describe("ConversationTelemetrySupervisor", () => {
     expect(reportsByElement(reportTelemetryEvent, "agent_step")).toEqual([
       expect.objectContaining({
         eventExtraDetail: expect.objectContaining({
-          tool_name: "Agent",
+          tool_name: "spawn_agent",
           status: "fail",
           total_tokens: "0",
         }),
@@ -2360,7 +2384,7 @@ describe("ConversationTelemetrySupervisor", () => {
           messageId: "parent-command",
           eventExtraDetail: expect.objectContaining({
             step_type: "tool_call",
-            tool_name: "Agent",
+            tool_name: "spawn_agent",
             tool_call_id: "tool_subagent_agent-1_agent-1-parent-tool",
             agent_id: "agent-1",
             agent_role: "background subagent",
@@ -2597,7 +2621,7 @@ describe("ConversationTelemetrySupervisor", () => {
       ]),
     ).toEqual([
       ["Bash", "1", "0"],
-      ["Agent", "2", "0"],
+      ["spawn_agent", "2", "0"],
     ]);
     expect(
       reportTelemetryEvent.mock.calls

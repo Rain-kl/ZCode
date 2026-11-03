@@ -319,3 +319,14 @@ messageCount: 5，role=system 2 条
 实现：`buildContextMetaUserBody(sections, { includeScaffold })`——主 agent 传 `injectDynamic`，子代理路径沿用默认（始终套用）。`includeScaffold: false` 时只返回段内容本身。
 
 边界：块里只剩 `# agentsMd` 时不再套头/尾。这同时修掉一处语义矛盾——尾句「可能不相关、不要回应它」与 AGENTS.md 自己的「这些指令覆盖默认行为」相悖。
+
+### 2026-11-03：公告 owner 适配
+
+上游已将动态事实从 builder system prefix 分离为 request 前公告。Core 在
+`context-refresh.ts` 维护唯一的身份动态 gate 与恢复/维护协调逻辑：当前身份关闭动态注入时，
+从模型内存历史撤回已识别的动态 attachment，并在后续公告、output-style reminder 路径阻止补回。
+`/refresh` 重用该入口；普通 builder rebuild 不清理对话。子代理、workflowActor 与宿主自定义
+system prompt 不受主会话身份开关影响。skills 清单独立按 builder 的 injectSkills/Skill 工具门协调。
+
+持久化原记录与 AGENTS.md/memory 索引不改；重新开启后走上游正常收集。对旧会话仅识别 runtime
+attachment 来源，不扫描正文猜测删除，避免误删真实用户材料。真实多轮回归先红后绿验证此边界。

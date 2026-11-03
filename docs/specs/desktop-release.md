@@ -27,15 +27,15 @@
 
 ## 作业门禁与跳过语义
 
-- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / 单测）**在所有通道运行**：2026-10-24 起 canary 与 tag 都执行完整门禁。
+- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / fork 契约）与 `unit-tests`（完整 Vitest 集合的四个分片）**在所有通道运行**。完整门禁范围不缩减。
 - **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
 - 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
 
-| 渠道               | `verify` | `build-macos` / `build-windows` | `publish`                                    |
-| ------------------ | -------- | ------------------------------- | -------------------------------------------- |
-| dev（推送 canary） | success  | 运行（要求 verify 成功）        | 运行（要求 resolve、桌面与 Server 构建成功） |
-| tag 且门禁通过     | success  | 运行                            | 运行                                         |
-| tag 且门禁失败     | failure  | 跳过（条件不满足）              | 跳过（构建非 `success`）→ 不创建 Release     |
+| 渠道                   | `verify` / `unit-tests` | 桌面与 Server 构建     | `publish`                        |
+| ---------------------- | ----------------------- | ---------------------- | -------------------------------- |
+| dev（推送 canary）     | 必须全部成功            | resolve 成功后并行运行 | 所有门禁与构建成功才运行         |
+| tag 且门禁通过         | 必须全部成功            | resolve 成功后并行运行 | 所有门禁与构建成功才运行         |
+| 任一门禁失败/跳过/取消 | 非 success              | 可已完成或仍在运行     | 不创建 Server 或 Desktop Release |
 
 - 新增作业时照抄这条规则：**只要它 `needs` 的链上可能有 skipped 作业，就必须写显式条件**（用 `!cancelled()` 而非 `always()`，后者在被取消时也会继续跑）。
 - `verify` 里在单测前会按依赖链构建 CLI 包（`pnpm -r --filter "@zcode/core..."`）：`apps/zcode-cli/packages/core/test` 的测试 import 上游 tool 入口，而这些包的 `exports` 指向 `dist`，verify 只 install 不 build 会 `ERR_MODULE_NOT_FOUND` 让整组失败。
@@ -52,7 +52,7 @@
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
 2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
-3. **半套产物不发布**：`publish` 的显式条件要求桌面与配套 Server 构建都 `success`，任一构建失败则整体不创建 Release；`verify` 失败会先让构建被跳过，`publish` 随之不成立（注意这里**不能**依赖「默认 `needs` 语义」，见「作业门禁与跳过语义」）。
+3. **半套产物不发布**：`publish` 直接依赖 `resolve`、`verify`、`unit-tests` 和所有构建，显式要求全部 `success`。任一门禁/分片/构建失败、跳过或取消时，即使已上传 Actions artifact，也不得创建 Server 或 Desktop Release。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
 5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，包只更新到 `canary-build`；指针上的资产每次只保留本次集成的一套（先上传本次资产、再删掉不属于本次的文件），因此 Releases 里始终只有一份 dev 包。
    - **指针发布 `canary-build` 只保留本次集成的资产**：资产名带版本号（`ZCode-<version>-<platform>-<arch>`），`gh release upload --clobber` 只覆盖同名文件，所以 publish 在「先上传本次资产、再删掉不属于本次的文件」。不清理时实测堆到 18 个资产 / 3 个版本（`dev.yml` / `dev-mac.yml` / `SHA256SUMS.txt` 名字固定，靠 `--clobber` 覆盖）。
@@ -68,7 +68,57 @@
 
 ## 2026-10-24 同步验证
 
-上游同步推送到 main/canary 时，canary 的 verify 必须执行，覆盖类型、lint、架构、移除守卫及两种单测入口；构建与发布继续依赖 verify 成功。不得以 skipped 的 verify 作为本次同步验证成功的依据。稳定 tag 触发与历史发布 tag 保持原有规则。
+上游同步推送到 main/canary 时，canary 的完整门禁必须执行，覆盖类型、lint、架构、移除守卫及两种单测入口；发布依赖所有门禁成功。不得以 skipped 的 verify 或 unit-tests 作为本次同步验证成功的依据。稳定 tag 触发与历史发布 tag 保持原有规则。
+
+## 2026-11-03 发布关键路径优化（二开基础设施）
+
+背景：实测 run 41413444449 共 30m13s，其中 verify 14m42s、Windows 14m32s；
+单测耗时约 11–16 分钟。原依赖图把这两段串行相加；bundle 又先 prepare 再调用包含 prepare 的 build。
+
+- **版本唯一所有者仍是 resolve**。所有作业使用同一 workflow SHA 的独立 checkout，消费同一版本/提交输出。
+- **发布唯一写入者仍是 publish**。构建允许推测执行，仅上传 Actions artifact，不创建 Release。
+  publish 直接汇合完整门禁和三类构建，全部成功后仍先发布不可变 Server，再发布桌面。
+- `unit-tests` 使用 Vitest 官方 `--shard=<index>/4`，四个独立 Ubuntu runner 完整覆盖根配置的所有项目，
+  不另维护测试文件列表，不改变 include/exclude、worker 数、超时或测试断言。
+  `fork-isolated` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
+  matrix `fail-fast: false` 保留其余分片的诊断结果，每片先构建所需 CLI 包并补装 Electron。
+- 本地 `pnpm test:unit` 保持原入口。fork 的 node:test 契约仍完整执行一次，不被 Vitest 分片替代。
+- `bundle.mjs` 独占 bundle 路径的 runtime prepare 调度，随后调用 `build:no-runtime-assets`。
+  直接 `pnpm --filter @zcode/desktop build` 仍自带 prepare；`--skip-prepare` 和 `--skip-build` 独立生效，
+  默认 prepare 一次，skip-prepare 不得被嵌套 build 偷偷重新执行。打包后校验、签名及产物种类不变。
+- 同 ref 串行与 `cancel-in-progress: false` 不变，避免中断正在发布的半套资源。
+  不通过缓存未验证的测试结果、移除隔离或跳过门禁换取速度；暂不合并 ASAR 后处理，避免扩大签名/原生包验证范围。
+
+```mermaid
+flowchart LR
+    R[resolve: version + SHA] --> V[verify: static + fork contracts]
+    R --> T[unit-tests: 1/4 .. 4/4]
+    R --> M[macOS build]
+    R --> W[Windows build]
+    R --> S[Source Server build]
+    V & T & M & W & S --> P[publish: all success only]
+    P --> G[immutable Server Release]
+    G --> D[Desktop Release]
+```
+
+验收：依赖图契约遍历每个直接门禁的 failure/skipped/cancelled，均阻止 publish；所有成功才允许发布；
+四个 Vitest 分片发现集合不重不漏且与未分片集合相等；隔离项目原并发限制不变；
+bundle 默认/两个 skip 标志的四种组合均无重复 prepare；实际 manifest 保证 no-runtime-assets 只构建 metadata 与 app。
+预计端到端目标 12–16 分钟（无排队、runner 资源充足），不是本地验证结论；需推送后采集至少 2–3 轮实测。
+并行会增加失败提交的 runner 消耗，账号并发额度与网络波动可能降低收益。
+
+### 独立单测分片的构建前置条件
+
+run [41560008767](https://github.com/Rain-kl/ZCode/actions/runs/41560008767) 的三个分片在加载
+E2E reporting 单测时无法解析 `@zcode/e2e-report`。该包公开入口指向 `dist-node/node/index.js`，
+独立 runner 只有源码；verify 中的 typecheck 和其他构建作业生成的文件不会共享给单测分片。
+
+- 每个 `unit-tests` runner 必须在运行 Vitest 前执行 `pnpm --filter @zcode/e2e-report build:node`，
+  和 CLI 包构建、Electron 补装一起作为显式前置条件。只构建 Node 公共入口，不要求构建报告 Viewer。
+- 验收：workflow 契约验证构建命令存在且先于单测；在空输出目录构建并加载包公开入口，
+  并执行 lifecycle、error classification、skipped summary 三个实际 reporting 回归。
+- 同一 run 还发现 App/分享只读渲染一致性测试仍使用已移除的 `Agent` 输入。
+  测试必须改用现有 `spawn_agent` 参数，继续断言两端摘要一致；不恢复旧工具或展示兼容。
 
 ## 2026-11-02 配套 Source Server 发布
 

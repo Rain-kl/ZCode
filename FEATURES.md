@@ -16,10 +16,12 @@
 
 ## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
-- **状态**：2026-10-30 已实施 Task 1（模型恢复）；2026-11-02 修正 steer 安全请求边界并通过桌面5/5回放；Task 2 独立协作控制器已通过规格/质量双审及53项测试。六工具、角色与真实 runtime/mailbox 接线正在 Task 3 实施，尚未宣称整体交付。
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留六工具与共享控制器唯一所有者；接入上游单 session closeOwnedWork/close 清理，旧 runner/四工具继续缺席，删除已无消费者的 `core/src/subagent/completion-notification.ts` 并登记移除守卫；运行中输入保持安全边界 guide，不采用上游 stop-then-start；用户确认 Retry-After 按上游接受最长 5 分钟的提示并增加最多 5 秒正向 jitter，普通退避仍最多 30 秒、共享预算仍最多 21 次物理请求；吸收 session features 与上下文投影修复。处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
+- **状态**：2026-11-03，模型恢复、steer 安全边界、协作控制器、六工具/角色/真实 runtime/mailbox、客户端冷投影与旧展示入口清理均已实施，通过独立规格与质量审查。六工具真实桌面会话 CSC01 已验收；完整验证及未覆盖边界见实现文档。
 - **需求背景**：模型首次失败直接结束、流中途停止，以及 adapter/core/workflow 各自重试预算导致不可控恢复。
-  用户要求最多20次重试、单次等待最多30秒，并以 Codex V2 作为后续协作合同参考。
-- **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，配置和 Retry-After 均受硬上限。
+  用户要求最多20次重试，并以 Codex V2 作为后续协作合同参考；2026-11-03 同步时确认将原 30 秒等待上限对 Retry-After 的限制调整为上游 5 分钟提示范围。
+- **修改内容**：同一逻辑模型步骤共享最多21物理请求；默认2/4/8/16/30秒退避，普通退避配置受30秒硬上限；有效 Retry-After 可为5分钟，正向 jitter 最多额外5秒。
   未知 API/4xx/5xx/内部 AbortError 自动恢复，明确超窗交给共享预算下的 compact；显式取消、本地配置/权限/网络门禁不重试。
   partial/EOF 从安全工具锚点恢复，保留已完成副作用；独立/反应式 compact 的 transport fallback 也共用预算。
   修复迟到 SDK rejection、abort listener 与合法 backoff watchdog；恢复继续投影既有 UI 状态事件。
@@ -29,17 +31,25 @@
 - **上游改动标记**：`FORK(codex-collaboration)`；新模块均登记 managed/public entrypoints。
 - **设计文档**：[design.md](docs/features/codex-collaboration/design.md)；[模型流恢复 spec](apps/zcode-cli/docs/design/v2/model/stream-error-retry.md)。
 - **实现文档**：[implementation.md](docs/features/codex-collaboration/implementation.md)。
-- **已知边界**：permission/message 等待 watchdog 与新协作 driver 属后续 Task 2/3；尚未做所有客户端的端到端验收。
-- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留非子代理用途。当前为已批准实施要求，实际移除验证随 Task3/4 记录。
-- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。默认 runtime driver 仍待 Task3b，不代表迁移完成；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
-- **Task3b（2026-11-02，待独立审查）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。实际相关388项、controller53项、Bash/fork2项通过；CLI lint与独立旧产品断言的失败边界如实记录，客户端整体交付仍待Task4。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
+- **已知边界**：手机 GUI、Windows/Linux 与全部 provider 协议没有实机验收。桌面 CSC01 保持 manual-review/pending，不自动提升正式准入；CLI 全量 Lint 的既有超长文件错误如实记录。
+- **全量切换决定（2026-11-02）**：用户明确要求不兼容旧工具。已废弃 Agent/Task/SendMessage/RespondToCoordinator 子代理入口，六工具成为唯一协作工具面；同步删除旧执行、搜索、提示与别名路径，登记 fork 移除守卫。TaskOutput/TaskStop 仅保留 Bash/workflow 用途；原生子任务 Stop 直接进入新 controller interrupt。没有历史工具适配、数据迁移或用户数据删除。
+- **Task3a（2026-11-02）**：六工具 schema/端口/ToolEntry、条件角色与统一配置已落地；旧四工具 handler、注册和 AgentOutput 别名移除。`scripts/fork-removal-rules.mjs` 登记缺席与新接线约束，模型目录/直接调用回归验证。此阶段只完成工具合同，真实 driver 随下述 Task3b 接线；细节见 [tools-contract](docs/features/codex-collaboration/tools-contract.md) 与实现记录。
+- **Task3b（2026-11-03，独立双审通过）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。补齐原 command 排空、父权限交集、整树驻留、prepare 失败资源归属、取消边界和具体错误保留；每个修正均有先红后绿及增量双审。分批测试与旧产品断言边界分别记录，不相加冒充同一次全量通过。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
+- **Task3b 配置收口**：删除无行为的 `features.subagent` 公开键/类型/默认值/存储映射；直接 set/get/merge 和配置文件明确拒绝旧键，removal guard 与依赖契约测试防止同步后静默恢复。统一保留 `subagents` 参数，内部 workflow 的能力隔离不使用旧开关。
 
 ### 持久协作控制器（2026-11-02）
 
 - **背景与修改**：旧子任务的取消与父轮耦合，失败后缺少稳定身份和原会话续跑边界。新增根所有的身份树、调用去重、durable ACK 邮箱、独立 signal/generation、容量与驻留控制，以及原会话恢复的有限 driver 合同。
 - **修改文件**：CLI `core/src/fork/codex-collaboration/**`、测试 driver 与 `architecture-policy.yaml`；新增模块不修改上游产品代码，无逐行标记。
 - **错误与生命周期**：拒绝会破坏已接受历史的损坏快照；失败清理保留原因，重试与 admission 串行；关闭先取消全部 child，保存失败仍尝试释放全部资源。
-- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；53测试与独立竞态探针通过，spec/quality 均批准。真实 driver 和客户端投影仍须后续接线验证。
+- **文档与验证**：[controller-contract](docs/features/codex-collaboration/controller-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；控制器定向测试与独立竞态探针通过，spec/quality 均批准。真实 driver 已接线，客户端验收独立记录。
+
+### 六工具桌面会话验收（2026-11-03）
+
+- **行为与证据**：真实 Electron/Agent/SQLite/HTTP provider 驱动六工具，父轮结束后 child 继续，原始响应尾部完整进入邮箱消费边界，双方消息只进入 assistant 信封；idle 父不被消息隐式启动。读取真实 childSessionId 下钻，再以原 session/原 spawn anchor 续跑，原生 Stop 只中断目标 child，父可继续输入。list/wait 不呈现为 Stop 或额外 child。
+- **修改文件与标记**：新增 pending CSC01 用例、case-local fixtures、cleanup helper/失败路径测试与 catalog/matrix；新增测试无上游产品接线标记。
+- **文档与验证**：[desktop-client-acceptance](docs/features/codex-collaboration/desktop-client-acceptance.md)。最终客户端 bundle 正式steer5/5、48.2秒；CSC01按真实交互展开历史后1/1、19秒。不同构建的结果分别保留，不合并计数。独立规格与质量审查通过；用例未人工转正，手机 GUI 与 cold seed 由各自证据边界约束。
+- **客户端接线**：[client-implementation](docs/features/codex-collaboration/client-implementation.md)。shared六工具身份、UI/TUI详情、canonical冷身份查询、同会话续跑、代际防回退与双交付重放已验证；删除旧专属renderer及ACK/output_file解析。配对卡片派生child具体失败原因，保持原成功spawn结果不变，先红后绿56项回归及最终双审通过。
 
 ### steer 安全边界更正（2026-11-02）
 
@@ -56,6 +66,8 @@
 
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留上游请求策略与 ARMS 禁用；合入新版初始化过滤和远程服务接线。上游设备配置推送与本 fork WebDAV 备份用途不同，保持各自所有者。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 ### 禁用 ARMS 时保持启动可用（2026-11-02）
 
 - **背景与修改**：local-mode 不初始化 ARMS，但 Main 身份同步仍调用未初始化 SDK，导致首窗创建前抛出 `Config not initialized`。身份同步现在使用同一个 fork 开关，禁用时不写 SDK，且只在成功写入后记录去重状态。
@@ -65,13 +77,13 @@
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游远端项目目录与恢复状态协议、设置页 archives/remoteDevices 新结构；继续隐藏云账号入口并停用云额度请求。保留通用远程权限、用量和 provider 测试，账号专属冲突用例遵循本地模式既有取舍；providerRegistry 新增的两条账号配置刷新屏障测试依赖已停用的云账号下发，不在本 fork 的本地模式启用，保留其余通用 registry/模型选择测试。
 
-- **状态**：四期全部实现（2026-09-28）：入口屏蔽、WebDAV 备份内核、设置页「同步」栏目、首屏引导/冲突弹窗/左下角状态项
+- **状态**：四期全部实现（2026-09-28）：入口屏蔽、WebDAV 备份内核、设置页「同步」栏目、冲突弹窗/左下角状态项（首次启动引导已于 2026-11-03 移除）
 - **需求背景**：本项目不接入上游 ZCode 云账号体系，需要把「登录 ZCode 账号」从产品面移除（仅保留自定义提供商），并提供一条用户自管的配置同步通道，便于多机共享界面配置与自定义提供商。
 - **修改内容**：
   1. 屏蔽云账号全部入口（首屏登录引导、登录页、侧栏登录/登出、会话过期与账号断连提示），并停用后台账号链路（启动静默会话恢复、账号 provider 下发与刷新）。入口屏蔽，不删除代码。
   2. 模型设置里不再展示预置的智谱提供商（Z.ai / BigModel 预设卡片与 Coding Plan 系列行）；「添加提供商」的自定义路径与模板保留。
   3. 移除左下角「连接使用 / 升级」入口，该位置改为 WebDAV 连接状态。
-  4. 首屏登录替换为「使用 WebDAV 登录」（可跳过）；远端以**时间命名的 zip 备份包**保存配置历史（`setting.json` 白名单字段 + `provider_config.json`），本地变更防抖 2 分钟后自动上传，保留最近 N 份（默认 20，可配）；双侧都有改动时弹窗询问「用远端最新恢复 / 以本地为准备份 / 稍后」。
+  4. 首次启动直接进入正常应用，WebDAV 按需在设置里配置；远端以**时间命名的 zip 备份包**保存配置历史（`setting.json` 白名单字段 + `provider_config.json`），本地变更防抖 2 分钟后自动上传，保留最近 N 份（默认 20，可配）；双侧都有改动时弹窗询问「用远端最新恢复 / 以本地为准备份 / 稍后」。
   5. 设置 → 基础设置 → 同步：WebDAV 连接配置与状态、开启自动同步、保留份数、云端备份、云端恢复、远端备份包列表（可恢复任意节点、可删除任意包）。
 - **修改文件**：
   - 已实现（第①期）：新增 `packages/shared/src/fork/flags.ts`、`packages/shared/test/forkLocalMode.test.ts`、`docs/features/local-mode/**`、`.agents/notes/local-mode/**`；上游接线 `packages/shared/src/index.ts`、`packages/ui/src/lib/rootStartupGate.ts`、`packages/ui/src/Root.tsx`、`packages/ui/src/WorkspaceSidebarFooter.tsx`、`packages/ui/src/root/useRootOAuthEffects.ts`、`packages/ui/src/root/useAccountConnectionLossNotification.ts`、`packages/ui/src/settings/model-provider-section/constants.ts`、`packages/ui/src/settings/ModelProviderSection.tsx`、`packages/services/src/zcode-agent/zcodeAgentService.ts`（共 9 个上游文件，20 处 `FORK(local-mode)` 标记）。
@@ -82,6 +94,13 @@
 - **实现文档**：`docs/features/local-mode/implementation.md`（文件清单、上游接线 20 个文件/42 处标记、验证证据、与设计的偏差）
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；后续 `writing-plans` → `executing-plans` → `verification-before-completion`）。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件为 `packages/ui/src/lib/rootStartupGate.ts`、`packages/ui/src/WorkspaceSidebarFooter.tsx`、`packages/services/src/usage-stats/usageStatsService.ts`。上游方案允许 provider 空状态触发登录，并开放奖励/登录/登出与 Coding Plan 云额度请求；本 fork 方案隐藏云账号入口并停用云额度链路。保留本 fork 语义，同时合入远控根页 guard、仅在云账号界面启用时显示奖励入口，并保留本地 App Usage 快照。同步中移除上游新增、依赖云账号或 Coding Plan 入口/云额度的用例：`packages/ui/test/modelProviderCodingPlan.test.ts`、`packages/services/test/usageStatsService.test.ts`、`packages/desktop/test/hostRemoteWorkspaceServices.test.ts`、`packages/services/test/usageStatsAccountAccess.test.ts`、`packages/services/test/zcodeAgentService.providerRegistry.test.ts`、`packages/ui/test/accountConnectionLossNotification.test.ts`、`packages/ui/test/rewardsMenuIcon.test.ts`、`packages/ui/test/rootAccountRefreshLifecycle.test.ts`、`packages/ui/test/providerFamilyConnectionVisibility.test.ts`、`packages/provider-node/test/reasoning-level-migration.test.ts`、`packages/provider-node/test/start-plan-selection.test.ts`；更新 `packages/provider/test/facades.test.ts` 与 `packages/services/test/providerRuntime.test.ts`，明确隐藏智谱账号 provider 的选择视图。继续保留 App Usage、本地时间轴及通用 provider 覆盖。
+
+### 移除首次启动 WebDAV 引导（2026-11-03）
+
+- **需求与行为**：首次打开不再被同步配置拦住；删除 Root 的首屏门禁与专用页面，不伪造跳过状态。设置 → 同步、已有自动同步、冲突弹窗与 footer 状态保留。
+- **修改文件与标记**：`packages/ui/src/Root.tsx`（保留冲突导入的 `FORK(local-mode)`）、删除 `fork/local-mode/FirstRunWebdavScreen.tsx`、精简 `WebdavConnectionForm.tsx`，并删除首屏专用翻译和状态字段。
+- **清理范围**：不新增替代逻辑；删除上次为此次移除新增的守卫、接线断言与未验证 E2E。同步服务的正常配置和已有测试保留。
+- **文档**：[design](docs/features/local-mode/design.md#2026-11-03移除首次启动-webdav-配置引导)、[implementation](docs/features/local-mode/implementation.md#2026-11-03首次启动不再要求-webdav)。验证状态见 implementation，不宣称未执行的桌面 E2E 已通过。
 
 ### 功能增强：是否注入动态提示词 / skills 清单（2026-09-29）
 
@@ -118,6 +137,8 @@
 
 ## 移除闲时任务入口 (offpeak-removal)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：继续移除闲时任务用户入口；合入生命周期内部清理而不恢复已删除入口，移除守卫验证。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已实现（2026-09-29）：工具面与创建路径两处入口撤掉，其余实现保留为死代码。
 - **需求背景**：闲时任务（off-peak）要云端取号服务 + 账号上的 Coding Plan 连接才能用。本 fork 正在去云账号与 Coding Plan 体系（见 `local-mode`），用户只用自定义服务提供商，于是这个功能**永远无法创建**，却仍留在模型上下文里：宿主下发的灰度开关一旦为真，两个工具（描述 + 每个 8 条模型指令 + JSON Schema）就会进入**每一次**模型请求（实测本机会话的工具面里就有它们），token 买来的是一个必然失败的工具，模型也可能去调它并拿到「没有可用连接」这类无用失败。
 - **修改内容**：掐掉两个入口，让功能在模型与执行两侧都不可达：
@@ -134,6 +155,8 @@
 
 ## 功能组：工具模式与工具注入 (tool-modes)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：适配上游动态公告结构，工具/动态提示词/skills 注入开关仍在各自创建入口生效，不能由新公告绕过。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：保留配置服务、设置入口及 reload 档位刷新，并与上游 ToolSearch 可见性条件共同生效。
 
 - **状态**：已实现（2026-09-29）
@@ -159,6 +182,8 @@
 
 ## 系统指令：用户自定义提示词 (identity-preset)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留预设提示词与动态注入边界；上游个性化编辑用户级 AGENTS.md，语义不同，不取代预设。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：node.ts 合入 storage migration barrier 与 standalone server 服务工厂，保留配置存储根目录导出和设置入口。
 
 - **状态**：三期全部完成（2026-09-29）：内核、宿主服务与设置页、WebDAV 同步
@@ -180,26 +205,34 @@
 - **开发工作流**：Superpowers（`brainstorming` 已完成设计确认；`writing-plans` 产出第 1 期计划，逐任务实现并评审后由 `verification-before-completion` 收口）。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/context.ts`、`packages/services/src/node.ts`。保留 identity preset 端口和会话初始化读取，同时合入上游记忆检索分支、GenUI 输出目录初始化与网络捕获导出。
 
-## 覆盖设置热重载：/reload 命令 (reload-command)
+## 覆盖设置热重载：/refresh 命令 (reload-command)
+
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：用户明确选择原设置重载改名 `/refresh`，保留既有维护轮、排队与历史 reload completion 事件；上游 `/reload` 由 App lifecycle 执行单任务重启，两条路由隔离。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
+- **命令改名（2026-11-03）**：用户确认将 fork 设置热重载入口改为 `/refresh`，保留上游 `/reload` 的单任务重启语义；新信封与队列 kind 使用 `refresh`，持久化完成事件/marker 不改名，避免破坏历史。设计与实现见本条原文档。
+- **公告迁移兼容（2026-11-03）**：上游把 skills/动态公告迁入会话附件后，维护入口复用现有公告协调器撤回已关闭设置的旧附件；只调整模型内存投影，不改写普通对话、AGENTS 或原始持久记录，防止 `/refresh` 成功但下轮仍沿用旧设置。真实多轮回归及子代理隔离边界见本条与 identity-preset 实现文档。
+- **重启恢复兼容（2026-11-03）**：修复回执仅存在内存导致 `/reload` 后丢失的问题；用户确认复用上游独立 timeline message/part 持久化，继承回退与分叉语义，严格恢复并去重，不新增账本。FRR01 真实桌面重放通过：刷新不重启、不请求模型；重启保留任务、历史与回执，且可继续回复。详见本条实现文档与同步记录；不代表手机或 Windows 安装验收。
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：turn.ts 保留 reload 维护轮，并合入 creationFailure 决定 steer 可用性的上游规则；分享时间线采用上游国际化结构，保留 reload 标签。
 
 - **状态**：已实现（2026-09-30）
 - **需求背景**：工具档位（tool-modes）与系统指令（identity-preset）都在会话创建/冷恢复时读取一次，运行中的会话冻结（前缀不可变的缓存不变量）。用户改完设置后要么新开对话、要么重启应用才能生效；`/fork` 之类借「新会话」达成等效，但会多出一条对话。需要一条**在已有会话里原地生效**的命令，不改开新对话。
 - **修改内容**：
-  1. 新命令 `/reload`：重读 `~/.zcode/tool-groups.json` 与 `~/.zcode/presets/active.json`，就地重建提示词前缀与工具面，**下一轮起生效**；对话历史不动。空闲立即执行（kind=`reload` 的维护轮，TurnStarted 标 model-only，不产生用户气泡）；忙碌时与 compact 一致入队，回合结束后由排空路径执行（`executeTurnCommand` 的 `parseReloadCommand` 分流，与空闲路径同源）。
+  1. 新命令 `/refresh`：重读 `~/.zcode/tool-groups.json` 与 `~/.zcode/presets/active.json`，就地重建提示词前缀与工具面，**下一轮起生效**；对话历史不动。空闲立即执行（kind=`reload` 的维护轮，TurnStarted 标 model-only，不产生用户气泡）；忙碌时与 compact 一致入队，回合结束后由排空路径执行（`executeTurnCommand` 的 `parseReloadCommand` 分流，与空闲路径同源）。
   2. 工具面差量：内置工具按新 allowlist 显式注销被排除项再整体重注册（含 embedded-search 联动）；MCP 注销上次注册名后按启动期描述符快照以新名单重注册（不重连）。`cachedTools` 清空后 `rebuildContextPrefix` 重建前缀（guidanceToolNames 随新工具面收敛）。
-  3. 读盘逻辑单点化：原来只在 bootstrap 的 `resolveForkToolMode` 里的一次性解析改为 core 的 `ForkToolModePort`（镜像 identity 端口），创建期与 `/reload` 共用；标准档语义显式化为「返回宿主名单（或 undefined）」，使时切回标准能正确恢复约束。
+  3. 读盘逻辑单点化：原来只在 bootstrap 的 `resolveForkToolMode` 里的一次性解析改为 core 的 `ForkToolModePort`（镜像 identity 端口），创建期与 `/refresh` 共用；标准档语义显式化为「返回宿主名单（或 undefined）」，使时切回标准能正确恢复约束。
   4. 回执：成功后对话界面插入灰字分隔线（`timelineMarker` 的 `reload` 型，样式对齐 `/compact` 的「上下文已压缩」，文案「已重载提示词与工具面」）；排队与失败仍用 toast；分享面同步透出。
   5. 命令面：App `/` 菜单与内置帮助目录新增 `reload`（保留名）。
-- **修改文件**：新增 `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/reload.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/reload.ts`、`apps/zcode-cli/packages/core/test/{forkToolModePort,forkReload}.test.ts`、`docs/features/reload-command/**`；删除 `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `apps/zcode-cli/packages/bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口）；上游接线 `packages/shared/src/zcode-protocol-v4/{command,input-intent,rows}.ts`、`packages/shared/src/zcode-protocol/{index,legacy-types}.ts`、`packages/shared/src/{zcode-task-types-core,zcode-slash-command-help}.ts`、`apps/zcode-cli/packages/contracts/src/{interfaces/session.port,events/session.events}.ts`、`apps/zcode-cli/packages/core/src/{runtime/types.ts,runtime/internal.ts,runtime/agent-runtime.ts,runtime/methods/{turn,steering,index,mcp}.ts,runtime/helpers/{commands,runtime-tools}.ts}`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/{commands/handlers/index,product-projection}.ts`、`apps/zcode-cli/packages/bootstrap/src/{slash-command-surface.ts,app/{create-app,types}.ts}`、`packages/services/src/conversation-share/conversationSharePublicProjection.ts`、`packages/ui/src/v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandReplay,ConversationRowView,ConversationShareReadonlyTimeline}`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
+- **修改文件**：新增 `apps/zcode-cli/packages/core/src/fork/tool-modes/file-port.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/reload.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/refresh.ts`、`apps/zcode-cli/packages/core/test/{forkToolModePort,forkReload}.test.ts`、`docs/features/reload-command/**`；删除 `apps/zcode-cli/packages/bootstrap/src/fork/tool-modes.ts` 与 `apps/zcode-cli/packages/bootstrap/test/forkToolMode.test.ts`（逻辑与用例迁入 core 端口）；上游接线 `packages/shared/src/zcode-protocol-v4/{command,input-intent,rows}.ts`、`packages/shared/src/zcode-protocol/{index,legacy-types}.ts`、`packages/shared/src/{zcode-task-types-core,zcode-slash-command-help}.ts`、`apps/zcode-cli/packages/contracts/src/{interfaces/session.port,events/session.events}.ts`、`apps/zcode-cli/packages/core/src/{runtime/types.ts,runtime/internal.ts,runtime/agent-runtime.ts,runtime/methods/{turn,steering,index,mcp}.ts,runtime/helpers/{commands,runtime-tools}.ts}`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/{commands/handlers/index,product-projection}.ts`、`apps/zcode-cli/packages/bootstrap/src/{slash-command-surface.ts,app/{create-app,types}.ts}`、`packages/services/src/conversation-share/conversationSharePublicProjection.ts`、`packages/ui/src/v4/{slashCommands,SessionPane,pendingCommandRegistry,pendingCommandReplay,ConversationRowView,ConversationShareReadonlyTimeline}`、`packages/ui/src/i18n/locales/{zh-CN,en-US}.ts`。
 - **上游改动标记**：`FORK(reload-command)`；共 33 个上游文件、54 行标记（口径：`rg -l "FORK\(reload-command\)|FORK-BEGIN\(reload-command\)" --glob '!docs/**' --glob '!FEATURES.md' --glob '!AGENTS.md' --glob '!.agents/**'`，扣除 fork 自有新文件与测试）。接线逐处标注，新增文件不需要标记。
 - **设计文档**：`docs/features/reload-command/design.md`
 - **实现文档**：`docs/features/reload-command/implementation.md`
-- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/index.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts`、`packages/shared/src/zcode-slash-command-help.ts`、`packages/ui/src/v4/pendingCommandRegistry.ts`。保留 `/reload` 的工具面与提示词热重载、回放和帮助条目；同时合入 highspeed metrics handler，并在帮助中同步上游新增的 `guarded` 模式。
+- **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/app/create-app.ts`、`apps/zcode-cli/packages/bootstrap/src/app/types.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/index.ts`、`apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/product-projection.ts`、`apps/zcode-cli/packages/core/src/runtime/methods/mcp.ts`、`packages/shared/src/zcode-slash-command-help.ts`、`packages/ui/src/v4/pendingCommandRegistry.ts`。保留 `/refresh` 的工具面与提示词热重载、回放和帮助条目；同时合入 highspeed metrics handler，并在帮助中同步上游新增的 `guarded` 模式。
 
 ## GitHub 更新通道 (github-update)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：继续使用 GitHub feed 与精确 source-server release 版本，不恢复 ManifestUpdateProvider/强更端点；合入启动参数边界加固。用户确认 Windows 自动更新继续允许未签名安装包，不采用上游强制 Authenticode 策略，运行时与打包配置保持一致。处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 ### 远程 Server 从 GitHub 配套发布（2026-11-02）
 
 - **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
@@ -231,6 +264,8 @@
 
 ## 编辑 stale 判据改为内容哈希 (edit-stale-guard)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留内容哈希 stale 判据，吸收上游 Read 范围冷恢复与 snapshotIndex 顺序，不能退回仅时间戳判断。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已完成（2026-09-29）
 - **需求背景**：`Edit` / `Write` 写入前要判「文件自模型读取后是否被改过」，上游用 mtime + size 代理，两个方向都会出错。**误报**：唯一的豁免只对「严格整读」生效，range Read（offset/limit）拿不到它，于是格式化器空保存、IDE 保存、git 触碰、同一 workspace 的另一个会话只要推进了 mtime，就被判 stale，哪怕字节没变。**漏报**：判「变了」要求 mtime 严格变大，mtime 不前进且 size 相同时直接放行且不比对内容（write.ts 的最终内容比对只覆盖整读），于是 `cp -p`、`tar -x`、`rsync -t` 这类保留时间戳的写入会静默覆盖别的进程刚写下的内容。
 - **修改内容**：
@@ -248,6 +283,8 @@
 
 ## 非流式走流式通道 (nonstream-via-stream)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留非流式经流式通道的 fork 入口与错误语义，合入上游独立模型计数/能力字段。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：runtime-model.ts 以上游 invocation/off-peak binding 结构为基线，在最外层保留流式转非流式适配。
 
 - **状态**：已实现（2026-09-29），未做真实 provider 端到端验证（见实现文档 §4）
@@ -270,6 +307,8 @@
 
 ## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保持 WebFetch 直返正文与共享结果预算，不恢复模型摘要阶段。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已实现（2026-09-29）。单测 11 例、全量单测、类型检查、lint、架构检查与移除守卫均通过；端到端复验（改动后的 bundle 里抓一次页面、确认日志无**新增** `web_fetch_processing`）待新进程验证。
 - **需求背景**：上游 WebFetch 固定两段式——抓页面抽正文后**再调一次模型**把正文压成摘要，用摘要回答调用方传入的 `prompt`。实测这次往返的代价（14 条 `querySource=web_fetch_processing` 记录）：中位 **16.2 秒**、均值 14.1 秒，其中**一个 510 字符的页面也要 3,970 ms**——耗时来自「一次完整模型往返（含 reasoning）」，与正文长度几乎无关。因此速度问题无法靠调阈值解决，只有取消这次调用；而上下文之所以受控，是摘要输出被 4096 token 封顶换来的，取消摘要后必须由别的机制接管封顶，否则 64,850 字符的页面会整段进上下文。
 - **修改内容**：
@@ -293,6 +332,8 @@
 
 ## 网络搜索渠道 (search-providers)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留自定义搜索渠道，按最新工具注册合同适配。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：config.ts 合入 ToolSearch/DeferredToolCall 可见性规则，WebSearch 继续调用 fork 的普通形参判据；设置页保留渠道管理入口。
 
 - **状态**：已实现（2026-09-29），未做打包产物与真实 Tavily 端到端验证（见实现文档 §7）
@@ -328,6 +369,8 @@
 
 ## 通道清单驱动的服务可用性 (rpc-channel-manifest)
 
+
+- **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：合并新远程服务/数据同步能力，并保留通道清单驱动的服务可用性判断。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：remoteServiceAccess.ts 合入窗口目录及 source server management 能力选项；保留清单门控与 fork 服务，兼容旧 Host。
 
 - **状态**：已实现（2026-09-29），单测覆盖判定边界、客户端过滤与装配时序；网页端与桌面端均已 CDP 实测（桌面端为「新旧混跑」验证，见实现文档 §5.4）。

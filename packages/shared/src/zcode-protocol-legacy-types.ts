@@ -148,6 +148,7 @@ export const zcodeSessionGoalVerificationTimelineSchema = z
 export const zcodeSessionInfoSchema = z
   .object({
     sessionId: nonEmptyString,
+    directorySessionId: nonEmptyString.optional(),
     workspace: zcodeWorkspaceRefSchema,
     parentSessionId: nonEmptyString.optional(),
     traceId: nonEmptyString.optional(),
@@ -328,11 +329,18 @@ export const zcodeTimelinePartSchema = partBaseSchema
       "goal_verification",
       "session_fork",
       "model_change",
+      // FORK(reload-command): 独立维护回执必须跨旧消息协议保留，不可伪装成 compact。
+      "fork_refresh_completed",
     ]),
     display: z.enum(["separator", "worklog"]),
     status: z.string().optional(),
     anchorMessageId: nonEmptyString.optional(),
     anchorTurnId: nonEmptyString.optional(),
+    // FORK-BEGIN(reload-command)
+    // 旧消息可缺回执身份；新 carrier 必须保留来源命令与持久完成事件供恢复对账。
+    completionEventId: nonEmptyString.optional(),
+    sourceCommandId: nonEmptyString.optional(),
+    // FORK-END(reload-command)
     time: zcodeTimelinePartTimeSchema.optional(),
     operationId: z.string().optional(),
     trigger: z.enum(["manual", "auto", "partial", "reactive", "session_memory"]).optional(),
@@ -523,7 +531,7 @@ export const zcodeSessionRuntimeStateSchema = z
     stateRevision: z.number().int().nonnegative(),
     deliveryKind: zcodeDeliveryKindSchema.optional(),
     activeTurnId: nonEmptyString.optional(),
-    // FORK(reload-command): 与 ActiveTurnKind 同步新增 "reload"（/reload 维护轮）。
+    // FORK(reload-command): 与 ActiveTurnKind 同步新增 "reload"（/refresh 维护轮）。
     activeTurnKind: z.enum(["regular", "compact", "rewind", "reload"]).optional(),
     pendingRequestIds: z.array(nonEmptyString),
     apiRetry: zcodeSessionApiRetryStatusSchema.nullable().optional(),

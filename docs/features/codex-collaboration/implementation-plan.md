@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. 用户已批准连续实施和验证，任务之间不暂停请求确认。
 
-**Goal:** 实现最多 20 次、最长 30 秒间隔的 API 恢复，并移植 Codex V2 协作语义。
+**Goal:** 实现最多20次重试、普通退避最长30秒的 API 恢复，并移植 Codex V2 协作语义。2026-11-03 政策调整：供应商 Retry-After 独立接受<=5分钟加最多5秒正向 jitter。
 
 **Architecture:** 模型失败链共享唯一预算；adapter 负责请求，core 负责已输出流的安全恢复。
 根 runtime 的协作控制器统一管理身份、邮箱、执行句柄和名额；工具与客户端只发命令和投影事件。
@@ -14,7 +14,8 @@
 
 - contracts/src/model、core/src/runtime/methods、adapters/src/model：调用上下文、重试预算和流交接。
 - core/src/fork/codex-collaboration：受控的调度、邮箱、角色提示和工具装配模块。
-- contracts/src/interfaces/subagent.port.ts、core/src/subagent：旧执行端口适配，保留已有会话恢复。
+- core/src/fork/codex-collaboration-runtime：prepared child 执行、持久邮箱、同树恢复与宿主资源释放。
+- core/src/subagent：保留 profile、模型/权限/MCP/skills 等角色装配策略，旧执行端口与 runner 已删除。
 - core/src/tool、core/src/runtime：模型工具曝光和 root/child 装配。
 - bootstrap/src/zcode-protocol-v4、tui、packages/ui：既有事件的协作身份与状态投影。
 - architecture-policy.yaml：新增模块 managed 边界，不以例外绕过新文件治理。
@@ -28,7 +29,7 @@ CLI 路径默认相对于 apps/zcode-cli/packages；fork 标记统一 codex-coll
 
 ```ts
 expect(resolveAiSdkModelRetryOptions(undefined, {}).maxAttempts).toBe(21);
-expect(calculateRetryDelay(retry, 20, 300_000)).toBeLessThanOrEqual(30_000);
+expect(calculateRetryDelay({ ...retry, jitter: false }, 20, 300_000)).toBe(300_000);
 expect(classifyModelFailure(new Error("provider response failed")).retryable).toBe(true);
 ```
 
@@ -86,9 +87,9 @@ spawn 接受边界、路径隔离、并发名额、generation 和冷恢复身份
 
 ## Task 3: 工具、角色与实际 runtime 装配
 
-- [ ] 写真实父子 runtime 回归：spawn 返回后 wait 时 steer，child 的模型和工具继续。
+- [x] 写真实父子 runtime 回归：spawn 返回后 wait 时 steer，child 的模型和工具继续。
   失败后的 followup 使用原 childSessionId 和 transcript；cold resume 同样成立。
-- [ ] 在 contracts 和 managed 模块声明六工具严格 schema 与 ToolEntry。
+- [x] 在 contracts 和 managed 模块声明六工具严格 schema 与 ToolEntry。
 
 ```text
 spawn_agent(task_name, message, fork_turns?, agent_type?, model?, reasoning_effort?)
@@ -106,34 +107,39 @@ ToolSearch、权限、结果限额和 hook 必须走现有链。新名字同步 
 模型返回对齐 Codex：spawn `{task_name}`，消息成功空文本，interrupt `{previous_status}`，
 list `{agents:[{agent_name,agent_status}]}`，wait `{message,timed_out}`；内部身份留在事件。
 
-- [ ] 根 runtime 创建唯一控制器，子 runtime 共享按身份绑定的端口。
+- [x] 根 runtime 创建唯一控制器，子 runtime 共享按身份绑定的端口。
   spawn 接受后 signal 独立；wait 只取消订阅；interrupt 创建新轮次时更换 controller。
   父正常完成不释放 child 运行句柄；宿主关闭显式清理树。
-- [ ] 移植固定 Codex 提交的主/子角色、消息信封、fork all/none 和模型继承规则。
+- [x] 移植固定 Codex 提交的主/子角色、消息信封、fork all/none 和模型继承规则。
   补 Apache-2.0 归属；保留 profile/skills/memory/AGENTS.md 权限边界。
   ZCode 角色合同无 developer，将宿主角色片段放 system section；协作消息在唯一 provider
   投影转换为 assistant envelope，并保存可冷恢复的私有来源，不扩大全局消息角色协议。
   接受须在持久化、sink 安装和任务 admission 后；投递须 ACK 才出箱，禁用 20×10ms 轮询补偿。
-- [ ] 验证新工具会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
+- [x] 验证新工具会话恢复和工具结果配对；验证 child 与主线程可双向消息、续跑和嵌套限制。
   清理旧 runner/独立 registry 子代理写入与消息执行路径，不新增旧历史兼容，不删除用户数据。
-- [ ] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
+- [x] 跑 core/subagent、bootstrap/subagent、模型可见工具与权限回归，提交 feat(agent)。
   独立规范/质量审查均通过。
 
 ## Task 4: 客户端投影与端到端回归
 
-- [ ] 写 V4/TUI 与实际协议进程回归：steer、child 终态、续跑和子会话下钻。
+- [x] 写 V4/TUI 与实际协议进程回归：steer、child 终态、续跑和子会话下钻。
   本地 HTTP 故障场景覆盖首 token 前和输出中途断开，检查进程存活和实际后续请求。
-- [ ] 六工具事件映射到既有 subagent/background work；不把 UI 作为调度所有者。
+- [x] 六工具事件映射到既有 subagent/background work；不把 UI 作为调度所有者。
   desktop continuous 和 mobile replayable 从同一序列恢复，不重复完成、不倒退状态。
-- [ ] 运行受影响包测试和完整 CLI typecheck/lint；明确标注环境阻塞，不伪称实机验证。
-- [ ] 更新 FEATURES.md、implementation.md 和笔记中的接线、限制、实际验证记录，提交 fix(agent)。
+- [x] 运行受影响包测试和完整 CLI typecheck/lint；明确标注环境阻塞，不伪称实机验证。
+  CLI32包类型通过；Lint实际5个max-lines错误，详见implementation与client Note，不记为通过。
+- [x] 更新 FEATURES.md、implementation.md 和笔记中的接线、限制、实际验证记录，提交 fix(agent)。
 
 ## Task 5: 收尾
 
-- [ ] 全功能规范审查，再做最终代码质量审查，所有严重问题先修复。
-- [ ] 执行根 typecheck/lint、architecture:check 和 fork:check-removals；CLI 独立检查不可省略。
-- [ ] 检查 git diff、FORK 标记、许可证和干净状态。每个功能提交只包含本任务文件。
-- [ ] 本地合回当前 main（无冲突时 fast-forward），不推送、不发版；汇报 commit 与验证结果。
+- [x] 全功能规范审查，再做最终代码质量审查，所有严重问题先修复。
+  最后paired child具体错误丢失经actualRED→56/56GREEN修复，规范与质量均APPROVE。
+- [x] 执行根 typecheck/lint、architecture:check 和 fork:check-removals；CLI 独立检查不可省略。
+- [x] 检查 git diff、FORK 标记、许可证和干净状态。每个功能提交只包含本任务文件。
+  用户.gitignore与未跟踪codex参考目录保留，不宣称共享工作区完全干净。
+- [x] 本地提交保留当前 `canary`，不移动 `main`、不推送、不发版；汇报 commit 与验证结果。
+  本次实施在共享工作区的 canary 上进行，并行任务已产生独立发布/WebDAV提交；整体合入 main 会
+  同时移动其他任务的提交，超出本功能收尾范围，不以整理分支为由改变其历史或工作区。
 
 ## 状态与证据
 

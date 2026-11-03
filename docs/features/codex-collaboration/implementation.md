@@ -2,11 +2,14 @@
 
 ## 当前状态
 
-2026-11-02：Task 1（有界模型 API 恢复）已实施并通过独立 spec/quality review。
-Task 2 控制器通过双审，53 条回归；Task3a 正在实现合同、工具条目与角色，尚未切换默认 runtime。
-调度器、六工具迁移、角色提示词和 mailbox 生命周期属于后续任务，不代表本功能已全部交付。
+2026-11-03：Task 1（有界模型 API 恢复）、Task 2 控制器、Task3a 六工具合同与角色均已通过双审。
+Task3b 已切换实际 runtime，删除旧协作执行路径并接入同根调度、持久邮箱和冷恢复；
+独立规范和质量审查均批准至 `205a7ff6`，所有已确认问题均已关闭。
+Task4 六工具真实桌面主路径已通过 CSC01；客户端冷身份、代际、旧展示入口清理及最后错误详情修复
+已通过独立规范与质量审查。原需求没有剩余必需开发项，验证限制在末节逐项记录。
+下文按阶段保留当时的验证边界；曾标记“待后续”的项目，以本节和末尾收尾记录为当前状态。
 设计见 [design.md](design.md)，实施计划见 [implementation-plan.md](implementation-plan.md)。
-Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和30秒硬上限来自用户政策。
+Task 1 的 Codex 参考为 `6b3b3349f3f559d65b101998a65cad44e5b2ee7b`；21 请求和普通退避30秒硬上限来自用户政策；Retry-After 于2026-11-03授权独立接受最多5分钟加上游正向 jitter。
 2026-11-02 已修正 steer 安全请求边界，参考用户指定本地 checkout `3026a8e54e0f48c4d8074cd700f35b0697abc329`；
 相关回归通过，桌面启动阻塞已修复，隔离与默认模式实际 Electron 回放均为 5/5；
 见 [desktop-steer-acceptance.md](desktop-steer-acceptance.md)。
@@ -82,7 +85,7 @@ reactive compact 与失败链中的 preflight compact 继承外层 owner。
 ## 错误与时间边界
 
 - 默认退避为2/4/8/16/30秒，保留 jitter；base/factor 覆盖仍可改变曲线，所有配置与
-  Retry-After 都受30秒硬上限约束。配置可以收紧21请求上限。
+  普通指数退避都受30秒硬上限约束。Retry-After 独立接受<=300秒并可额外正向 jitter 最多5秒；配置可以收紧21请求上限。
 - 未知 provider 错误、4xx/5xx、解析错误和 SDK 内部 AbortError 进入有界恢复。
   明确 context-exceeded 保留语义 handoff，立即由 Core compact 改写上下文；compact 的物理请求仍占原预算。
   显式 caller signal、本地配置、权限和 `FORK_UPSTREAM_REQUEST_BLOCKED` 不重试。
@@ -192,7 +195,7 @@ native true→false终态1例）；额外 provider payload 正向回归捕获过
 GREEN：5个相关文件391/391通过，含整个 compact63例与 Adapter/native/业务码/分类回归。
 该轮 fresh CLI typecheck、架构与 lint 结果在任务报告记录；未重跑6872例大范围套件。
 
-## Task 1 质量复核修正轮 2
+## Task 1 质量复核修正轮 2（历史：其中 Retry-After 30秒政策已于2026-11-03取代）
 
 独立质量复核补充确认3个入口缺口：重试包装器同时携带 `cause` 与 `lastError` 时，Core 只沿
 单一路径扫描会漏掉 `localControl`；model admission 在 SDK 前拒绝时虽然状态事件写成不可重试，
@@ -341,7 +344,7 @@ flush也在原enqueue通道重试，清理与admission互斥，不递归等待�
 模块，避免测试文件超过800行，不新增调度owner。3个新场景先RED，另补关闭后abort reject/迟到completion的无异步错误与generation保护验证，最终3文件53/53 GREEN；
 core typecheck、模块lint、架构0违规与diff check通过。未运行冗余根全局检查，未改真实runtime或E2E。
 
-### Task 3b：真实 prepared runtime、邮箱与生命周期接线（待独立审查）
+### Task 3b：真实 prepared runtime、邮箱与生命周期接线（阶段记录，已完成独立双审）
 
 `core/src/fork/codex-collaboration-runtime` 将六工具绑定到同一 root controller，child 复用标准
 reserved prompt command：prepare 先创建/恢复 session，installMailbox 安装 durable sink，admit
@@ -437,3 +440,129 @@ interrupted但provider未结算仍阻止回收，root派生事件待写同样阻
 真实三项先RED后GREEN：首次settings失败零模型IO且关闭一次；cold hydrate失败关闭新handle但保留全部
 accepted history；prepare与cleanup双失败保留两原cause，shutdown重试同资源。adapter5文件38/38、
 controller3文件54/54通过；模式边界同时按既有profile策略澄清，没有扩大plan/yolo权限合同。
+
+### Task3b spec 修正：删除无效的公开配置开关
+
+旧 `features.subagent` 在六工具默认接线后仍可被 set/get/文件 schema 接受，但没有行为。现删除公开键、
+值类型、默认值和 store 映射；动态 ConfigPort 用公开 ConfigKey 集合拒绝未知 set/get/merge，先校验
+feature patch 再写入，避免混合 patch 部分成功。features 文件对象改为 strict，旧键明确报 schema 错误；
+其余文件顶层的 passthrough 策略保持原样。现有 loadFileConfig 将 parse 错误作为 loaded:false 与诊断返回，
+不会宣称加载成功。本批不改写用户配置文件，也不添加迁移或旧开关别名。
+
+实际RED为旧公开键仍存在、旧文件字段仍接受两项；重建 contracts 公共产物后，配置两个测试文件59/59
+GREEN，包含动态 set/get/merge 拒绝、合法 feature/subagents 保留及混合 patch 原子拒绝。removal guard
+新增三个当前配置入口的禁回归规则并通过（36815文件）；adapters noEmit、scoped lint、架构0违规通过。
+仓库当前没有 config set/get CLI 子命令，因此通过实际动态 ConfigPort 边界验证，未发明新的 CLI 接口。
+
+### Task3b spec 修正：普通 eviction / unload 的模型边界等待环
+
+第二次模型边界等待派生投影时中断child，接着自动eviction或显式unload，会在controller lane内
+release等待旧command；旧command投影恢复后又排入同一lane的deliver，形成等待环。原shutdown封口
+只覆盖dispose，不能处理普通释放。现把原admission AbortSignal保留在同一个command资源句柄里，
+beforeModel投影返回后立即检查该信号，检查到deliver同步入队之间没有await。已中断旧轮直接走原取消链，
+release仍等原command结算再关闭资源；不改变controller状态owner、cleanupPending或增加timeout。
+
+新增实际RED2项都为blocked→settled（自动eviction、显式unload），修复后runtime/residency/background/
+shutdown9文件115/115、controller3文件54/54、独立审查原BOUNDARY2探针1/1通过。测试在真正第二边界
+和release开始处设gate，确认投影未恢复前浏览器未关，恢复后旧child没有第二次provider IO；eviction
+等待replacement实际provider请求并验证不同session。core noEmit/scoped lint通过，架构0违规。
+
+### Task3b 最终精准回归与保留 fixture 对齐
+
+最后扩大到43个相关测试文件。首轮536/542通过，6失败中4项为fixture遗漏：persistent-memory三scope
+自定义profile仍请求父embedded目录没有的Grep；TaskOutput contract仍要求已删除的Agent指导。
+按已审批合同把profile额外标记改为Bash，并同步父可见Tools文本断言；仍实际执行Write、保留全部scope/
+路径/deny断言。TaskOutput精确description断言改为Bash/workflow，schema/default/超时断言不变。
+修后两文件13/13通过。扩大复跑的42文件/539项通过，另3项在加载旧文本断言时失败，最终由该13项
+精确复跑覆盖；不把分批结果冒充同一次542全绿。Workflow首轮5秒timeout与exec spy0失败，独立无并发
+build后2/2通过（0.894s测试），没有扩展timeout或修改产品，保留首失败记录。
+
+最终source检查：CLI typecheck32/32、根typecheck0exit、根lint102warnings/0errors、架构0违规、removal
+guard36816文件通过。src公共入口+controller专用include6文件57/57；Bash封口与普通fork隔离定向2/2
+（同文件其余158项未跑）；prompt trajectory recorder5/5。CLI lint实际仍3个max-lines错误/71warnings，
+沿上文精确文件边界记录。OpenAI HTTP4项由根统一重建后复验，provider/客户端边界仍同前，不宣称Task4完成。
+
+### Task3b quality 修正：child 终态使用具体错误正文
+
+普通provider Error被既有turn wrapper包装后，controller只读顶层Error.message，导致list_agents、canonical
+lastError与STATUS均固化成Turn execution failed。driver现在复用selectExecutionErrorMessage选取正文；
+只有选出正文与原摘要不同时，用既有CoreError保留原拒绝cause和type/context/retryable/recoverable。
+已具体的ModelError原对象直通，不改普通turn wrapper、纯controller或原始日志/重试链。
+
+实际RED为wrapped错误的list缺具体原因；ModelError非重试对照原本通过。修后实际runtime+turn-errors
+8文件56/56、质量原始独立probe1/1通过。新增两项同时查list、durable lastError、STATUS、父provider
+assistant邮件、原cause对象与同session followup恢复；core noEmit/scoped lint/架构通过。此修复仍待
+spec增量与quality复审，不宣称Task4完成。
+
+### Task4 支持：精确同步 runtime 状态只读入口
+
+客户端冷query不能用任意后台Bash/兄弟running或旧保存图证明目标child仍运行。新增公开同步
+AgentRuntime.getCollaborationAgentStatus(agentId)，返回公开类型CollaborationAgentRuntimeStatus或
+undefined；源只读已初始化controller快照中的精确child，root/未知/未初始化均undefined，不调用ready、
+不读store、不启动模型。interrupt已提交但原IO未drain仍返回interrupted，与驻留资源查询用途不同。
+
+先更新合同，实际RED为方法缺失；修后status/runtime/recovery3文件25/25。status两项实际覆盖冷保存
+running但无init时0IO、live/terminal/interrupt、错误child与仍运行兄弟的精确区分、无额外模型请求。
+core typecheck/build与scoped lint通过；架构当时仅client并行施工的bootstrap/app/subagent-observation.ts
+未登记新文件1项失败，runtime所有自有源无违规，未改或暂存client的policy。此有限入口单独交spec/quality。
+
+## Task4 最终客户端与真实桌面证据（2026-11-03）
+
+六工具 shared identity、中文/英文 UI、TUI、canonical 冷查询与 generation 投影已接线。
+旧 Agent/Task/SendMessage/RespondToCoordinator 的专用 renderer、ACK/output_file 解析与旧消息 display
+discriminant 已删除；普通历史保留通用展示，不新增历史兼容处理。具体落点、单一 owner 与测试先红后绿
+见 [client-implementation](client-implementation.md) 及客户端 Agent Note。
+
+客户端定向验证分批记录：UI/shared 11文件398/398、bootstrap 7文件448/448、managed reader1/1、
+TUI25/25、CLI observation12/12、contracts metadata20/20、客户端移除守卫1/1。相同 controller
+事件序列实际经过 publisher→renderer store，在 desktop continuous/mobile replayable 两种交付下验证
+parent steer、重复帧、丢帧恢复、followup 和旧代终态；这是协议/投影测试，没有手机 GUI 证据。
+
+独立协议 HTTP 进程以最终 runtime 重新构建：9/9依赖 build、4/4真实进程测试（14.16秒）。
+覆盖首 token 前 HTTP500、可见输出后的断流、持续失败精确21次物理请求后仍能接续健康请求，
+以及 send_message 空成功 tool result 与 assistant MESSAGE。未扩大为所有 provider 协议验证。
+日志 `/tmp/zcode-collaboration-complete-{runtime-build,wire}.log`。
+Task4原子提交 `478f3541`（包含最后 ordinary fork reader 修复）后再次build9/9、HTTP4/4，
+11.41秒；日志 `/tmp/zcode-collaboration-committed-{build,wire}.log`。
+
+最终客户端 fresh Desktop/Agent 运行的正式 steer 5/5、48.2秒，artifact
+`desktop-e2e-20261102-165743-477`。同轮 CSC01 的首次失败证实测试没展开已完成工作历史；
+既有 UI 折叠会卸载全部工具/child DOM，后台 badge仍为1。按真实 history trigger展开后保留全部
+opaque identity、原 spawn anchor、模型 wire 和 native Stop断言，同 bundle CSC01 1/1、19秒，
+artifact `desktop-e2e-20261102-170402-103`。最后 ordinary fork 已有自身 root 的读取隔离组合，
+在该构建之后修复，以 query/448项定向测试证明，不冒充 GUI覆盖。CSC01继续为 manual-review/pending。
+
+根最终 `pnpm typecheck` exit0、CLI typecheck32/32、`pnpm lint` 102warnings/0errors；架构0违规、
+fork移除守卫39758文件通过（10个大于5MB的文件按工具规则跳过）。根较早一次typecheck曾被并行用户
+WebDAV施工阻塞，保留原失败日志；其完成后复跑通过，没有代改用户文件。
+CLI Lint原入口不能将 native pnpm作为JS执行；使用只转调原pnpm的临时JS wrapper执行原检查器后，
+实际5个max-lines错误/71warnings：adapters/fs1642、core/background-tasks942、本任务触碰的
+cold-event-merge805、transcript-hydration1722、product-projection5241。后三者仍为既有大模块，
+不将这些检查失败写成通过，也不把触碰文件笼统称为无关错误。没有全量UT、手机/Windows/Linux实机
+或全部模型协议验收；没有push、发版或移动main。
+
+### 最终规范审查增量：配对卡片具体失败正文
+
+独立规范探针确认成功 spawn 后的 child 失败虽已保存 canonical summaryText，配对卡片却仅转发
+status并隐藏裸child行，导致具体原因不可见。先补client acceptance与正式React DOM回归，实际
+1fail/10pass，再在既有只读卡片投影中同时派生failed summary为error；不改原成功spawn ACK，
+不新增状态owner。正式真实output.text fixture还验证同failed状态summary更新、running后新旧错误
+均清除；三文件56/56通过。日志 `/tmp/zcode-final-child-error-{red,final}.log`。
+原独立探针1/1通过，最终规范审查APPROVE；增量根typecheck exit0、rootlint102warnings/0errors。
+此项只读展示由DOM回归验证，不将之前GUI构建扩大为包含此后修复。
+独立提交 `56d3fac1`；增量架构0违规、移除守卫36961文件通过（9个超过5MB按原规则跳过）。
+
+### 最终审查结论
+
+Task4与整合规范审查APPROVE，随后最终质量审查APPROVE，没有剩余必需开发项或质量阻断。
+质量独立复跑UI3文件114/114、bootstrap2文件16/16、客户端移除契约1/1及diff whitespace检查通过。
+日志 `/tmp/zcode-finalquality-{ui,bootstrap,removals}.log`。CLI的5个max-lines错误继续作为检查失败记录，
+不是“所有检查全绿”；没有因收尾扩大为超长宿主文件重构。全部本功能提交均仅本地保留。
+
+## 2026-11-03 供应商等待政策对齐
+
+保持 `MODEL_RECOVERY_MAX_DELAY_MS=30000` 和21次物理预算，新增独立 Retry-After 接受边界300000ms。adapter 合法 hint 不按普通 maxDelayMs 裁切，并保留上游只向后 jitter（最高5秒）；>300000ms 即使低于未封顶指数退避也拒绝。workflow governor 仅向并发控制器传合法正数 hint，最多300秒且不额外抖动；无效 hint 不增加冷却，避免二重准入冻结。`wait_agent` 的30秒默认与此无关，不改。
+
+验证（本轮同步工作树）：先修改场景/政策文档，再新增/更新回归；RED 为 runner-retry 4失败、governor 3失败，分别观察到300秒提示被裁为30秒与60秒冷却被裁为30秒。GREEN：adapter 5文件235/235、governor 48/48，通过边界300000/300001ms、超长hint低于未封顶指数值、无效值、305秒正向 jitter、普通2/4/8/16/30秒与21请求、header优先级/独立普通配置、offpeak冷却。contracts构建、adapter/bootstrap定向 TypeScript 均通过；定向lint 0错误，6条原有测试警告。`MODEL_RECOVERY_MAX_DELAY_MS` 剩余消费者仅普通退避默认/配置夹紧/计算；governor 改用共享合法hint判据，没有修改 wait_agent。
+
+扩展回归：10个adapter文件413/413通过。HTTP业务错误与SSE业务错误的原有41秒/37秒 Retry-After 回归原先仍断言裁为30秒，按本轮授权政策同步期望与fake clock推进量，确认两种真实runner入口沿用供应商提示。此次只调整合同期望，不放宽错误分类、次数预算或其他断言。

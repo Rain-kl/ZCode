@@ -83,8 +83,6 @@ export interface ForkWebdavStatus {
   backupCount: number;
   /** 本机标识，写入 manifest.source，便于列表区分来源。 */
   source: string;
-  /** 首屏引导是否已被跳过（跳过后不再自动弹出登录卡，可从设置页或状态项重新配置）。 */
-  firstRunSkipped: boolean;
 }
 
 export interface ForkWebdavTestResult {
@@ -95,8 +93,6 @@ export interface ForkWebdavTestResult {
 export interface ForkWebdavSettingsPatch {
   autoSync?: boolean;
   retentionLimit?: number;
-  /** 首屏引导「跳过」写入 true。 */
-  firstRunSkipped?: boolean;
 }
 
 export type ForkWebdavConflictChoice = "use-remote-latest" | "keep-local";

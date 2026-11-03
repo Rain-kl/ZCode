@@ -66,7 +66,8 @@ export interface ConversationAssistantWorkRenderOptions {
   enableChangesGrouping?: boolean;
 }
 
-const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
+// FORK(codex-collaboration): 唯一创建入口才拥有 child 行，后续动作不会生成第二个 child。
+const SUBAGENT_TOOL_NAMES = new Set(["spawn_agent"]);
 
 const isToolCallRow = (row: AssistantWorkRow): row is ToolCallRow => row.kind === "toolCall";
 
@@ -204,7 +205,7 @@ function buildChangesGroup(rows: ToolCallRow[], stageTailIsRunning: boolean) {
  *
  * 同一轮并发 Agent 工具的 tool call 行按模型输出顺序出现，但 SubagentSpawned
  * 事件按异步调度顺序到达；旧 FIFO 会把一个 Agent 的标题与另一个 childSessionId 拼在一起。
- * 仅对缺少新字段的历史数据保留“同 turn 唯一剩余一对”的无歧义兼容。
+ * FORK(codex-collaboration): 缺原始 anchor 不猜测配对，避免把 followup 配到错误 child。
  */
 function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
   subagentByAgentToolRowId: Map<number, SubagentRow>;
@@ -213,13 +214,10 @@ function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
   const subagentByAgentToolRowId = new Map<number, SubagentRow>();
   const claimedSubagentRowIds = new Set<number>();
   const agentToolByTurnAndCallId = new Map<string, ToolCallRow>();
-  const agentToolRows: ToolCallRow[] = [];
   const subagentRows: SubagentRow[] = [];
-  const legacySubagentRows: SubagentRow[] = [];
 
   for (const row of rows) {
     if (isAgentToolCallRow(row)) {
-      agentToolRows.push(row);
       agentToolByTurnAndCallId.set(`${row.turnId}\0${row.toolCallId}`, row);
     } else if (row.kind === "subagent") {
       subagentRows.push(row);
@@ -227,7 +225,6 @@ function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
   }
   for (const row of subagentRows) {
     if (!row.parentToolCallId) {
-      legacySubagentRows.push(row);
       continue;
     }
     const host = agentToolByTurnAndCallId.get(`${row.turnId}\0${row.parentToolCallId}`);
@@ -235,35 +232,6 @@ function pairSubagentRows(rows: readonly AssistantWorkRow[]): {
       subagentByAgentToolRowId.set(host.rowId, row);
       claimedSubagentRowIds.add(row.rowId);
     }
-  }
-
-  const remainingAgentToolsByTurn = new Map<string, ToolCallRow[]>();
-  for (const row of agentToolRows) {
-    if (subagentByAgentToolRowId.has(row.rowId)) continue;
-    const turnRows = remainingAgentToolsByTurn.get(row.turnId);
-    if (turnRows) {
-      turnRows.push(row);
-    } else {
-      remainingAgentToolsByTurn.set(row.turnId, [row]);
-    }
-  }
-  const legacySubagentsByTurn = new Map<string, SubagentRow[]>();
-  for (const row of legacySubagentRows) {
-    const turnRows = legacySubagentsByTurn.get(row.turnId);
-    if (turnRows) {
-      turnRows.push(row);
-    } else {
-      legacySubagentsByTurn.set(row.turnId, [row]);
-    }
-  }
-  for (const [turnId, subagentRows] of legacySubagentsByTurn) {
-    const toolRows = remainingAgentToolsByTurn.get(turnId);
-    if (toolRows?.length !== 1 || subagentRows.length !== 1) continue;
-    const host = toolRows[0];
-    const subagent = subagentRows[0];
-    if (!host || !subagent) continue;
-    subagentByAgentToolRowId.set(host.rowId, subagent);
-    claimedSubagentRowIds.add(subagent.rowId);
   }
 
   return { subagentByAgentToolRowId, claimedSubagentRowIds };

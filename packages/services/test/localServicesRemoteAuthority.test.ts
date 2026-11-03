@@ -413,10 +413,10 @@ describe("createLocalServices remote authority", () => {
       services.exposeOnChannelServer(server);
       const result = await client
         .getChannel(IPluginSyncService.channelName)
-        .call("listLocalUserPluginCandidates", []);
+        .call("listSyncItems", []);
 
-      expect(result.candidates).toEqual([]);
-      expect(result.maxArchiveBytes).toBeGreaterThan(0);
+      expect(result.items).toEqual([]);
+      expect(result.homeDir).toBe(home);
     } finally {
       client.dispose();
       server.dispose();

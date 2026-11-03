@@ -136,7 +136,8 @@ const QueueRow = memo(function QueueRow({
 }: QueueRowProps) {
   const dispatchLocked = item.dispatch.state !== "queued";
   const rowLocked = dispatchLocked || editPending;
-  const isCompact = item.kind === "compact";
+  // FORK(reload-command): refresh 维护项不可撤回成普通文本，也不应显示为引导消息。
+  const isMaintenance = item.kind === "compact" || item.kind === "refresh";
   const parsedInput = {
     ...parsePromptConversationSelections(item.text),
     ...(item.conversationQuotes ? { references: item.conversationQuotes } : {}),
@@ -213,10 +214,11 @@ const QueueRow = memo(function QueueRow({
           <GripVertical className="size-4" />
         </Button>
       </ControlHintTooltip>
+      {/* FORK(reload-command): 两种维护项统一显示原生命令，不作为用户输入内容。 */}
       <span
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2 truncate text-ui-base text-foreground",
-          isCompact ? "font-mono" : null,
+          isMaintenance ? "font-mono" : null,
         )}
         title={parsedInput.visibleContent}
       >
@@ -224,8 +226,8 @@ const QueueRow = memo(function QueueRow({
           <BotGroupSourceLabel source={item.botGroupSource} />
           <span className="truncate">
             <BotChannelMessageContent
-              source={isCompact ? undefined : item.botGroupSource}
-              text={isCompact ? "/compact" : parsedInput.visibleContent}
+              source={isMaintenance ? undefined : item.botGroupSource}
+              text={isMaintenance ? `/${item.kind}` : parsedInput.visibleContent}
             />
           </span>
           {parsedInput.references.length ? (
@@ -241,6 +243,7 @@ const QueueRow = memo(function QueueRow({
           ) : null}
         </span>
       </span>
+      {/* FORK(reload-command): refresh 与 compact 共用维护执行入口，不作为引导输入。 */}
       {onSendNow ? (
         <Button
           type="button"
@@ -264,10 +267,11 @@ const QueueRow = memo(function QueueRow({
           }
         >
           <ArrowUpFromLine className="size-3.5" />
-          {intl.formatMessage({ id: isCompact ? "chat.queue.runNow" : "chat.queue.sendNow" })}
+          {intl.formatMessage({ id: isMaintenance ? "chat.queue.runNow" : "chat.queue.sendNow" })}
         </Button>
       ) : null}
-      {onEditItem && !isCompact ? (
+      {/* FORK(reload-command): 维护命令不可撤回成普通文本绕过其队列语义。 */}
+      {onEditItem && !isMaintenance ? (
         <ControlHintTooltip title={intl.formatMessage({ id: "chat.queue.edit" })}>
           <Button
             type="button"

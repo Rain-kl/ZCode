@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { FORK_IDENTITY_PRESET_DEFAULT_TEMPLATE } from "@zcode/shared";
+import { FORK_IDENTITY_PRESET_DEFAULT_TEMPLATE, FORK_IDENTITY_PRESET_HARNESS_BLOCK, FORK_IDENTITY_PRESET_SECURITY_NOTICE } from "@zcode/shared";
 
 import { buildCliPrefixSection } from "../src/context/sections/cli-prefix.js";
-import { buildIdentitySection } from "../src/context/sections/identity.js";
+import { buildIdentitySection, buildHarnessBlock, buildSecurityNotice } from "../src/context/sections/identity.js";
 import { createFileIdentityPresetPort } from "../src/fork/identity-preset/file-port.js";
 import {
   buildIdentityPresetSection,
@@ -83,6 +83,11 @@ test("身份段与 identity.ts 逐字段同构", () => {
   assert.equal(section.content, "自定义身份");
   assert.equal(section.chars, "自定义身份".length);
   assert.equal(section.preview, "自定义身份");
+});
+
+test("身份模板的共享安全与 Harness 常量符合当前上游契约", () => {
+  assert.equal(FORK_IDENTITY_PRESET_SECURITY_NOTICE, buildSecurityNotice());
+  assert.equal(FORK_IDENTITY_PRESET_HARNESS_BLOCK, buildHarnessBlock());
 });
 
 test("「默认」模板与 cli_prefix + identity 的当前原文逐字节一致", () => {

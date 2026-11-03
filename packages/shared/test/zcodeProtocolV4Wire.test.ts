@@ -252,10 +252,6 @@ describe("ZCode Protocol V4 wire v3", () => {
       taskStatus: "completed",
       output: "done",
     },
-    {
-      kind: "respond_to_coordinator",
-      status: "success",
-    },
   ] as const)("ToolCallRow wire 接受 $kind display", (display) => {
     expect(
       toolCallRowSchema.safeParse({
@@ -298,10 +294,6 @@ describe("ZCode Protocol V4 wire v3", () => {
       retrievalStatus: "success",
       taskStatus: "completed",
       output: "done",
-    },
-    {
-      kind: "respond_to_coordinator",
-      status: "success",
     },
     {
       kind: "mcp_tool",

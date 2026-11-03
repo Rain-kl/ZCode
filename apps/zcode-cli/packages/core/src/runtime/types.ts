@@ -27,6 +27,7 @@ import type {
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { ProviderToolRound } from "./provider-tool-rounds/contract.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -269,7 +270,11 @@ export interface AgentRuntimeConfig {
   /** 仅用于持久化隔离；文件与命令执行仍使用 workingDirectory。 */
   workspaceIdentity?: WorkspaceId;
   envInfo?: EnvInfo; // Optional, will be auto-detected if not provided
-  currentDate?: string; // YYYY-MM-DD, resolved by adapter when omitted
+  /**
+   * YYYY-MM-DD，缺省由 adapter 解析。只用于 ContextBuilder 日期段的用量统计；
+   * 模型看到的日期公告一律取运行时时钟（固定日期请注入 `now`）。
+   */
+  currentDate?: string;
   userInstructions?: UserInstructionsOptions; // P1: AGENTS.md
   projectContext?: ProjectContext; // P2: auto-detected if not provided
   skillMetadataBudget?: number;
@@ -380,6 +385,12 @@ export interface AgentRuntimeDeps {
    * 包装（受闸门约束），主 runtime 拿治理器的 observer（只喂信号）；缺席即不设闸门。
    */
   modelRequestAdmission?: ModelRequestAdmission;
+  /**
+   * 主代理 subagent（`Agent` 工具）的准入端口工厂：派生 subagent 时以**当前**父 sessionId 调用，
+   * 结果作为子 runtime 的 `modelRequestAdmission`（受闸门约束，同一父会话的 subagent 共用一条队列）。
+   * 缺席时子 runtime 沿用父的 `modelRequestAdmission`。
+   */
+  subagentModelRequestAdmission?: (parentSessionId: string) => ModelRequestAdmission;
   onOffPeakLifecycleEvent?: (
     event: import("./off-peak/lifecycle.js").OffPeakLifecycleEvent,
   ) => void;
@@ -399,7 +410,7 @@ export interface AgentRuntimeDeps {
   // 用户自定义身份段端口；缺席即不启用（系统默认提示词）。同一 App 内有效值只有一份；并发首次进入可能各读一次、结果相同（见 methods/context.ts）
   identityPresetPort?: IdentityPresetPort;
   // FORK-END(identity-preset)
-  // FORK(reload-command): /reload 的工具档位端口（创建期与重载共用同一份读盘逻辑）
+  // FORK(reload-command): /refresh 的工具档位端口（创建期与重载共用同一份读盘逻辑）
   forkToolModePort?: ForkToolModePort;
   eventSink?: SessionEventSink;
   logger?: Logger;
@@ -537,7 +548,7 @@ export type ExecuteTurnOptions = ExecuteTurnOptionsBase &
  */
 export type PromptAdmissionOptions = ExecuteTurnOptions & {
   // FORK(reload-command): "reload" 与 compact 同为可排队的维护命令 kind（不得被消费为 inline guide）。
-  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "reload";
+  commandKind?: "sendText" | "sendGoalCommand" | "compact" | "refresh";
   delivery?: "auto" | "start_turn" | "steer_active_turn";
   expectedTurnId?: TurnId;
   /** busy 时的产品队列语义；附件或不可 steer 时由 Core 回退 queue。 */
@@ -773,7 +784,6 @@ export interface ResumeSessionResult extends SessionHistoryHydrationResult {
   /** resume 是否写回了当前 materialization 无法完整反映的 compact 修补事实。 */
   persistedMessagesReloadRequired: boolean;
   readFileStateRestoredCount: number;
-  readFileStateSkippedRangeReadCount: number;
   readFileStateSkippedUnreadableEditCount: number;
   traceId: TraceId;
 }
@@ -788,6 +798,7 @@ export interface PermissionDecisionResult {
 export interface ExecuteToolsOptions {
   toolSearch?: ToolSearchExecutionContext;
   automationTurn?: boolean;
+  automationId?: string;
   offPeakTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
@@ -802,7 +813,7 @@ export interface ExecuteToolsResult {
   events: SessionEvent[];
 }
 
-// FORK(reload-command): /reload 维护轮的 turn kind（与 compact/rewind 并列，不可 steer）。
+// FORK(reload-command): /refresh 维护轮的 turn kind（与 compact/rewind 并列，不可 steer）。
 export type ActiveTurnKind = "regular" | "compact" | "rewind" | "reload";
 
 export const INLINE_TEXT_ATTACHMENT_MAX_BYTES = 64 * 1024;
@@ -898,8 +909,10 @@ export interface RunModelTextRequestOptions {
 }
 
 export interface RuntimeModelStreamSnapshot {
+  /** 当前轮（最后一个服务端内置工具之后）的内容；之前的轮在 providerToolRounds。 */
   reasoning: ModelReasoningContentBlock[];
   text: string;
+  providerToolRounds?: readonly ProviderToolRound[];
 }
 
 export interface StreamedToolExecutionResult {
@@ -917,6 +930,8 @@ export interface RuntimeModelTextResult {
   reasoning?: ModelReasoningContentBlock[];
   text: string;
   toolCalls?: ModelToolCall[];
+  /** 服务端内置工具切出的前序轮次；text/reasoning 只保留最后一轮。 */
+  providerToolRounds?: ProviderToolRound[];
   usage: ModelUsage;
 }
 

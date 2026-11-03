@@ -9,6 +9,12 @@ import {
   type TurnId,
 } from "@zcode/contracts";
 import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
+// FORK(reload-command): 持久 timeline 是完成事实权威，避免同一 live 回执重复投影。
+import {
+  durableForkRefreshEventIds,
+  retainActiveForkRefreshEvents,
+  settledForkRefreshControlTurnIds,
+} from "../fork/reload-command/module.js";
 import {
   goalVerificationEntriesFromSessionEntries,
   synthesizeEventsFromMessages,
@@ -113,7 +119,8 @@ export async function loadPersistedConversationMaterialization(input: {
       : undefined;
   return {
     goalVerificationEntries: goalVerificationEntriesFromSessionEntries(entries),
-    memoryEvents: [...input.memoryEvents],
+    // FORK(reload-command): 已被 rewind 移除的 timeline 宿主不能再从旧 live event 复活。
+    memoryEvents: retainActiveForkRefreshEvents(input.memoryEvents, allMessages, messages),
     messages,
     ...(sharedContextImport ? { sharedContextImport } : {}),
     target,
@@ -193,9 +200,7 @@ const TRANSCRIPT_DERIVED_EVENT_TYPES = new Set<string>([
   SessionEventType.CompactFailed,
   SessionEventType.TargetCompletionVerification,
   SessionEventType.SessionForked,
-  SessionEventType.SubagentSpawned,
-  SessionEventType.SubagentMessage,
-  SessionEventType.SubagentStopped,
+  // FORK(codex-collaboration): 生命周期由控制器持久事件提供，transcript tool 结果不能重建。
 ]);
 
 const HOOK_LIFECYCLE_EVENT_TYPES = new Set<string>([
@@ -727,6 +732,13 @@ function resequence(events: readonly SessionEvent[]): SessionEvent[] {
  * 内存事件只补未完成 turn 与没有 transcript 形态的当前状态。
  */
 export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeResult {
+  // FORK(reload-command): 在 authority turn 分流之前按完成身份去重，维护轮没有普通 user anchor。
+  const durableRefreshIds = durableForkRefreshEventIds(input.messages);
+  // FORK(reload-command): 已有独立完成宿主的终态维护轮不能再制造空 turnHeader。
+  const settledRefreshTurns = settledForkRefreshControlTurnIds(
+    input.memoryEvents,
+    durableRefreshIds,
+  );
   const diagnostics = new Map<ColdEventMergeDiagnostic["code"], ColdEventMergeDiagnostic>();
   const hasPersistedTargetAuthority = Object.prototype.hasOwnProperty.call(input, "target");
   const authorityTurns = memoryAuthorityTurnIds(input.memoryEvents, input.messages);
@@ -788,6 +800,23 @@ export function mergeColdConversationEvents(input: MergeInput): ColdEventMergeRe
   );
 
   input.memoryEvents.forEach((event, index) => {
+    // FORK(reload-command): 只压掉匹配已持久成功回执的完整 controlOnly 维护轮壳。
+    if (
+      event.turnId &&
+      settledRefreshTurns.has(String(event.turnId)) &&
+      (event.type === SessionEventType.TurnStarted || event.type === SessionEventType.TurnComplete)
+    ) {
+      recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
+      return;
+    }
+    // FORK(reload-command): 新宿主只恢复 active branch；完成事件不能再重放第二份 marker。
+    if (
+      event.type === SessionEventType.ForkReloadCompleted &&
+      durableRefreshIds.has(String(event.id))
+    ) {
+      recordDiagnostic(diagnostics, "cold_merge.durable_event_suppressed", event);
+      return;
+    }
     if (HOOK_LIFECYCLE_EVENT_TYPES.has(event.type)) {
       const invocationId = stringField(event.payload, "hookInvocationId");
       // invocation 扫描会把 startup/resume SessionStart 的临时 runtime turn 修正为

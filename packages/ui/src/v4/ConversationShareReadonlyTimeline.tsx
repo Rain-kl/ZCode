@@ -130,7 +130,7 @@ interface ReadonlyLabels {
   artifactPreview: string;
   markerCompact: string;
   markerModelChange: string;
-  // FORK(reload-command): /reload 只读回执文案。
+  // FORK(reload-command): /refresh 只读回执文案。
   markerReload: string;
   unsupportedRows: string;
 }
@@ -152,7 +152,7 @@ function resolveReadonlyMarkerLabel(
       return marker.status === "success" ? labels.markerCompact : null;
     case "modelChange":
       return labels.markerModelChange;
-    // FORK(reload-command): /reload 的只读回执。
+    // FORK(reload-command): /refresh 的只读回执。
     case "reload":
       return labels.markerReload;
     default:

@@ -26,6 +26,7 @@ import { recordToolUsageFromEvent } from "./usage-observability.js";
 import { persistSessionShellEnvironmentSnapshot } from "./session-shell-environment.js";
 import { persistRuntimeModelSelection } from "./turn-model.js";
 import { writeDynamicWorkflowActivationEntryIfActivated } from "./dynamic-workflow-activation.js";
+import { writeSessionFeaturesEntryAfterFirstPersist } from "../session-features/contract.js";
 import {
   persistWorkspaceCheckpointEntry,
   persistWorkspaceFileRewindEntry,
@@ -101,9 +102,18 @@ export async function appendEvent(
 
   let phase = "event_store.append";
   try {
+    // FORK-BEGIN(reload-command)
+    // 两段 transcript 写入失败时不能连内存里都留下成功事实，否则重连会复活未完成回执。
+    const durableRefresh = event.type === SessionEventType.ForkReloadCompleted;
+    if (durableRefresh) {
+      phase = "session_event.persist_refresh_timeline";
+      await persistDurableSessionEvent.call(this, event, traceContext);
+    }
+    // FORK-END(reload-command)
     const storedEvent = await this.eventStore.append(event);
     phase = "session_event.persist_durable";
-    await persistDurableSessionEvent.call(this, storedEvent, traceContext);
+    // FORK(reload-command): 完成 marker 已先提交 transcript，其他事件保持既有顺序。
+    if (!durableRefresh) await persistDurableSessionEvent.call(this, storedEvent, traceContext);
     phase = "session_event.record_usage";
     await recordToolUsageFromEvent(this, storedEvent, traceContext);
     phase = "session_event.notify_sinks";
@@ -267,6 +277,31 @@ async function persistDurableSessionEvent(
   traceContext: TraceContext,
 ): Promise<void> {
   if (!this.sessionStore) return;
+
+  // FORK-BEGIN(reload-command)
+  // 完成事件原先只在内存，任务重启后回执消失；独立 timeline 宿主继承分支与 fork 顺序。
+  if (event.type === SessionEventType.ForkReloadCompleted) {
+    const payload = event.payload as { sourceCommandId?: string };
+    const completed = event.timestamp.getTime();
+    await this.persistAssistantTimelinePartForSession({
+      sessionId: event.sessionId,
+      messageID: `fork-refresh-message:${event.id}` as MessageId,
+      partID: `fork-refresh-part:${event.id}` as PartId,
+      created: completed,
+      completed,
+      timeline: {
+        timelineType: "fork_refresh_completed",
+        display: "separator",
+        status: "completed",
+        completionEventId: String(event.id),
+        ...(payload.sourceCommandId ? { sourceCommandId: payload.sourceCommandId } : {}),
+        time: { start: completed, end: completed },
+      },
+      traceContext,
+    });
+    return;
+  }
+  // FORK-END(reload-command)
 
   if (event.type === SessionEventType.TurnComplete || event.type === SessionEventType.TurnError) {
     const payload = event.payload as { resultType?: string };
@@ -650,6 +685,8 @@ async function persistSession(
     // `/workflow` 作为首轮时激活先于落盘（launch.md「On demand: activation」），entry 在这里补写。
     await writeDynamicWorkflowActivationEntryIfActivated(this);
     this.sessionPersisted = true;
+    // 落盘前打的会话能力标签只在内存里，这里补写；之后的打点各自排队写入。
+    await writeSessionFeaturesEntryAfterFirstPersist(this, traceContext);
     this.logger?.debug("Session persisted", {
       ...traceContextToLogContext(traceContext),
       event: "session.persisted",

@@ -6,6 +6,33 @@ not schedule children or maintain another mutable collaboration state.
 
 ## Identity and lifecycle
 
+Task4 client implementation reads the versioned root entry through the runtime's
+public persistence API. Resolve a request by checking its own root entry first;
+only a persisted `subagent_child` may walk its actual `parentID` chain. Every
+edge must match an accepted graph relation and the child's opaque session ID.
+Missing parents, cycles and metadata conflicting with the canonical graph fail
+with the session and call context. Ordinary conversation/selection forks stop
+the walk and never acquire the source conversation's children.
+
+Private spawn metadata is a strictly validated version-1 collaboration relation
+in `ToolPart.state.metadata.collaboration`; it is a derived shortcut, never the
+identity authority. The accepted graph recovers an accepted spawn even if the
+process stopped before tool-result settlement. Tool completion cannot synthesize
+a child terminal. Cold query does not initialize or schedule a controller: a
+saved running child requires a live owner with actual running work; otherwise
+the read model reports interrupted/cancelled until an explicit followup.
+
+ProductProjection remains the only lifecycle row owner. Its persisted row holds
+optional agentId/path/parent identity/generation; a lower generation cannot
+overwrite a newer run, and a repeated running event cannot reopen a terminal
+of the same generation. followup retains the original row, tool-call anchor and
+opaque child session. Lifecycle replay is not inferred from a model-facing ACK.
+When a canonical seed excludes a formerly projected child, remove both its row
+and its child background-work entry in the same projection update. The fork
+removal registry must guard the removed message renderers and the old display
+discriminants in their former contracts; historical fixture text is not a
+compatibility entry point.
+
 Only spawn_agent creates a child work item. Its model result is only task_name;
 the durable internal lifecycle provides agentId, the actual childSessionId,
 parent identity, original parentToolCallId, path and generation. A followup uses
@@ -25,10 +52,18 @@ Mailbox content is not duplicated into wait's model result.
 
 ## Tool presentation
 
+When a successful spawn is paired with a subsequently failed child, the paired card
+shows the canonical child error summary in its expanded details. The original spawn
+ACK remains successful and unchanged. Rendering derives status and error from the same
+child row; a later running/completed generation must not retain the earlier error.
+
 All six tools have intentional labels and summaries. spawn_agent pairs with the
 child lifecycle row, while send_message, followup_task, interrupt_agent,
 list_agents and wait_agent remain actions on that collaboration. They do not
 create extra children. List/wait cannot fall through to a stop renderer.
+Native child terminal usage is attributed to `spawn_agent`; this is telemetry
+for the original accepted creation and does not create a UI item. Workflow actor
+usage retains its own existing attribution and terminal owner.
 
 TUI shows tool name, target/message and available result or error detail. Empty
 successful message results remain successful. Native child Stop remains usable

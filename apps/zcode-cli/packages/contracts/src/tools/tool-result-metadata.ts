@@ -86,15 +86,6 @@ export const fileDiffToolResultDisplayPayloadSchema = z
   })
   .strict();
 
-export const localAgentMessageToolResultDisplayPayloadSchema = z
-  .object({
-    kind: z.literal("local_agent_message"),
-    status: z.enum(["success", "failed"]),
-    error: z.string().optional(),
-    message: z.string().optional(),
-  })
-  .strict();
-
 export const taskStopToolResultDisplayPayloadSchema = z
   .object({
     kind: z.literal("task_stop"),
@@ -113,13 +104,6 @@ export const taskOutputToolResultDisplayPayloadSchema = z
     taskStatus: z.string().min(1).max(TASK_OUTPUT_DISPLAY_MAX_STATUS_CHARS).optional(),
     output: z.string().min(1).max(TASK_OUTPUT_DISPLAY_MAX_OUTPUT_CHARS).optional(),
     truncated: z.literal(true).optional(),
-  })
-  .strict();
-
-export const respondToCoordinatorToolResultDisplayPayloadSchema = z
-  .object({
-    kind: z.literal("respond_to_coordinator"),
-    status: z.enum(["success", "failed"]),
   })
   .strict();
 
@@ -281,13 +265,12 @@ const bashOutputDisplaySchema = z
   })
   .strict();
 
+// FORK(codex-collaboration): 六工具直接显示参数与结果，删除旧消息专用显示协议，保留 Bash/workflow。
 export const toolResultDisplayPayloadSchema = z.discriminatedUnion("kind", [
   bashOutputDisplaySchema,
   fileDiffToolResultDisplayPayloadSchema,
-  localAgentMessageToolResultDisplayPayloadSchema,
   taskStopToolResultDisplayPayloadSchema,
   taskOutputToolResultDisplayPayloadSchema,
-  respondToCoordinatorToolResultDisplayPayloadSchema,
   cuaToolResultDisplayPayloadSchema,
   nodeReplImageToolResultDisplayPayloadSchema,
   mcpToolResultDisplayPayloadSchema,
@@ -303,17 +286,11 @@ export const toolResultDisplayPayloadSchema = z.discriminatedUnion("kind", [
 export type FileDiffToolResultDisplayPayload = z.infer<
   typeof fileDiffToolResultDisplayPayloadSchema
 >;
-export type LocalAgentMessageToolResultDisplayPayload = z.infer<
-  typeof localAgentMessageToolResultDisplayPayloadSchema
->;
 export type TaskStopToolResultDisplayPayload = z.infer<
   typeof taskStopToolResultDisplayPayloadSchema
 >;
 export type TaskOutputToolResultDisplayPayload = z.infer<
   typeof taskOutputToolResultDisplayPayloadSchema
->;
-export type RespondToCoordinatorToolResultDisplayPayload = z.infer<
-  typeof respondToCoordinatorToolResultDisplayPayloadSchema
 >;
 export type CuaToolResultDisplayPayload = z.infer<typeof cuaToolResultDisplayPayloadSchema>;
 export type ApplicationIconLocator = z.infer<typeof applicationIconLocatorSchema>;

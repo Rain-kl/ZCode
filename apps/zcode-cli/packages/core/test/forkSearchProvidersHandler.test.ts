@@ -36,7 +36,8 @@ test("输出接受可选 channel，且缺省时仍合法", () => {
 test("工具描述不再声称 US-only", () => {
   const description = buildWebSearchProviderDescription(new Date("2026-09-29T00:00:00Z"));
   assert.ok(!/US-only/.test(description));
-  assert.match(description, /current month is September 2026/);
+  assert.match(description, /current month is \(provided in the conversation below\)/);
+  assert.equal(description, buildWebSearchProviderDescription(new Date("2026-10-01T00:00:00Z")));
 });
 
 test("工具名未变（模型侧签名保持单一形状）", () => {

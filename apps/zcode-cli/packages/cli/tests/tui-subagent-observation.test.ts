@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  EventReducer,
   InMemorySessionEventStore,
   SessionEventType,
   createSessionEvent,
@@ -14,12 +13,12 @@ import type { AgentRuntime } from "@zcode/core";
 import { createSubagentObservation } from "../../bootstrap/src/app/subagent-observation.js";
 
 const parentId = createSessionId("parent");
-const childId = createSessionId("subagent_agent1");
+const childId = createSessionId("opaque-child-f91");
 const baseSession = { time: { created: 1, updated: 2 }, taskType: "subagent_child" };
 
 async function observationFixture() {
   const events = new InMemorySessionEventStore();
-  const parent = { ...baseSession, id: parentId } as SessionInfo;
+  const parent = { ...baseSession, id: parentId, taskType: "interactive" } as SessionInfo;
   const child = { ...baseSession, id: childId, parentID: parentId } as SessionInfo;
   const parentMessages = [
     {
@@ -27,7 +26,7 @@ async function observationFixture() {
       parts: [
         {
           type: "tool",
-          tool: "Agent",
+          tool: "spawn_agent",
           callID: "launch",
           state: {
             status: "completed",
@@ -45,7 +44,50 @@ async function observationFixture() {
       parts: [{ id: "text", type: "text", text: "persisted answer" }],
     },
   ] as unknown as MessageWithParts[];
+  const rootRecord = {
+    agentId: "root-agent",
+    childSessionId: parentId,
+    path: "/root",
+    traceId: "trace",
+    settings: { forkTurns: "all" },
+    generation: 0,
+    status: "idle",
+    mailbox: [],
+  };
+  const childRecord = {
+    ...rootRecord,
+    agentId: "agent1",
+    childSessionId: childId,
+    path: "/root/worker",
+    parentId: "root-agent",
+    generation: 1,
+    status: "running",
+  };
   const store = {
+    sessionEntries: async ({ sessionID, type }: { sessionID: string; type: string }) =>
+      sessionID === parentId && type === "codex_collaboration"
+        ? [
+            {
+              data: {
+                version: 1,
+                config: {},
+                snapshot: {
+                  version: 1,
+                  rootSessionId: parentId,
+                  agents: [rootRecord, childRecord],
+                  accepted: [
+                    {
+                      callerId: "root-agent",
+                      agentId: "agent1",
+                      callId: "launch",
+                      fingerprint: "fp",
+                    },
+                  ],
+                },
+              },
+            },
+          ]
+        : [],
     getSession: async (id: string) =>
       id === parentId ? parent : id === childId ? child : undefined,
     messages: async ({ sessionID }: { sessionID: string }) =>
@@ -53,10 +95,10 @@ async function observationFixture() {
   } as unknown as SessionStorePort;
   const runtime = {
     getSessionEventStore: () => events,
-    getProjection: async () => new EventReducer().reduce(await events.getEvents(parentId)),
+    getCollaborationAgentStatus: () => childRecord.status,
   } as unknown as AgentRuntime;
   const app = createSubagentObservation({ runtime, sessionId: parentId, sessionStore: store });
-  return { app, events, child, childMessages, parentMessages };
+  return { app, events, child, childMessages, parentMessages, childRecord };
 }
 
 test("directory uses child lifecycle, not the completed parent Agent launch ACK", async () => {
@@ -76,6 +118,7 @@ test("directory uses child lifecycle, not the completed parent Agent launch ACK"
   await f.events.append(createSessionEvent(SessionEventType.TurnComplete, parentId, {}));
   directory = await f.app.readSubagents();
   assert.equal(directory.running.length, 1);
+  f.childRecord.status = "completed";
   await f.events.append(createSessionEvent(SessionEventType.TurnComplete, childId, {}));
   directory = await f.app.readSubagents();
   assert.equal(directory.running.length, 0);

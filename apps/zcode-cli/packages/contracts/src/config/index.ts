@@ -31,10 +31,10 @@ export const ConfigKey = {
   CaCertFile: "network.caCertFile",
   HttpTimeout: "network.timeout",
 
+  // FORK(codex-collaboration): 六工具只用 subagents 配置，公开 feature 集合不能保留无效开关。
   // Features
   FeatureCompact: "features.compact",
   FeatureRewind: "features.rewind",
-  FeatureSubagent: "features.subagent",
   FeatureMemory: "features.memory",
   FeatureSkill: "features.skill",
   FeatureMcp: "features.mcp",
@@ -112,7 +112,6 @@ export type ConfigValue<K extends ConfigKey> = K extends "subagents"
               : K extends
                     | "features.compact"
                     | "features.rewind"
-                    | "features.subagent"
                     | "features.memory"
                     | "features.skill"
                     | "features.mcp"
@@ -227,10 +226,10 @@ export interface RuntimeConfig {
     caCertFile?: string;
     timeout: number;
   };
+  // FORK(codex-collaboration): 静态类型与公开有限 feature 集合保持一致。
   features: {
     compact: boolean;
     rewind: boolean;
-    subagent: boolean;
     memory: boolean;
     skill: boolean;
     mcp: boolean;
@@ -316,10 +315,10 @@ export const DefaultRuntimeConfig: RuntimeConfig = {
   network: {
     timeout: 180000,
   },
+  // FORK(codex-collaboration): 默认值不能重新引入已移除的委派启用开关。
   features: {
     compact: true,
     rewind: true,
-    subagent: true,
     memory: true,
     skill: true,
     mcp: true,

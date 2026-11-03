@@ -24,8 +24,8 @@ function build(config: Partial<ContextBuilderConfig> = {}) {
 test("未启用自定义身份时系统提示词与现状一致", () => {
   const result = build();
   assert.equal(result.systemMessages.length, 3);
-  assert.equal(result.systemMessages[0]?.content, "You are ZCode, an interactive coding agent");
-  assert.match(String(result.systemMessages[1]?.content), /You are an interactive ZCode agent/);
+  assert.equal(result.systemMessages[0]?.content, "You are ZCode, an interactive agent");
+  assert.match(String(result.systemMessages[1]?.content), /You are an agent working with the user/);
 });
 
 test("启用后第 1 段消失，身份段换成用户内容，动态段保留", () => {
@@ -35,11 +35,12 @@ test("启用后第 1 段消失，身份段换成用户内容，动态段保留",
   assert.equal(result.systemMessages.length, 2);
   assert.equal(result.systemMessages[0]?.content, "你是我的私人助理。");
   const dynamic = String(result.systemMessages[1]?.content);
-  assert.match(dynamic, /# Environment/);
+  assert.ok(result.sections.some((section) => section.source === "env_info"));
+  assert.doesNotMatch(dynamic, /# Environment/);
   assert.match(dynamic, /# Context management/);
   const all = result.systemMessages.map((message) => String(message.content)).join("\n");
-  assert.doesNotMatch(all, /You are ZCode, an interactive coding agent/);
-  assert.doesNotMatch(all, /You are an interactive ZCode agent/);
+  assert.doesNotMatch(all, /You are ZCode, an interactive agent/);
+  assert.doesNotMatch(all, /You are an agent working with the user/);
   assert.doesNotMatch(all, /# Harness/);
 });
 
@@ -51,7 +52,7 @@ test("customSystemPrompt 在场时忽略自定义身份（宿主意图优先）"
   const all = result.systemMessages.map((message) => String(message.content)).join("\n");
   assert.match(all, /宿主注入的提示词/);
   // customSystemPrompt 的既有语义不变：cli_prefix 仍在，只是身份 body 被替换
-  assert.match(all, /You are ZCode, an interactive coding agent/);
+  assert.match(all, /You are ZCode, an interactive agent/);
   assert.doesNotMatch(all, /你是我的私人助理/);
 });
 
@@ -63,7 +64,7 @@ test("工作流子代理身份在场时忽略自定义身份", () => {
   const all = result.systemMessages.map((message) => String(message.content)).join("\n");
   assert.match(all, /subagent inside a dynamic workflow run/);
   assert.doesNotMatch(all, /你是我的私人助理/);
-  assert.doesNotMatch(all, /You are ZCode, an interactive coding agent/);
+  assert.doesNotMatch(all, /You are ZCode, an interactive agent/);
 });
 
 test("空白正文的自定义身份按未启用处理（公开配置边界也要守）", () => {
@@ -73,7 +74,7 @@ test("空白正文的自定义身份按未启用处理（公开配置边界也�
     identityPreset: { id: "blank", name: "空白", content: "   " },
   });
   assert.equal(result.systemMessages.length, 3);
-  assert.equal(result.systemMessages[0]?.content, "You are ZCode, an interactive coding agent");
+  assert.equal(result.systemMessages[0]?.content, "You are ZCode, an interactive agent");
 });
 
 test("关闭动态段注入后，system 提示词只剩身份段", () => {
@@ -92,7 +93,7 @@ test("关闭动态段注入后，system 提示词只剩身份段", () => {
   assert.equal(only, "你是我的私人助理。");
   assert.doesNotMatch(only, /# Environment/);
   assert.doesNotMatch(only, /# Context management/);
-  assert.doesNotMatch(only, /You are ZCode, an interactive coding agent/);
+  assert.doesNotMatch(only, /You are ZCode, an interactive agent/);
 });
 
 test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => {
@@ -115,8 +116,8 @@ test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => 
   });
   assert.deepEqual(
     withListing.metaUserAttachments.map((attachment) => attachment.source),
-    // context_prefix（当前日期那段）与本开关无关，始终在。
-    ["skills_listing", "context_prefix"],
+    // 日期改由运行时独立公告，不再伪装成指令 carrier。
+    ["skills_listing"],
   );
 
   const withoutListing = build({
@@ -132,7 +133,7 @@ test("skills 清单开关：关闭后不再注入 skills_listing 附件", () => 
   });
   assert.deepEqual(
     withoutListing.metaUserAttachments.map((attachment) => attachment.source),
-    ["context_prefix"],
+    [],
   );
 });
 
@@ -199,6 +200,6 @@ test("关闭动态段后，AGENTS.md 块不再套 ZCode 的头/尾说明", () =>
     userInstructions: instructions,
   });
   const onBody = on.metaUserAttachments[0]?.content ?? "";
-  assert.match(onBody, /As you answer the user's questions/);
-  assert.match(onBody, /this context may or may not be relevant/);
+  assert.match(onBody, /Codebase and user instructions are shown below/);
+  assert.doesNotMatch(onBody, /this context may or may not be relevant/);
 });

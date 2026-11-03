@@ -22,12 +22,21 @@ export const REGISTRY = [
   {
     featureId: "codex-collaboration",
     absentFiles: [
+      ...["send-message", "respond-to-coordinator"].map((name) => ({
+        path: `packages/ui/src/ToolCallBlocks/renderers/${name}.tsx`,
+        reason: "六工具使用专属协作展示，旧消息展示入口不得复活",
+      })),
+      ...["agent.tsx", "agentPromptSection.tsx"].map((file) => ({
+        path: `packages/ui/src/ToolCallBlocks/renderers/${file}`,
+        reason: "旧 Agent ACK 展示已无生产入口，由六工具有意展示替代",
+      })),
       ...[
         "runtime/methods/subagent.ts",
         "runtime/methods/subagent-messages.ts",
         "subagent/runner.ts",
         "subagent/message-steering.ts",
         "subagent/coordinator-response.ts",
+        "subagent/completion-notification.ts",
       ].map((file) => ({
         path: `apps/zcode-cli/packages/core/src/${file}`,
         reason: "协作控制器替代旧 runner 与消息 owner，禁止恢复第二写入路径",
@@ -67,6 +76,30 @@ export const REGISTRY = [
       },
     ],
     absentPatternsInFile: [
+      {
+        path: "packages/shared/src/tool-identity.ts",
+        pattern: /["'](?:Agent|Task|SendMessage|RespondToCoordinator)["']/,
+        reason: "客户端身份目录只登记六工具，不重新接纳旧四工具",
+      },
+      ...[
+        "apps/zcode-cli/packages/contracts/src/tools/tool-result-metadata.ts",
+        "packages/shared/src/zcode-protocol-v4/toolDisplay.ts",
+        "packages/shared/src/conversation-share-tool-presentation.ts",
+        "packages/ui/src/ToolCallBlocks/toolResultDisplay.ts",
+      ].map((path) => ({
+        path,
+        pattern: /\b(?:local_agent_message|respond_to_coordinator)\b/,
+        reason: "旧消息显示协议已删除，不恢复第二套消息解释路径",
+      })),
+      ...[
+        "apps/zcode-cli/packages/contracts/src/config/index.ts",
+        "apps/zcode-cli/packages/adapters/src/config/index.ts",
+        "apps/zcode-cli/packages/adapters/src/config/schema.ts",
+      ].map((path) => ({
+        path,
+        pattern: /\bFeatureSubagent\b|features\.subagent|\bsubagent\s*:/,
+        reason: "旧公开开关已删除，不能恢复静默接受但不生效的配置路径",
+      })),
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/index.ts",
         pattern:

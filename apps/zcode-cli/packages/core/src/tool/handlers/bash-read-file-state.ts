@@ -7,9 +7,9 @@ import type {
 import { relative } from "node:path";
 import { resolveWorkspacePath } from "../path-policy.js";
 import {
-  createReadFileStateKey,
   findLatestReadFileState,
   normalizeReadFileStateMtimeMs,
+  setReadFileStateEntry,
 } from "../read-file-state.js";
 import type { ReadFileStateEntry, ToolExecutionContext } from "../types.js";
 import { collectBashReadFileSources, selectReadContent } from "./bash-read-file-sources.js";
@@ -156,10 +156,7 @@ async function backfillReadFileStateFromBash(input: BashReadFileStateEffectsInpu
           // FORK(edit-stale-guard): 这里的 read 是整文件读（truncated 已在上面返回），hash 可直接作为 stale 判据；见 FEATURES.md 的 edit-stale-guard 条目
           contentHash: read.revision?.hash,
         };
-        readFileState.set(
-          createReadFileStateKey(resolvedPath, selected.offset ?? 1, selected.limit),
-          entry,
-        );
+        setReadFileStateEntry(readFileState, entry);
       } catch {
         // Bash 已经返回，read-state 回填失败不能改变 Bash 结果。
       }

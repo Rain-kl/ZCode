@@ -9,9 +9,19 @@ Driver release waits for the original accepted run promise to settle before clos
 runtime resources. An abort notification is not a drain acknowledgment. The temporary
 drain handle observes completion only; execution errors remain on the original run
 and cleanup errors keep their causes. No independent timeout or accepted owner exists.
+At the driver boundary, existing wrapper-aware execution error selection supplies
+the visible rejection summary while retaining the original rejection as cause.
+Already specific ModelError objects pass through unchanged. The controller stays
+independent of runtime error formatting; lastError and STATUS share its run outcome.
+An interrupted command rechecks its original admission signal after asynchronous
+projection and before entering the controller mailbox lane. Explicit unload and
+automatic eviction can then drain it without a lane/command dependency cycle.
 The root liveness query reads the whole canonical tree plus unsettled original command
 handles and pending derived event writes. Child bindings read their subtree. Interrupted
 status is not evidence that IO has drained, so automatic residency eviction remains blocked.
+The synchronous getAgentStatus query returns exact child status only after controller
+initialization. Root, unknown and uninitialized identities return undefined. It never
+initializes, reads storage or uses aggregate background work as liveness evidence.
 Preparation registers borrowed browser resources before construction and transfers them
 to the runtime handle during constructor binding. A prepare rejection still goes through
 the controller's release(undefined) and cleanup retry path. Successful release removes

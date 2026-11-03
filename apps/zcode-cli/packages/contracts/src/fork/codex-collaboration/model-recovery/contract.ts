@@ -8,6 +8,17 @@ export interface ModelRecoveryBudget {
 
 export const MODEL_RECOVERY_MAX_ATTEMPTS = 21;
 export const MODEL_RECOVERY_MAX_DELAY_MS = 30_000;
+export const MODEL_RECOVERY_MAX_RETRY_AFTER_MS = 300_000;
+
+/** Provider hints are independent of ordinary backoff; invalid hints never freeze admission. */
+export function isModelRecoveryRetryAfterMs(value: number | undefined): value is number {
+  return (
+    value !== undefined &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= MODEL_RECOVERY_MAX_RETRY_AFTER_MS
+  );
+}
 
 /** Lower overrides tighten the global bound; no caller can increase it. */
 export function createModelRecoveryBudget(

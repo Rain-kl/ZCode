@@ -12,7 +12,7 @@ import { isHighspeedProviderId } from "@zcode/shared";
 import { createModelExecutionContext } from "../../../session-execution/index.js";
 import { mapAttachmentRefsToTurnAttachments } from "../attachment-refs.js";
 import { inputIntentMetadataFromQueueItem } from "../input-intent.js";
-import { startPromptTurn } from "../prompt-turn.js";
+import { startPromptTurn, turnBackgroundAttributionOf } from "../prompt-turn.js";
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 import {
@@ -101,7 +101,8 @@ async function editQueueItem(
   const payload = envelope.payload as CommandPayloadMap["editQueueItem"];
   const record = requireRecord(host, envelope.sessionId);
   const queueItem = host.getQueueItem?.(record.app.sessionId, payload.queueItemId) ?? null;
-  if (queueItem?.kind === "compact") {
+  // FORK(reload-command): 设置刷新同样必须保持命令类型与正文一致。
+  if (queueItem?.kind === "compact" || queueItem?.kind === "refresh") {
     // compact 是 typed maintenance intent；允许改文本会把它伪装成普通输入，
     // 但 commandKind 仍是 compact，消费时产生与 UI 文案不一致的压缩副作用。
     throw new V4QueueItemNotEditableError(payload.queueItemId);
@@ -234,7 +235,14 @@ async function sendQueuedNow(
       throw new V4QueueItemReservedError(payload.queueItemId);
     }
     if (queueItem.kind === "compact") {
-      await startManualCompact(host, record, queueItem.sourceCommandId, foregroundPromotionLeaseId);
+      // 旧提升只传 commandId，丢失入队时的 B；与普通输入一样恢复完整意图，禁止重读 Composer。
+      const intent = inputIntentMetadataFromQueueItem(queueItem, queueItem.text);
+      intent.modelSelection ??= resolveSessionFallbackModelSelection(record);
+      await startManualCompact(host, record, {
+        inputId: queueItem.sourceCommandId,
+        foregroundPromotionLeaseId,
+        intent,
+      });
       leaseReleaseOwnedByBackground = true;
     } else if (queueItem.kind === "sendGoalCommand") {
       const intent = inputIntentMetadataFromQueueItem(queueItem, objective ?? queueItem.text);
@@ -320,6 +328,8 @@ async function sendQueuedNow(
         // FORK(codex-collaboration): 此路径只启动空闲独立轮；运行中 guide 已由 Core 接纳。
         intent,
         requireIdle: true,
+        // Bug 根因：提升曾只回放 inputId 和 denylist，导致可信 automation attribution 丢失。
+        ...turnBackgroundAttributionOf({ automationId: queueItem.automationId }),
         toolDisallowlist: queueItem.toolDisallowlist,
         ...(turnExecution ? { modelExecution: createModelExecutionContext(turnExecution) } : {}),
         ...(attachments ? { attachments } : {}),

@@ -38,6 +38,7 @@ import { forkCompletedHistory } from "./fork-history.js";
 import { readMailboxReceipt } from "./mailbox.js";
 import { resolveSubagentSelection } from "../../runtime/helpers/subagent-selection.js";
 import { getOffPeakModelBinding } from "../../runtime/off-peak/model-binding.js";
+import { latestAnnouncedEnvironment } from "../../runtime/methods/context-refresh.js";
 import { childEventSink } from "./child-events.js";
 export async function prepareChild(
   parent: AgentRuntimeInternal,
@@ -191,6 +192,7 @@ export async function prepareChild(
       ? parent.contextSourceSnapshot?.userInstructions
       : undefined;
   const shell = getSessionShellEnvironment(parent);
+  const announcedEnvironment = latestAnnouncedEnvironment(parent.messageHistory.borrowReadOnlyRuntimeEntries());
   const envInfo = {
     ...(parent.contextSourceSnapshot?.envInfo ??
       parent.config.envInfo ?? {
@@ -200,6 +202,13 @@ export async function prepareChild(
         osVersion: "unknown",
         nodeVersion: "unknown",
       }),
+    // 父起始快照在切目录后已过期，只继承同一 cwd 最近正式公告过的环境事实。
+    ...(announcedEnvironment?.cwd === parent.workingDirectory ? {
+      platform: announcedEnvironment.platform,
+      shell: announcedEnvironment.shell,
+      osVersion: announcedEnvironment.osVersion,
+      isGitRepository: announcedEnvironment.isGitRepository,
+    } : {}),
     cwd: parent.workingDirectory,
     ...(shell ? { shell: shell.promptShell } : {}),
   };
@@ -237,7 +246,8 @@ export async function prepareChild(
       ...ports,
       browserControlPort: browser,
       permissionService: parent.permissionService.forkForChild(),
-      modelRequestAdmission: parent.modelRequestAdmission,
+      // 上游子模型准入工厂必须穿过六工具唯一的 runtime 创建入口，避免并发子请求绕过节流。
+      modelRequestAdmission: deps.subagentModelRequestAdmission?.(parent.sessionId) ?? parent.modelRequestAdmission,
       modelFactory: execution?.executionOverride
         ? (target) => {
             const model = parent.modelFactory({

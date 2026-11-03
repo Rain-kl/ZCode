@@ -70,27 +70,6 @@ vi.mock("@/ToolCallBlocks/renderers/plan-guidance.js", () => ({
     ),
 }));
 
-vi.mock("@/ToolCallBlocks/renderers/agent.js", () => ({
-  AgentToolCallBlock: ({
-    toolCallNode,
-    sourceLabel,
-  }: {
-    toolCallNode: {
-      toolCall: {
-        toolId: string;
-        title?: string;
-        kind: string;
-      };
-    };
-    sourceLabel?: string;
-  }) =>
-    createElement(
-      "div",
-      { "data-testid": "mock-agent-panel" },
-      `agent:${toolCallNode.toolCall.toolId}:${toolCallNode.toolCall.title ?? ""}:${toolCallNode.toolCall.kind}:source:${sourceLabel ?? "none"}`,
-    ),
-}));
-
 afterEach(cleanup);
 
 describe("isExploreToolCall", () => {
@@ -443,108 +422,6 @@ describe("ToolCallBlock agent routing", () => {
 
     expect(html).toContain("Result");
     expect(html).not.toContain("Error");
-  });
-
-  it("routes Task tool calls to the agent renderer", () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        ZCodeIntlProvider,
-        { initialLocale: "zh-CN" },
-        createElement(ToolCallBlock, {
-          toolCallNode: {
-            toolCall: {
-              toolId: "tool-task-agent",
-              kind: "think",
-              title: "Task",
-              input: {
-                prompt: "搜索今日新闻",
-                run_in_background: true,
-              },
-              output: [],
-              status: "completed",
-              raw: {},
-            },
-            childToolCalls: [],
-          },
-          workspacePath: "/workspace",
-        }),
-      ),
-    );
-
-    expect(html).toContain("agent:tool-task-agent:Task:think:source:none");
-  });
-
-  it("routes GLM Agent tool calls to the agent renderer", () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        ZCodeIntlProvider,
-        { initialLocale: "zh-CN" },
-        createElement(ToolCallBlock, {
-          toolCallNode: {
-            toolCall: {
-              toolId: "tool-glm-agent",
-              kind: "think",
-              title: "Agent",
-              input: {
-                description: "Find runtime loop",
-                prompt: "Find where the runtime injects tool results.",
-              },
-              output: {
-                status: "completed",
-                agentId: "agent-glm-explore",
-                agentType: "Explore",
-              },
-              status: "completed",
-              raw: {},
-            },
-            childToolCalls: [],
-          },
-          workspacePath: "/workspace",
-        }),
-      ),
-    );
-
-    expect(html).toContain("agent:tool-glm-agent:Agent:think:source:none");
-  });
-
-  it("routes spawn_agent tool calls to the agent renderer", () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        ZCodeIntlProvider,
-        { initialLocale: "zh-CN" },
-        createElement(ToolCallBlock, {
-          toolCallNode: {
-            toolCall: {
-              toolId: "tool-spawn-agent",
-              kind: "spawn_agent",
-              title: "spawn_agent",
-              input: {
-                agent_type: "explorer",
-                message: "检查当前项目结构",
-              },
-              output: {
-                agent_id: "agent-1",
-                nickname: "Locke",
-              },
-              status: "completed",
-              raw: {
-                name: "spawn_agent",
-                _meta: {
-                  zcode: {
-                    toolName: "spawn_agent",
-                    nickname: "Locke",
-                  },
-                },
-              },
-            },
-            childToolCalls: [],
-          },
-          workspacePath: "/workspace",
-        }),
-      ),
-    );
-
-    expect(html).toContain("agent:tool-spawn-agent:spawn_agent:spawn_agent:source:none");
   });
 });
 
@@ -1324,41 +1201,5 @@ describe("readRawToolCallFileSummaries", () => {
 
     expect(html).toContain("未回答，已自动继续");
     expect(html).not.toContain("未提供回答");
-  });
-
-  it("routes Agent tool calls to the dedicated renderer", () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        ZCodeIntlProvider,
-        { initialLocale: "zh-CN" },
-        createElement(ToolCallBlock, {
-          toolCallNode: {
-            toolCall: {
-              toolId: "tool-agent",
-              kind: "think",
-              title: "Explore project structure",
-              input: {
-                description: "Explore project structure",
-                subagent_type: "Explore",
-              },
-              output: "...",
-              status: "completed",
-              raw: {
-                _meta: {
-                  claudeCode: {
-                    toolName: "Agent",
-                  },
-                },
-              },
-            },
-            childToolCalls: [],
-          },
-          workspacePath: "/workspace",
-        }),
-      ),
-    );
-
-    expect(html).toContain("mock-agent-panel");
-    expect(html).toContain("agent:tool-agent:Explore project structure:think");
   });
 });

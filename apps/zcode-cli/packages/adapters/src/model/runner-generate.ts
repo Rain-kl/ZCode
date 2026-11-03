@@ -64,7 +64,10 @@ import type {
 } from "./runner-runtime.js";
 import { AccountRequestRetry } from "./account-request-retry.js";
 import { resolveModelForAttempt, RuntimeHeadersRefreshError } from "./runner-runtime-headers.js";
-import { retryAllowedByFailurePolicy } from "./workflow-model-failure-policy.js";
+import {
+  nextUnrecognizedCodeStreak,
+  retryAllowedByFailurePolicy,
+} from "./workflow-model-failure-policy.js";
 import { modelFailureStatusFields, providerRequestIdFromHeaders } from "./runner-telemetry.js";
 import { repairReasoningHistoryAfterSignatureRejection } from "./reasoning-history-normalization.js";
 import { admitAttempt, type AttemptAdmission } from "./request-admission.js";
@@ -145,6 +148,8 @@ export async function runGenerateText(input: {
   let signatureRepairAttempted = false;
   const authRetry = new AccountRequestRetry(input.request, input.resolved, input.logger);
   let emptyCompletionRetryCount = 0;
+  // 不认识的业务码在本次请求里连续出现的次数：workflow 策略表据此停下，见 workflow-model-failure-policy.ts。
+  let unrecognizedCodeStreak = 0;
 
   // FORK(codex-collaboration): 每一物理尝试计入同一个硬预算，特殊修复不再豁免。
   for (let attempt = firstAttempt; attempt <= lastAttempt; attempt += 1) {
@@ -436,6 +441,12 @@ export async function runGenerateText(input: {
           : offPeak?.kind === "queued"
             ? { ...classified, retryable: true, retryReason: ModelRetryReason.OffpeakQueued }
             : classified;
+      const providerCode = inspectProviderFailure(error).providerErrorCode;
+      unrecognizedCodeStreak = nextUnrecognizedCodeStreak(
+        unrecognizedCodeStreak,
+        failure,
+        providerCode,
+      );
       const responseHeaders = sanitizeModelNetworkHeaders(
         getResponseHeaders(unwrapRetryError(error)),
       );
@@ -466,7 +477,8 @@ export async function runGenerateText(input: {
             retryAllowedByFailurePolicy(
               failure,
               retryBudget,
-              inspectProviderFailure(error).providerErrorCode,
+              providerCode,
+              unrecognizedCodeStreak,
             );
       // FORK(codex-collaboration): 现有模型调用边界必须执行统一有界恢复策略，见 FEATURES.md。
       const retryWithAuth = attempt < lastAttempt && authRetry.claim(error, options === undefined);
@@ -538,6 +550,7 @@ export async function runGenerateText(input: {
             : requestInvocationCompleted
               ? "response"
               : "prepare",
+          unrecognizedCodeStreak,
         });
       }
 

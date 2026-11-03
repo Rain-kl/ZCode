@@ -293,13 +293,14 @@ describe("v4 原生 queue 单项命令", () => {
     expect(app.editQueueItem).toHaveBeenCalledWith("q-1", "改后文本");
   });
 
-  it("editQueueItem：typed compact 不可编辑，避免 kind 与可见文本分裂", async () => {
+  // FORK(reload-command): refresh 与 compact 同为不可编辑维护意图。
+  it.each(["compact", "refresh"] as const)("editQueueItem：typed %s 不可编辑，避免 kind 与可见文本分裂", async (kind) => {
     const app = makeApp();
     const record = makeRecord({ app });
     const host = makeHost(record, {
       getQueueItem: vi
         .fn()
-        .mockReturnValue(queueItem({ kind: "compact", text: "/compact", attachments: [] })),
+        .mockReturnValue(queueItem({ kind, text: `/${kind}`, attachments: [] })),
     });
     await expect(
       new V4CommandExecutor(host).execute(
@@ -722,40 +723,91 @@ describe("v4 原生 sendQueuedNow", () => {
     );
   });
 
-  it("compact queue item：sendQueuedNow 走手动 compact path，不作为普通 prompt 重发", async () => {
-    let finishCompact!: () => void;
-    const compactGate = new Promise<Record<string, never>>((resolve) => {
-      finishCompact = () => resolve({});
-    });
-    const app = makeApp({ submitPrompt: vi.fn().mockReturnValue(compactGate) });
-    const record = makeRecord({ app });
-    const host = makeHost(record, {
-      getQueueItem: vi.fn().mockReturnValue(
-        queueItem({
-          queueItemId: "q-compact",
-          sourceCommandId: "source-compact",
-          kind: "compact",
-          text: "/compact",
-          attachments: [],
+  it.each([false, true])(
+    "compact queue item：提升保留原选择，autoDrain=%s",
+    async (autoDrainPromotion) => {
+      let finishCompact!: () => void;
+      const compactGate = new Promise<Record<string, never>>((resolve) => {
+        finishCompact = () => resolve({});
+      });
+      const app = makeApp({ submitPrompt: vi.fn().mockReturnValue(compactGate) });
+      const record = makeRecord({ app });
+      const host = makeHost(record, {
+        getQueueItem: vi.fn().mockReturnValue(
+          queueItem({
+            queueItemId: "q-compact",
+            sourceCommandId: "source-compact",
+            kind: "compact",
+            text: "/compact",
+            attachments: [],
+          }),
+        ),
+        recordPersistentCommandFact: vi.fn().mockResolvedValue(undefined),
+      });
+      await new V4CommandExecutor(host).execute(
+        Object.assign(envelope("sendQueuedNow", { queueItemId: "q-compact" }), {
+          __v4ExecutionContext: autoDrainPromotion ? { autoDrainPromotion: true } : undefined,
         }),
-      ),
-      recordPersistentCommandFact: vi.fn().mockResolvedValue(undefined),
+      );
+      expect(app.submitPrompt).toHaveBeenCalledWith(
+        "/compact",
+        expect.objectContaining({
+          inputId: "source-compact",
+          intent: expect.objectContaining({
+            sourceCommandId: "source-compact",
+            queueItemId: "q-compact",
+            admissionSeq: 7,
+            modelSelection: queueItem().modelSelection,
+          }),
+        }),
+      );
+      expect(app.sendInput).not.toHaveBeenCalled();
+      expect(app.removeQueueItem).toHaveBeenCalledWith(
+        "q-compact",
+        expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
+      );
+      expect(host.legacyMutations).toContain("queue_compact_promoted");
+      finishCompact();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    },
+  );
+
+  it("automation queue 提升时回放可信身份，并在该 turn 结束后清理", async () => {
+    const completion = deferred<unknown>();
+    const app = makeApp({
+      sendInput: vi.fn().mockImplementation(async (_input, options) => {
+        options?.onTurnStartedObserved?.({
+          id: "event-automation-queue-turn-started",
+          type: SessionEventType.TurnStarted,
+          payload: { messageId: "msg-automation-queue-turn-started" },
+        });
+        return {
+          completion: completion.promise,
+          kind: "started_turn",
+          turnId: "turn-automation-queued",
+        };
+      }),
     });
-    await new V4CommandExecutor(host).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-compact" }),
+    const record = makeRecord({ app });
+    const item = queueItem({ attachments: [], automationId: "automation-queued" });
+
+    await new V4CommandExecutor(makeHost(record, { getQueueItem: () => item })).execute(
+      envelope("sendQueuedNow", { queueItemId: item.queueItemId }),
     );
-    expect(app.submitPrompt).toHaveBeenCalledWith(
-      "/compact",
-      expect.objectContaining({ inputId: "source-compact" }),
+
+    expect(app.sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: item.text }),
+      expect.objectContaining({
+        automationId: "automation-queued",
+        inputId: item.sourceCommandId,
+        requireIdle: true,
+      }),
     );
-    expect(app.sendInput).not.toHaveBeenCalled();
-    expect(app.removeQueueItem).toHaveBeenCalledWith(
-      "q-compact",
-      expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
-    );
-    expect(host.legacyMutations).toContain("queue_compact_promoted");
-    finishCompact();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(record.activeAutomationId).toBe("automation-queued");
+
+    completion.resolve({});
+    await flushDetachedWork();
+    expect(record.activeAutomationId).toBeUndefined();
   });
 
   // FORK-BEGIN(codex-collaboration)
@@ -795,11 +847,12 @@ describe("v4 原生 sendQueuedNow", () => {
     },
   );
 
-  it.each(["attachment", "compact", "goal", "notification", "highspeed"])(
+  it.each(["attachment", "compact", "refresh", "goal", "notification", "highspeed"])(
     "busy 且无法 inline (%s)：不停止、不重发，原项可重试",
     async (kind) => {
       const item = queueItem({
         ...(kind === "compact" ? { kind: "compact", text: "/compact" } : {}),
+        ...(kind === "refresh" ? { kind: "refresh", text: "/refresh" } : {}),
         ...(kind === "goal" ? { kind: "sendGoalCommand", text: "/goal objective" } : {}),
         ...(kind === "notification" || kind === "highspeed" ? { attachments: [] } : {}),
         ...(kind === "highspeed"

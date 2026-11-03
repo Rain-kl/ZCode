@@ -196,7 +196,6 @@ export function createForkWebdavService(
       phase,
       backupCount,
       source: current.source,
-      firstRunSkipped: current.firstRunSkipped,
     };
   }
 

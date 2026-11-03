@@ -8,10 +8,7 @@ import { highspeedMessageMetaSchema } from "../highspeed.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { timestampSchema } from "./core.js";
 import { conversationInputSourceSchema } from "./input-intent.js";
-import {
-  backgroundResultOriginMetaSchema,
-  workflowLaunchMetaSchema,
-} from "./workflow-row-meta.js";
+import { backgroundResultOriginMetaSchema, workflowLaunchMetaSchema } from "./workflow-row-meta.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
 
 // RowBase。rowId：session 内单调、永不复用、事件日志的确定性纯函数。
@@ -43,6 +40,7 @@ export type RowActions = NonNullable<z.infer<typeof rowActionsSchema>>;
 // workflow 轮的行级元数据拆到了 workflow-row-meta.ts（max-lines）；名字在此原样再导出。
 export {
   backgroundResultOriginMetaSchema,
+  subagentResultMetaSchema,
   workflowBlockedMetaSchema,
   workflowLaunchMetaSchema,
   workflowNotificationMetaSchema,
@@ -95,7 +93,7 @@ export const turnHeaderRowSchema = z.object({
   modelDurationMs: z.number().nonnegative().optional(),
   toolDurationMs: z.number().nonnegative().optional(),
   otherDurationMs: z.number().nonnegative().optional(),
-  // guide 不切 product turn，但每条 accepted guide 都开启独立视觉工作段。
+  // guide 不切 product turn；一个 drain 边界按 FIFO 取出全部已等待的 guide，它们共用首条开启的视觉工作段。
   // 普通 turn 缺省以保持旧 snapshot 兼容；一旦出现 guide，CLI 负责完整投影首段与后续段。
   workSegments: z.array(turnWorkSegmentSchema).optional(),
   originMeta: backgroundResultOriginMetaSchema.optional(),
@@ -266,7 +264,14 @@ export type ArtifactRow = z.infer<typeof artifactRowSchema>;
 export const subagentRowSchema = z.object({
   ...rowBaseFields,
   kind: z.literal("subagent"),
-  // 触发该子智能体的 Agent/Task 工具调用；并发 spawn 顺序不可作为关联依据。
+  // FORK-BEGIN(codex-collaboration)
+  // 原始 spawn anchor 与 generation 是同 child 续跑和防止旧终态回写的持久契约。
+  agentId: z.string().min(1).optional(),
+  parentId: z.string().min(1).optional(),
+  parentSessionId: z.string().min(1).optional(),
+  path: z.string().min(1).optional(),
+  generation: z.number().int().nonnegative().optional(),
+  // FORK-END(codex-collaboration)
   parentToolCallId: z.string().optional(),
   subagentType: z.string(),
   status: z.enum(["running", "success", "failed", "cancelled"]),
@@ -353,7 +358,7 @@ export const timelineMarkerPayloadSchema = z.union([
     tokensAfter: z.number().optional(),
     summaryRef: z.string().optional(),
   }),
-  // FORK(reload-command): /reload 的转录内灰字回执（"已重载提示词与工具面"）。
+  // FORK(reload-command): /refresh 的转录内灰字回执（"已重载提示词与工具面"）。
   z.object({
     type: z.literal("reload"),
   }),
@@ -449,3 +454,20 @@ export const conversationRowSchema = z.discriminatedUnion("kind", [
 ]);
 export type ConversationRow = z.infer<typeof conversationRowSchema>;
 export type ConversationRowKind = ConversationRow["kind"];
+
+/**
+ * rows.window 的「冻结历史 + 尾轮」分区（spec：docs/ui/chat-virtual-scroll.md「每帧派生成本」）。
+ *
+ * 只是行数组的视图类型，不上 wire，没有 schema；构造与缓存在 renderer 的 conversationProjectionStore。
+ * 放在这里是为了让插件 UI 等 domain 层只依赖协议类型，不依赖 v4 store。
+ * history 与 tail 拼接后逐项等于 rows。
+ */
+export interface ConversationRowsPartition {
+  /** tail 之前的行；只在历史段变化时更换引用。 */
+  readonly history: readonly ConversationRow[];
+  /**
+   * window 的后缀：包含最后一行所在轮的全部行，可能包含多轮（旧轮追加了行、或尾轮内部截断后），
+   * 与 history 的轮次不相交。消费方不能假设 tail 只有一轮。
+   */
+  readonly tail: readonly ConversationRow[];
+}

@@ -46,6 +46,7 @@ import {
   isRetryableProviderBusinessTimeoutFailure,
 } from "./failure-provider-business-codes.js";
 import { isModelStreamIdleTimeoutError } from "./stream-idle-timeout.js";
+import { RuntimeHeadersRefreshError } from "./runner-runtime-headers.js";
 
 const PROVIDER_BUSINESS_ERROR_WRAPPER_CODE = "PROVIDER_BUSINESS_ERROR";
 
@@ -182,6 +183,16 @@ function classifyModelFailureDetails(
   const code = getErrorCode(unwrapped);
   const headers = getResponseHeaders(unwrapped);
   const retryAfterMs = parseRetryAfterMs(headers);
+
+  if (unwrapped instanceof RuntimeHeadersRefreshError && unwrapped.retryable) {
+    return {
+      code: ModelErrorCode.ModelRequestVerificationConfigNetwork,
+      message: unwrapped.message,
+      reason: ModelFailureReasonValue.NetworkError,
+      retryReason: ModelRetryReasonValue.NetworkError,
+      retryable: true,
+    };
+  }
 
   if (code === ModelErrorCode.InvalidModelResponse) {
     return {

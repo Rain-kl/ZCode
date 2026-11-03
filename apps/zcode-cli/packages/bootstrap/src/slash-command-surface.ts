@@ -11,11 +11,12 @@ export const APP_PROTOCOL_VISIBLE_BUILTIN_SLASH_COMMAND_NAMES = [
   "compact",
   "init",
   // FORK(reload-command): 覆盖设置热重载（重读系统指令与工具档位；见 FEATURES.md 的 reload-command 条目）
-  "reload",
+  "refresh",
 ] as const;
 
 // Plan 由 Composer 本地操作提供，保留名称以防自定义命令接管该入口。
-const EXTRA_RESERVED_SLASH_COMMAND_NAMES = ["compress", "plan"] as const;
+// FORK(reload-command): /refresh 与上游 App 本地 /reload 分属不同 owner，不能让自定义命令抢占重启入口。
+const EXTRA_RESERVED_SLASH_COMMAND_NAMES = ["compress", "plan", "reload"] as const;
 
 const RESERVED_SLASH_COMMAND_NAMES = new Set(
   BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES.flatMap((entry) => [

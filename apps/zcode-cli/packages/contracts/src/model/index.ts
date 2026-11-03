@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- FORK(codex-collaboration): 现有上游模型合同已超限；仅补充已在 JSON schema 的 timeoutMs 在 started 事件上的类型。 */
 import type { ModelToolReferenceContentBlock } from "../tools/tool-search.js";
+import { zcodeProviderRuntimeHeadersErrorCode } from "@zcode/shared";
 // ============================================================
 // Model Protocol - provider-neutral model contracts
 // ============================================================
@@ -107,6 +108,7 @@ export const ModelErrorCode = {
   InvalidModelResponse: "invalid_model_response",
   ModelRequestFailed: "model_request_failed",
   ModelRequestAuthMissing: "model_request_auth_missing",
+  ModelRequestVerificationConfigNetwork: zcodeProviderRuntimeHeadersErrorCode.configNetwork,
   ModelRequestCancelled: "model_request_cancelled",
   ModelRequestTimeout: "model_request_timeout",
   ModelRateLimited: "model_rate_limited",
@@ -822,6 +824,17 @@ export type ModelStreamEvent =
   | {
       type: "tool_call";
       toolCall: ModelToolCall;
+    }
+  | {
+      /**
+       * Provider 在服务端执行完内置工具（toolCall.providerExecuted）后随流下发的结果。
+       * 客户端不执行这类工具，只用于展示、持久化和下一次请求回放。
+       */
+      type: "provider_tool_result";
+      toolCallId: string;
+      toolName: string;
+      output: unknown;
+      isError: boolean;
     }
   | {
       type: "finish";

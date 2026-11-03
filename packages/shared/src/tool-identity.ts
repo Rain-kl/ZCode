@@ -14,8 +14,13 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   "GoalRead",
   "ReadSessionContext",
   "AskUserQuestion",
-  "SendMessage",
-  "RespondToCoordinator",
+  // FORK(codex-collaboration): 客户端身份与唯一模型工具目录一致，不保留旧工具别名。
+  "spawn_agent",
+  "followup_task",
+  "send_message",
+  "interrupt_agent",
+  "list_agents",
+  "wait_agent",
   "TaskOutput",
   "TaskStop",
   "js",
@@ -24,8 +29,6 @@ export const ZCODE_KNOWN_TOOL_NAMES = [
   "mcp__node_repl__js",
   "mcp__node_repl__js_reset",
   "mcp__node_repl__js_add_node_module_dir",
-  "Agent",
-  "Task",
   "Skill",
   "CreateWorkflow",
   // 修订入口：登记进 workflow family 让确认窗
@@ -53,7 +56,7 @@ export type ZCodeToolFamily =
   | "skill"
   | "goal"
   | "session-context"
-  | "message"
+  | "collaboration"
   | "task-control"
   | "node-repl"
   | "workflow";
@@ -74,8 +77,14 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   GoalRead: "goal",
   ReadSessionContext: "session-context",
   AskUserQuestion: "ask-user-question",
-  SendMessage: "message",
-  RespondToCoordinator: "message",
+  // FORK-BEGIN(codex-collaboration)
+  spawn_agent: "agent",
+  followup_task: "collaboration",
+  send_message: "collaboration",
+  interrupt_agent: "collaboration",
+  list_agents: "collaboration",
+  wait_agent: "collaboration",
+  // FORK-END(codex-collaboration)
   TaskOutput: "task-control",
   // TaskStop 未登记时 UI identity 会退回 unknown，最终落到 raw fallback renderer。
   TaskStop: "task-control",
@@ -87,8 +96,6 @@ const TOOL_FAMILY_BY_NAME: Record<ZCodeKnownToolName, ZCodeToolFamily> = {
   mcp__node_repl__js: "node-repl",
   mcp__node_repl__js_reset: "node-repl",
   mcp__node_repl__js_add_node_module_dir: "node-repl",
-  Agent: "agent",
-  Task: "agent",
   Skill: "skill",
   CreateWorkflow: "workflow",
   AmendWorkflow: "workflow",

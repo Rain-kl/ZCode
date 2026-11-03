@@ -1,0 +1,11 @@
+# Refresh 完成回执沿唯一 transcript owner 持久化
+
+真实FRR01发现 /refresh灰字回执在/reload冷恢复后丢失：appendEvent只落内存eventStore，durable事件分流没处理ForkReloadCompleted。日志seq18和新实例sourceEventSeq0的cold合成确认缺持久事实，不是客户端渲染筛掉。
+
+已向用户报告更优架构并获批准：不用独立session_entry账本/anchor-generation过滤，复用上游独立timeline_event message+typed fork_refresh_completed part。物理message顺序天然跟随rewind和fork，不能把part挂旧anchor（会复活cut之后动作）。event.id派生稳定message/part主键；写成后才发布成功事件。失败不留内存成功事实，orphan空宿主不打开空turn。完成eventId只作为同session去重provenance，fork本地message/part仍按原clone改名。
+
+先文档和测试：SQLite0->1 carrier红绿；实际Electron重启marker0应1红，修复后FRR01 1/1通过 artifact desktop-e2e-20261103034836677-p75939-160e432e8a8fcc16。完整control三联、removed-branch维护轮壳、非法时间/非空sourceCommandId、同live事件重复均有独立红绿；真实SQL重开/part失败/sinks无成功/idempotency/稳定fork前缀通过。sourceCommandId缺席兼容，不迁移旧event/marker命名。
+
+实跑之后只有removed-branch三联裁剪和空sourceCommandId校验微调，不影响FRR01的idle路径；按父任务裁决不重复昂贵相同E2E，不把它当rewind/手机/busy覆盖。测试HOME隔离，不触生产workspace或用户资料。
+
+最终离线检查：Bootstrap5文件358/358，Core2文件73/73，contracts/core构建与bootstrap tsc通过；changed architecture0，定向lint11文件0warning/0error。未改全仓lint基线。

@@ -19,12 +19,13 @@ import {
   collectZCodeBackgroundTaskNotificationsByToolUseId,
   mergeZCodeBackgroundTaskControlItems,
   parseZCodeBackgroundTaskControlItems,
-  parseZCodeBackgroundTaskNotificationText,
+  parseZCodeBackgroundTaskNotifications,
   parseModelPickerValue as parseSharedModelSelection,
   formatModelPickerValue as formatSharedModelSelection,
   resolveZCodeVisibleSessionTitle,
   textFromZCodeMessageParts,
   ZCODE_AGENT_PROVIDER,
+  zcodeBackgroundTaskNotificationFailureText,
   zcodeBackgroundTaskNotificationToolUpdateStatus,
   appendZCodeStreamingToolInputDelta,
   buildZCodeStreamingToolInputPreview,
@@ -850,14 +851,15 @@ export function zcodeSessionEventToZCodeStreamEvents(params: {
       ...(event.turnId ? { turnId: event.turnId } : {}),
       startedAt: event.timestamp,
     };
-    const taskNotificationToolUpdate = backgroundTaskNotificationToolUpdateFromInput({
+    const taskNotificationToolUpdates = backgroundTaskNotificationToolUpdatesFromInput({
       input: stringValue(payload.input),
+      originMeta: payload.originMeta,
       taskId,
       traceId,
       inputId: eventInputId,
     });
-    if (taskNotificationToolUpdate) {
-      return [runStartedEvent, taskNotificationToolUpdate];
+    if (taskNotificationToolUpdates.length > 0) {
+      return [runStartedEvent, ...taskNotificationToolUpdates];
     }
     if (
       stringValue(payload.inputSource) === "goal-continuation" &&
@@ -1283,35 +1285,37 @@ export function zcodeUserInputResponseToZCodeStreamEvent(
   };
 }
 
-function backgroundTaskNotificationToolUpdateFromInput(params: {
+function backgroundTaskNotificationToolUpdatesFromInput(params: {
   input: string | undefined;
   inputId: InputId | undefined;
+  originMeta: unknown;
   taskId: string;
   traceId: TraceId;
-}): Extract<ZCodeStreamEvent, { type: "tool_call_update" }> | null {
-  const parsed = parseZCodeBackgroundTaskNotificationText(params.input);
-  if (!parsed) {
-    return null;
-  }
-  const status = zcodeBackgroundTaskNotificationToolUpdateStatus(parsed.notification.status);
-  return {
-    type: "tool_call_update",
-    taskId: params.taskId,
-    traceId: params.traceId,
-    ...(params.inputId ? { inputId: params.inputId } : {}),
-    toolId: parsed.toolUseId,
-    status,
-    content: parsed.notification.result ?? parsed.notification.summary,
-    // 修复原因：ToolLayout 的既有失败 hover 只读取 toolCall.error；notification
-    // 原先只更新 status/raw，导致“执行失败”没有可展示的详情。
-    ...(status === "failed" && parsed.notification.error
-      ? { error: parsed.notification.error }
-      : {}),
-    raw: attachZCodeBackgroundTaskNotificationToRaw(
-      { toolCallId: parsed.toolUseId },
-      parsed.notification,
-    ),
-  };
+}): Extract<ZCodeStreamEvent, { type: "tool_call_update" }>[] {
+  // 终态与失败原文优先取本轮 originMeta 的结构化结果，不解析 summary 文本。
+  // 合并轮的每条通知各自更新自己的工具。
+  return parseZCodeBackgroundTaskNotifications(params.input, params.originMeta).map((parsed) => {
+    const status = zcodeBackgroundTaskNotificationToolUpdateStatus(parsed.notification.status);
+    return {
+      type: "tool_call_update",
+      taskId: params.taskId,
+      traceId: params.traceId,
+      ...(params.inputId ? { inputId: params.inputId } : {}),
+      toolId: parsed.toolUseId,
+      status,
+      content: parsed.notification.result ?? parsed.notification.summary,
+      // 修复原因：ToolLayout 的既有失败 hover 只读取 toolCall.error；notification
+      // 原先只更新 status/raw，导致“执行失败”没有可展示的详情。
+      // 修复原因：合并轮没有结构化结果，通知里也没有 <error>，失败详情原来是空的。
+      ...(status === "failed"
+        ? { error: zcodeBackgroundTaskNotificationFailureText(parsed.notification) }
+        : {}),
+      raw: attachZCodeBackgroundTaskNotificationToRaw(
+        { toolCallId: parsed.toolUseId },
+        parsed.notification,
+      ),
+    };
+  });
 }
 
 function zcodeMessageToZCodePersistedMessage(
@@ -1790,7 +1794,9 @@ function mapToolPart(
       status: notificationFailed ? "failed" : "completed",
       input: state.input,
       output: state.output,
-      ...(notificationFailed && taskNotification?.error ? { error: taskNotification.error } : {}),
+      ...(notificationFailed && taskNotification
+        ? { error: zcodeBackgroundTaskNotificationFailureText(taskNotification) }
+        : {}),
       raw,
     };
   }
@@ -2394,84 +2400,14 @@ function mapToolUpdated(
 }
 
 function toolResultStatus(
-  toolName: string | undefined,
+  _toolName: string | undefined,
   result: Record<string, unknown>,
 ): Extract<ZCodeStreamEvent, { type: "tool_call_update" }>["status"] {
   if (result.success === false) {
     return "failed";
   }
-  if (isBackgroundAgentLaunchResult(toolName, result)) {
-    // 修复原因：Agent 后台启动 ACK 只说明子 agent 已经开始运行；
-    // replay/snapshot 投影不能把它当成最终完成，否则运行中会被前端显示为 completed。
-    return "in_progress";
-  }
+  // FORK(codex-collaboration): 工具结果只结算工具，child 生命周期由 ProductProjection 独立拥有。
   return "completed";
-}
-
-function isBackgroundAgentLaunchResult(
-  toolName: string | undefined,
-  result: Record<string, unknown>,
-): boolean {
-  const content = stringValue(result.content);
-  if (!content) {
-    return false;
-  }
-  if (
-    (isSubagentDispatchToolName(toolName) || toolName === undefined) &&
-    isBackgroundAgentLaunchAcknowledgement(content)
-  ) {
-    return true;
-  }
-  const parsed = parseJsonRecord(content);
-  const parsedStatus = stringValue(parsed?.status);
-  return (
-    parsed !== null &&
-    (isSubagentDispatchToolName(toolName) || stringValue(parsed.agentId) !== undefined) &&
-    ((parsedStatus === "backgrounded" && stringValue(parsed.backgroundTaskId) !== undefined) ||
-      (parsedStatus === "async_launched" &&
-        stringValue(parsed.agentId) !== undefined &&
-        stringValue(parsed.outputFile) !== undefined))
-  );
-}
-
-function isBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  // 修复原因：session projection 可能直接消费 replay/snapshot 结果，不能只依赖消息层兜底；
-  // 新的 async_launched ACK 对齐 provider-visible output_file 文案，旧 session 仍保留 outputFile/backgroundTaskId 文案。
-  return (
-    isLegacyBackgroundAgentLaunchAcknowledgement(content) ||
-    isPreviousBackgroundAgentLaunchAcknowledgement(content) ||
-    isCurrentBackgroundAgentLaunchAcknowledgement(content)
-  );
-}
-
-function isLegacyBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  return (
-    content.includes("backgroundTaskId:") &&
-    content.includes("Runtime will wait for this background Agent")
-  );
-}
-
-function isPreviousBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  return (
-    content.startsWith("Agent ") &&
-    content.includes(" started in background.") &&
-    content.includes("agentId:") &&
-    content.includes("outputFile:") &&
-    content.includes("You will be notified when the Agent completes.")
-  );
-}
-
-function isCurrentBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  return (
-    content.startsWith("Async agent launched successfully.") &&
-    content.includes("agentId:") &&
-    content.includes("The agent is working in the background.") &&
-    content.includes("notified automatically when it completes")
-  );
-}
-
-function isSubagentDispatchToolName(toolName: string | undefined): boolean {
-  return toolName === "Agent" || toolName === "Task";
 }
 
 function toolStatusFromPayload(
@@ -2516,65 +2452,12 @@ function rawClaudeParentToolUseId(raw: unknown): string | null {
 }
 
 function normalizeToolResultContent(
-  toolName: string | undefined,
+  _toolName: string | undefined,
   result: Record<string, unknown>,
 ): unknown {
   const content = result.content;
-  const agentActivity = parseAgentActivityResultContent(toolName, content);
-  return agentActivity ?? stringValue(content);
-}
-
-function parseAgentActivityResultContent(
-  toolName: string | undefined,
-  content: unknown,
-): { kind: "agent_activity"; content: string; thought?: string } | null {
-  if (typeof content !== "string" || content.trim().length === 0) {
-    return null;
-  }
-  const parsed = parseJsonRecord(content);
-  if (!parsed) {
-    return null;
-  }
-  const isAgentResult =
-    toolName === "Agent" ||
-    toolName === "Task" ||
-    stringValue(parsed.agentId) !== undefined ||
-    stringValue(parsed.agentType) !== undefined;
-  if (!isAgentResult) {
-    return null;
-  }
-  const output = agentTextFromContentField(parsed.content);
-  if (!output) {
-    return null;
-  }
-  const thought = stringValue(parsed.thought);
-  return {
-    kind: "agent_activity",
-    content: output,
-    ...(thought ? { thought } : {}),
-  };
-}
-
-function parseJsonRecord(value: string): Record<string, unknown> | null {
-  try {
-    return asRecord(JSON.parse(value));
-  } catch {
-    return null;
-  }
-}
-
-function agentTextFromContentField(value: unknown): string | undefined {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value;
-  }
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const text = value
-    .map((item) => stringValue(asRecord(item).text))
-    .filter((item): item is string => Boolean(item))
-    .join("\n");
-  return text || undefined;
+  // FORK(codex-collaboration): 不从旧 Agent ACK/JSON 恢复子代理状态或身份。
+  return stringValue(content);
 }
 
 function permissionPayloadToStreamEvent(
