@@ -107,6 +107,19 @@ bundle 默认/两个 skip 标志的四种组合均无重复 prepare；实际 man
 预计端到端目标 12–16 分钟（无排队、runner 资源充足），不是本地验证结论；需推送后采集至少 2–3 轮实测。
 并行会增加失败提交的 runner 消耗，账号并发额度与网络波动可能降低收益。
 
+### 独立单测分片的构建前置条件
+
+run [41560008767](https://github.com/Rain-kl/ZCode/actions/runs/41560008767) 的三个分片在加载
+E2E reporting 单测时无法解析 `@zcode/e2e-report`。该包公开入口指向 `dist-node/node/index.js`，
+独立 runner 只有源码；verify 中的 typecheck 和其他构建作业生成的文件不会共享给单测分片。
+
+- 每个 `unit-tests` runner 必须在运行 Vitest 前执行 `pnpm --filter @zcode/e2e-report build:node`，
+  和 CLI 包构建、Electron 补装一起作为显式前置条件。只构建 Node 公共入口，不要求构建报告 Viewer。
+- 验收：workflow 契约验证构建命令存在且先于单测；在空输出目录构建并加载包公开入口，
+  并执行 lifecycle、error classification、skipped summary 三个实际 reporting 回归。
+- 同一 run 还发现 App/分享只读渲染一致性测试仍使用已移除的 `Agent` 输入。
+  测试必须改用现有 `spawn_agent` 参数，继续断言两端摘要一致；不恢复旧工具或展示兼容。
+
 ## 2026-11-02 配套 Source Server 发布
 
 背景：`3.17.162-dev.084c4811` 桌面包仍向上游 CDN 请求同版本的

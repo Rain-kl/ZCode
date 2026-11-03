@@ -243,6 +243,10 @@ jobs:
       - name: Install Electron binary used by unit tests
         run: pnpm --filter @zcode/desktop rebuild electron
 
+      # reporting 单测依赖包的 dist-node 公共入口；独立分片拿不到 verify/typecheck 的产物。
+      - name: Build E2E report Node entry used by unit tests
+        run: pnpm --filter @zcode/e2e-report build:node
+
       # 官方分片覆盖根配置所有项目；fork-isolated 仍按原配置在每片内串行。
       - name: Unit tests
         run: pnpm test:unit --shard=${{ matrix.shard }}/${{ strategy.job-total }}

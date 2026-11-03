@@ -53,7 +53,7 @@ test("publication explicitly waits for every gate and rejects failure, skip and 
   }
 });
 
-test("four full-suite shards retain CLI and Electron prerequisites and report all failures", () => {
+test("four full-suite shards retain CLI, report and Electron prerequisites and report all failures", () => {
   const job = jobs["unit-tests"];
   assert.deepEqual(job.strategy.matrix.shard, [1, 2, 3, 4]);
   assert.equal(job.strategy["fail-fast"], false);
@@ -63,11 +63,13 @@ test("four full-suite shards retain CLI and Electron prerequisites and report al
   assert.ok(!commands.some((command) => /--passWithNoTests|--changed|--project/.test(command)));
   for (const prerequisite of [
     'pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." --filter "@zcode/adapters" run build',
+    "pnpm --filter @zcode/e2e-report build:node",
     "pnpm --filter @zcode/desktop rebuild electron",
   ]) {
     assert.ok(
       commands.indexOf(prerequisite) >= 0 &&
         commands.indexOf(prerequisite) < commands.indexOf(unitCommand),
+      `missing build prerequisite before unit tests: ${prerequisite}`,
     );
   }
   const verify = jobs.verify.steps.filter((step) => step.run).map((step) => step.run);
