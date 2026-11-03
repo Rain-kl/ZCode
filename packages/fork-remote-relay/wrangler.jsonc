@@ -3,6 +3,12 @@
   "name": "zcode-self-hosted-relay",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-11",
+  "routes": [
+    {
+      "pattern": "zcode.arctel.net",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
