@@ -5536,6 +5536,12 @@ SLR10 review 补充（covered / pending-review）：Agent 建立受控页面后�
 
 SSV01/02/04 使用真实 Electron、Host 与 CLI；SSV03 同时保留 Electron 冷恢复和共享 Timeline 浏览器验收。候选保持 pending，不计入 formal/CI。
 
+## Fork CWA33–34：慢链路项目草稿与会话恢复（accepted / pending）
+
+- 390px：当前项目新草稿复检目录，保持原 bridge；两次用户发送分别收到正文回复，刷新、Relay 重连与文件浏览保持原任务和项目。
+- Server 到 Relay 每方向 150 ms、64 KiB/s；同一夹具可从指定 Git 提交读取 UI 作为性能对照，记录导航耗时、bridge 次数及传输字节。
+- 候选：`packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`。真实 Core、CLI、SQLite、Chrome，模型与 Relay 账号为本地夹具；规则见[慢链路体验](features/cloud-web-access/slow-network.md)。
+
 ## Fork FRR01：/refresh 与 /reload 命名隔离（accepted / pending）
 
 - 普通任务已完成一轮：`/refresh` 只热刷新覆盖设置，追加完成 marker，不新增用户消息、模型请求或运行实例代次；taskId 与历史不变。

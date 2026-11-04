@@ -42,6 +42,8 @@ import {
   type ServerRemoteInfo,
 } from "@zcode/shared";
 import { createHostCapabilityStore, type HostCapabilityStore } from "./hostCapability.js";
+// FORK(cloud-web-access): loopback 控制帧复用当前 Core scope，接通可靠帧的拥塞反馈。
+import { parseCoreFlowState } from "@zcode/fork-remote-connector/module";
 
 export interface CoreHttpServer {
   host: string;
@@ -74,12 +76,26 @@ function isLoopbackHost(host: string): boolean {
   return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
 }
 
-function wrapWebSocket(ws: WebSocket): ISocket {
+// FORK-BEGIN(cloud-web-access)
+function wrapWebSocket(
+  ws: WebSocket,
+  onFlowState: (state: "saturated" | "drained") => void,
+): ISocket {
   const data = new Emitter<VSBuffer>();
   const close = new Emitter<void>();
-  ws.on("message", (raw) =>
-    data.fire(VSBuffer.wrap(Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer))),
-  );
+  ws.on("message", (raw, isBinary) => {
+    if (ws.readyState !== ws.OPEN) return;
+    // 原因：把文本旁路消息交给二进制 SocketProtocol 会破坏帧长解析。
+    // 严格控制格式且不接受 connectionId，业务 RPC 不能借此选择其他连接。
+    if (!isBinary) {
+      const state = parseCoreFlowState(raw.toString());
+      if (state) onFlowState(state);
+      else ws.close(1002, "Invalid Core transport control");
+      return;
+    }
+    data.fire(VSBuffer.wrap(Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer)));
+  });
+  // FORK-END(cloud-web-access)
   ws.on("close", () => close.fire());
   ws.on("error", () => close.fire());
   return {
@@ -108,7 +124,18 @@ function exposeWebSocket(
   workspaceIdentityMapper?: SourceServerWorkspaceIdentityMapper,
   resourcePeers?: TopicResourcePeers,
 ): void {
-  const socket = wrapWebSocket(ws);
+  // FORK-BEGIN(cloud-web-access)
+  const socket = wrapWebSocket(ws, (state) => {
+    void scope?.setTransportFlowState(state).catch((error) => {
+      log.error(undefined, "Core transport flow update failed", {
+        connectionId: connectionContext.connectionId,
+        state,
+        error,
+      });
+      ws.close(1011, "Core transport flow update failed");
+    });
+  });
+  // FORK-END(cloud-web-access)
   const protocol = new SocketProtocol(socket);
   const rawServer = new ChannelServer(protocol, "server");
   const loggedServer = new LoggingChannelServer(rawServer, (...args) =>

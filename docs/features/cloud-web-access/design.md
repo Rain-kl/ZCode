@@ -8,6 +8,8 @@
 
 项目导航、会话恢复、宿主能力和页面版本遵循[远控宿主合同](host-contract.md)。
 
+慢链路下的输出、导航与验收遵循[慢链路体验](slow-network.md)。
+
 ## 1. 本期目标
 
 用户可以在 Linux 云主机运行 ZCode Server，也可以让 ZCode Desktop 连接同一个自建 Relay。两类客户端都主动连接 Relay，手机或电脑浏览器登录同一固定账号密码后访问对应设备上的项目、任务和 Agent。

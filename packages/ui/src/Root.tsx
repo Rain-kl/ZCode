@@ -738,6 +738,8 @@ function RootInner({
     onOpenRemoteConnection: allowRemoteWorkspace ? handleOpenRemoteConnection : undefined,
     openRemoteProjectWorkspace: openPreparedRemoteProjectWorkspace,
     openMobileProjectDraft: webRemoteControlWorkspaceSwitcher?.openProjectDraft,
+    // FORK(cloud-web-access): 同项目草稿保留当前连接，查看状态继续由 Web 入口发布。
+    updateMobileViewState: webRemoteControlWorkspaceSwitcher?.updateMobileViewState,
     workbenchGroupClientMode: isWebRemoteControlRoot
       ? "web-remote-replayable"
       : "desktop-continuous",

@@ -2144,7 +2144,20 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
       onOpenCodeViewer={handleOpenCodeViewer}
       onOpenBrowserUrl={handleOpenBrowserUrl}
       fileTreeOpenRequest={fileTreeOpenRequest}
-      onCreateTask={handleCreateTaskInChat}
+      // FORK-BEGIN(cloud-web-access)
+      onCreateTask={
+        mobile
+          ? (request) =>
+              handleCreateTaskInChat({
+                ...(typeof request === "string" ? { provider: request } : request),
+                onComplete: () => {
+                  if (typeof request === "object") request.onComplete?.();
+                  mobile.navigateToChat();
+                },
+              })
+          : handleCreateTaskInChat
+      }
+      // FORK-END(cloud-web-access)
       onCreateConversationTask={onCreateConversationTask ?? handleCreateTaskInChat}
       onCreateConversationTaskOnSource={onCreateConversationTaskOnSource}
       onOpenFolderFromWorkspaceMenu={onOpenFolderFromWorkspaceMenu}

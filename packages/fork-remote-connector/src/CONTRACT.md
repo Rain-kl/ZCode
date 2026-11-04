@@ -25,6 +25,9 @@ the Relay's device catalog.
   invalidation for replay until a new bridge replaces it. Mobile selection survives page refresh.
 - The loopback bridge retains Core frames emitted between socket open and router subscription, then
   delivers them once in arrival order. The RPC `Initialize` frame cannot be lost at this boundary.
+- Acknowledged-frame high/low watermarks reach the current Core connection scope through a
+  transport-only control lane. The receiver supplies connection identity. Closing the connection
+  fences subsequent flow updates; RPC traffic remains available while output delivery is paused.
 - Raw RPC frames enter the existing acknowledged replay adapter only after `workspace-bridge-ready`;
   no second ServiceCollection, Host, Agent, or task queue is created.
 - `stop()`, timeout, `AUTH_FAILED`, repeated `KICKED`, and a superseded bridge all release the

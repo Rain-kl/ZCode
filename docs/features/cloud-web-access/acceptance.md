@@ -50,6 +50,11 @@
 | CWA28  | Desktop 会话被 epoch 撤销或更换 Relay 地址、账号                                                                                 | 回到重新登录；旧设备身份不跨地址或账号复用                                                                           | pass：撤销会话与地址、账号隔离回归                                                                                   |
 | CWA29 | 隔离 Core、CLI、SQLite；空主机、已有项目与同目录多项目；发送、草稿刷新、断线再发送、浏览文件 | 原项目、任务 ID、cwd 与回复一致；订阅端点正确 | pass：`self-hosted-server.mjs` 三种入口；证据见 2026-11-04 Agent Note |
 | CWA30 | 带不同 app_version 打开入口、读取哈希资源和 HEAD、访问缺失资源 | 返回当前网页；资源 MIME 与 HEAD 正确；缺失资源返回 404 | pass：本地 workerd 当前页面回归 |
+| CWA31 | 未确认字节达到高水位，随后收到当前代 ACK | 当前 bridge 收到拥塞与排空；旧代 ACK 无效 | pass：可靠帧水位、真实 Core WebSocket 与 CLI 发布器定向回归 |
+| CWA32 | 拥塞时查询、连接关闭、旧连接迟到排空、伪造控制身份 | 查询继续完成；关闭封闭原 scope；新连接隔离；非法控制消息关闭连接 | pass：真实 Core WebSocket 两场景 |
+| CWA33 | 当前项目新草稿；同目录多项目切换与草稿刷新 | 同项目额外 bridge 为零；项目、任务与目录正确 | pass：390px 弱网、1280px 同目录多项目浏览器回放 |
+| CWA34 | Server 到 Relay 每方向 150 ms、64 KiB/s；发送、刷新、断线再发送、文件浏览 | 两次正文执行各一次；恢复原任务；记录时延与流量 | pass：真实 Core/CLI/SQLite 浏览器回放与原提交对照 |
+| CWA35 | 目录读取在途、等价与变更的项目缓存 | 当前 Host 树同时读取；等价缓存零更新；变化保留原版本比较 | pass：读取顺序与 CAS 契约回归 |
 
 ## 3. 测试组织与剪枝
 

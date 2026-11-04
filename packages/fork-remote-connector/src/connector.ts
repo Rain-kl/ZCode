@@ -16,6 +16,7 @@ import type {
   ForkRemoteCoreBridge,
 } from "./contract.js";
 import { createForkRemoteAppRouter } from "./router.js";
+import { encodeCoreFlowState } from "./coreFlowControl.js";
 
 type RelayJson = null | boolean | number | string | RelayJson[] | { [key: string]: RelayJson };
 
@@ -137,8 +138,9 @@ export function openLoopbackCoreBridge(options: {
         send(message) {
           protocol.send(VSBuffer.wrap(message));
         },
-        setFlowState() {
-          // SocketProtocol has no independent flow-control lane; acknowledged replay remains bounded.
+        setFlowState(state) {
+          // 原因：可靠帧水位曾停在空实现，慢链路上 CLI 仍持续投递；旁路控制帧接入既有 scope 流控。
+          if (socket.readyState === WebSocket.OPEN) socket.send(encodeCoreFlowState(state));
         },
         close() {
           bridgeListener = undefined;

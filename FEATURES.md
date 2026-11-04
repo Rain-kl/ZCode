@@ -32,6 +32,12 @@
 - **文件与标记**：Server 的 `fork/cloud-web-access`、独立 Connector/Relay 包、Web 入口与共享项目界面；上游接线标记 `FORK(cloud-web-access)`。
 - **设计与验收**：[宿主合同](docs/features/cloud-web-access/host-contract.md)、[执行计划](docs/features/cloud-web-access/host-plan.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 
+### 慢链路流控与当前项目草稿复用（2026-11-04）
+
+- **背景与行为**：可靠帧拥塞传至当前 Core 连接，复用 CLI 的输出暂停与合并；排空后恢复。同项目新草稿复检目录后保留页面与 attachment。项目树与设备目录并行读取，等价项目缓存复用原版本。
+- **文件与标记**：独立 Connector 包、Server Core WebSocket、UI Root/项目动作/手机导航与项目树读取；上游接线使用 `FORK(cloud-web-access)`。
+- **设计与验收**：[慢链路体验](docs/features/cloud-web-access/slow-network.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
 ### Server loopback RPC 首帧有序交付（2026-11-03）
 
 - **背景与行为**：Headless Server 的 Core `/ws` 可以在 router 注册 bridge listener 前立即发出 RPC `Initialize`。连接层从 socket 建立起暂存这段窗口内的 Core 帧，listener 注册后按到达顺序仅交付一次，保证浏览器 RPC 完成初始化并进入工作区。

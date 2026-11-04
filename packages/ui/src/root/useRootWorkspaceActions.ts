@@ -105,6 +105,8 @@ export function useRootWorkspaceActions({
   onOpenRemoteConnection,
   openRemoteProjectWorkspace,
   openMobileProjectDraft,
+  // FORK(cloud-web-access): 复用草稿时沿原入口发布查看状态。
+  updateMobileViewState,
   workbenchGroupClientMode = "desktop-continuous",
 }: {
   intl: ReturnType<typeof import("@/i18n/IntlProvider.js").useZCodeIntl>["intl"];
@@ -135,6 +137,8 @@ export function useRootWorkspaceActions({
     isCurrent?: () => boolean;
   }) => Promise<void>;
   openMobileProjectDraft?: (request: CreateTaskOptions) => Promise<void>;
+  // FORK(cloud-web-access): 同工作区新草稿复用 attachment 后更新既有手机查看状态。
+  updateMobileViewState?: (workspaceKey: string, taskId?: string) => Promise<void>;
   workbenchGroupClientMode?: ZCodeTaskClientMode;
 }) {
   const navigationSequence = useRef(0);
@@ -364,6 +368,38 @@ export function useRootWorkspaceActions({
         if (!isCurrent()) return;
         if (workbenchGroupClientMode === "web-remote-replayable") {
           if (!openMobileProjectDraft) throw new Error("project.remote-navigation-unavailable");
+          // FORK-BEGIN(cloud-web-access)
+          // 原因：同项目新草稿也重建 bridge/Root，慢链路会重复握手和全页初始化。
+          // 只优化当前草稿所属项目；仍由权威服务复检目录，身份变化继续走宿主导航。
+          if (
+            projectId &&
+            projectId === originWorkspace?.draftProjectId &&
+            activeWorkspacePath &&
+            (!hostId || hostId === "local" || hostId === services.projectHostId) &&
+            services.projectService
+          ) {
+            const target = await services.projectService.prepareSession({
+              projectId,
+              ...(hostId ? { hostId } : {}),
+            });
+            if (!isCurrent()) return;
+            if (
+              (target.workspaceIdentity?.trim() || target.workspacePath) ===
+              (activeWorkspaceIdentity?.trim() || activeWorkspacePath)
+            ) {
+              startDraftInWorkspace(target.workspacePath, target.workspaceIdentity, {
+                ...requestOptions,
+                projectId: target.projectId,
+              });
+              await updateMobileViewState?.(
+                target.workspaceIdentity?.trim() || target.workspacePath,
+              );
+              requestOptions.onComplete?.();
+              setWorkspaceActionError(null);
+              return;
+            }
+          }
+          // FORK-END(cloud-web-access)
           // 归属先在共享入口解析，目录仍只由 bridge owner 准备；旧 Root 不写交接后的草稿。
           await openMobileProjectDraft({
             ...requestOptions,
@@ -440,6 +476,9 @@ export function useRootWorkspaceActions({
     },
     [
       services.projectService,
+      // FORK(cloud-web-access): 同项目草稿复用的宿主与查看状态依赖。
+      services.projectHostId,
+      updateMobileViewState,
       intl,
       composerClientNamespace,
       activeWorkspacePath,

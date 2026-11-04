@@ -5,7 +5,9 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { createSlowRelayLink } from "./slow-relay-link.mjs";
 
 const root = resolve(import.meta.dirname, "../../../../../..");
 if (!process.env.ZCODE_CWA29_FIXTURE_ROOT) {
@@ -63,16 +65,20 @@ const {
 } = await import("../../../../../provider/src/index.ts");
 
 let modelCalls = 0;
+let assistantCalls = 0;
 const marker = "E2E_CWA29_MODEL_REPLY";
 const model = createHttpServer(async (request, response) => {
   let body = "";
   for await (const chunk of request) body += chunk;
   const input = JSON.parse(body || "{}");
   modelCalls++;
+  // 标题也使用流式请求；按真实请求归因计数，避免把侧栏标题误当作正文回复。
+  const reply = request.headers["x-zcode-query-source"] === "main_turn"
+    ? `${marker}_${++assistantCalls}` : "CWA29 task title";
   if (input.stream) {
     response.writeHead(200, { "content-type": "text/event-stream" });
     response.write(
-      `data: ${JSON.stringify({ id: "cwa29", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: marker }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ id: "cwa29", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: reply }, finish_reason: null }] })}\n\n`,
     );
     response.end(
       `data: ${JSON.stringify({ id: "cwa29", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`,
@@ -82,7 +88,12 @@ const model = createHttpServer(async (request, response) => {
     response.end(
       JSON.stringify({
         id: "cwa29",
-        choices: [{ message: { role: "assistant", content: marker }, finish_reason: "stop" }],
+        choices: [
+          {
+            message: { role: "assistant", content: reply },
+            finish_reason: "stop",
+          },
+        ],
         usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
       }),
     );
@@ -182,9 +193,16 @@ const http = await createCoreHttpServer(services, {
 let terminalConnections = 0;
 let expectedTerminalConnections = Infinity;
 let afterTerminalReconnect;
+let bridgeOpens = 0;
 const relay = await createFakeRelayV2({
   users: { "fixture-jwt": "owner" },
   onMessage({ role, message }) {
+    if (
+      role === "terminal" &&
+      message.type === "data" &&
+      message.payload?.zcode_type === "workspace-bridge-open"
+    )
+      bridgeOpens++;
     if (role === "terminal" && message.type === "auth_init") terminalConnections++;
     // 收到新连接的配对查询，说明浏览器已消费 auth_ack 并恢复了 transport。
     if (
@@ -202,8 +220,12 @@ const device = await (
     body: JSON.stringify({ device_mid: "cwa29-mid" }),
   })
 ).json();
+const slowLink = process.argv.includes("--slow")
+  ? await createSlowRelayLink(relay.httpUrl)
+  : undefined;
+const timings = {};
 const connector = createForkRemoteConnector({
-  endpoint: relay.httpUrl,
+  endpoint: slowLink?.endpoint ?? relay.httpUrl,
   sessionToken: "fixture-jwt",
   deviceSid: device.data.device_sid,
   deviceMid: "cwa29-mid",
@@ -220,9 +242,37 @@ const connector = createForkRemoteConnector({
     openLoopbackCoreBridge({ host: http.host, port: http.port, ingressToken: "fixture-ingress" }),
 });
 await connector.start();
+// 对照回放在 Vite 内读取指定提交的 UI 源码；不切分支、不改工作区文件。
+const baselineRef = process.env.ZCODE_SLOW_BASELINE_REF;
+const baselineSources = new Map(
+  baselineRef
+    ? await Promise.all(
+        [
+          "packages/ui/src/Root.tsx",
+          "packages/ui/src/root/useRootWorkspaceActions.ts",
+          "packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
+          "packages/ui/src/project-sidebar/project-tree-reader.ts",
+        ].map(async (file) => [
+          resolve(root, file),
+          (await promisify(execFile)("git", ["show", `${baselineRef}:${file}`], { cwd: root }))
+            .stdout,
+        ]),
+      )
+    : [],
+);
 const vite = await createViteServer({
   root: resolve(root, "packages/web"),
   configFile: resolve(root, "packages/web/vite.config.ts"),
+  plugins: [
+    {
+      name: "cwa-slow-baseline",
+      enforce: "pre",
+      transform(_code, id) {
+        const code = baselineSources.get(id.split("?")[0]);
+        return code === undefined ? null : { code, map: null };
+      },
+    },
+  ],
   server: {
     host: "127.0.0.1",
     port: 0,
@@ -255,11 +305,13 @@ page.on("console", (message) => {
     errors.push(message.text());
 });
 try {
+  let startedAt = performance.now();
   await page.goto(
     `${vite.resolvedUrls.local[0]}remote/v4?sid=${device.data.device_sid}&mid=cwa29-mid&app_version=3.17.162`,
   );
   const onboarding = page.getByTestId("onboarding-page");
   await page.getByTestId("project-section").or(onboarding).first().waitFor({ timeout: 60000 });
+  timings.openMs = Math.round(performance.now() - startedAt);
   if (await onboarding.isVisible()) await page.keyboard.press("Escape");
   if (emptyHost) {
     await page.getByTestId("virtual-project-add").click();
@@ -278,7 +330,15 @@ try {
   } else {
     const row = page.locator(`[data-project-id="${project.id}"]`).first();
     await row.waitFor({ timeout: 60000 });
+    const before = bridgeOpens;
+    const navigationStarted = performance.now();
     await row.getByTestId("virtual-project-create-task").click();
+    if (process.argv.includes("--reuse-draft")) {
+      // 同项目草稿完成后才进入聊天页；原页面和 attachment 应继续使用。
+      await page.locator('[data-mobile-page="chat"]').waitFor({ timeout: 30000 });
+      assert.equal(bridgeOpens, before + (baselineRef ? 1 : 0), "same-project draft bridge count");
+      timings.projectDraftMs = Math.round(performance.now() - navigationStarted);
+    }
   }
   const input = page.locator('[data-testid="v4-composer-input"][contenteditable="true"]');
   await input.waitFor({ timeout: 60000 });
@@ -293,20 +353,24 @@ try {
         ?.textContent?.includes("E2E_CWA29_FIRST_SEND"),
     );
   }
-  await input.press("Enter");
-  await page.getByText(marker, { exact: true }).first().waitFor({ timeout: 60000 });
+  startedAt = performance.now();
+  await page.getByRole("button", { name: "Send", exact: true }).click({ timeout: 30000 });
+  await page.locator("[data-row-id]").getByText(`${marker}_1`, { exact: true }).first().waitFor({ timeout: 60000 });
+  timings.firstReplyMs = Math.round(performance.now() - startedAt);
   const tree = await projects.readTree();
   assert.equal(tree.tasks.length, 1);
   assert.equal(tree.tasks[0].projectId, project.id);
   assert.equal(tree.tasks[0].workspacePath, projectPath);
   const taskId = tree.tasks[0].taskId;
   await page.screenshot({ path: join(artifacts, "reply.png") });
+  startedAt = performance.now();
   await page.reload();
   const task = page.locator(`[data-session-id="${taskId}"]`).first();
-  const history = page.getByText(marker, { exact: true }).first();
+  const history = page.locator("[data-row-id]").getByText(`${marker}_1`, { exact: true }).first();
   await Promise.race([task.waitFor({ timeout: 60000 }), history.waitFor({ timeout: 60000 })]);
   if (!(await history.isVisible())) await task.click();
   await history.waitFor({ timeout: 60000 });
+  timings.reloadHistoryMs = Math.round(performance.now() - startedAt);
   const connectedBefore = terminalConnections;
   expectedTerminalConnections = connectedBefore + 1;
   const reconnected = new Promise((done) => {
@@ -326,10 +390,15 @@ try {
     afterTerminalReconnect = undefined;
   }
   assert.ok(terminalConnections > connectedBefore);
+  startedAt = performance.now();
   await input.fill("E2E_CWA29_AFTER_RECONNECT");
-  await input.press("Enter");
-  await page.getByText(marker, { exact: true }).nth(1).waitFor({ timeout: 60000 });
-  const backHome = page.getByRole("button", { name: "Back to task home", exact: true });
+  await page.getByRole("button", { name: "Send", exact: true }).click({ timeout: 30000 });
+  await page.locator("[data-row-id]").getByText(`${marker}_2`, { exact: true }).first().waitFor({ timeout: 60000 });
+  timings.reconnectedReplyMs = Math.round(performance.now() - startedAt);
+  const backHome = page.getByRole("button", {
+    name: "Back to task home",
+    exact: true,
+  });
   if (await backHome.isVisible()) await backHome.click();
   const files = page
     .locator(`[data-project-id="${project.id}"]`)
@@ -342,6 +411,7 @@ try {
     .waitFor({ timeout: 30000 });
   await page.screenshot({ path: join(artifacts, "files.png") });
   assert.equal((await projects.readTree()).tasks.length, 1);
+  assert.equal(assistantCalls, 2, "each submitted command must execute once");
   assert.equal(errors.length, 0, errors.join("\n"));
   await writeFile(
     join(artifacts, "result.json"),
@@ -349,7 +419,12 @@ try {
       taskId,
       projectId: project.id,
       modelCalls,
+      assistantCalls,
       terminalConnections,
+      bridgeOpens,
+      timings,
+      baselineRef,
+      slowLink: slowLink?.metrics,
       errors,
       ok: true,
     }),
@@ -367,6 +442,7 @@ try {
   await browser.close();
   await vite.close();
   connector.stop();
+  await slowLink?.close();
   await relay.close();
   await http.close();
   await disposeServiceResourcesAndWait(services);

@@ -37,6 +37,56 @@ function fakeBridge(emitOnSubscribe?: Uint8Array) {
 
 const logger = { info() {}, warn() {}, error() {} };
 
+test("slow receiver high/low watermarks propagate through the current bridge only", async () => {
+  const current = fakeBridge();
+  const output: Array<{ zcode_type: string; messageSeq?: number }> = [];
+  const router = createForkRemoteAppRouter({
+    deviceSid: "flow-device",
+    appVersion: "fixture",
+    logger,
+    listWorkspaces: async () => ({ workspaces: [] }),
+    prepareWorkspace: async () => ({
+      workspaceKey: "/fixture",
+      workspacePath: "/fixture",
+      workspaceIdentity: "remote:server:fixture:/fixture",
+      remoteSessionId: "fixture",
+    }),
+    openCoreBridge: async () => current.bridge,
+    sendPayload: (payload) => {
+      output.push(payload);
+      return true;
+    },
+  });
+  try {
+    await router.handle({
+      zcode_type: "workspace-bridge-open",
+      requestId: "open",
+      bridgeSessionId: "slow",
+      bridgeGeneration: 1,
+      workspaceKey: "/fixture",
+    });
+    current.emit(new Uint8Array(900 * 1024));
+    assert.deepEqual(current.flow, ["saturated"]);
+    const last = output.filter((frame) => frame.zcode_type === "rpc-frame").at(-1)!;
+    await router.handle({
+      zcode_type: "rpc-frame-ack",
+      bridgeSessionId: "stale",
+      bridgeGeneration: 0,
+      ackMessageSeq: last.messageSeq!,
+    });
+    assert.deepEqual(current.flow, ["saturated"]);
+    await router.handle({
+      zcode_type: "rpc-frame-ack",
+      bridgeSessionId: "slow",
+      bridgeGeneration: 1,
+      ackMessageSeq: last.messageSeq!,
+    });
+    assert.deepEqual(current.flow, ["saturated", "drained"]);
+  } finally {
+    router.dispose();
+  }
+});
+
 test("bootstrap and workspace list use the injected Server snapshot", async () => {
   const output: unknown[] = [];
   const router = createForkRemoteAppRouter({

@@ -118,3 +118,13 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 - **应用检查**：fork 依赖合同 58 文件、1181 测试通过；根类型检查、Lint、架构与移除守卫通过，Lint 保留 85 条既有警告。
 
 可重放入口：`packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs`，空主机场景传入 `--empty`，同目录多项目场景传入 `--same-root`。证据及环境范围见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-04-host-alignment.md)。
+
+## 11. 慢链路体验（2026-11-04）
+
+功能规则见[慢链路体验](slow-network.md)。当前项目的新草稿保留页面和连接；目录复检失败展示原业务原因，目录身份变化按宿主导航处理。项目树与入口目录并行读取，远端缓存内容变化时更新其版本。
+
+可靠帧拥塞进入当前 Core 连接的既有流控 scope，CLI 沿原发布器暂停、合并与恢复投递。非法控制格式与伪造连接身份由传输边界拒绝。
+
+弱网浏览器对照：每方向 150 ms、64 KiB/s，当前项目草稿入口约 2.48 秒降至 0.49 秒，额外 bridge 从 1 次降至 0 次。首次回复约 11 秒，刷新恢复约 8.4 秒，重连后回复约 1.9 秒；这三项在本组回放中接近原值。两次用户发送分别收到正文回复，保留同一任务、项目与目录；标题生成单独计数。
+
+回放入口为 `packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`；同目录多项目和空主机分别使用 `--same-root`、`--empty`。证据和检查结果见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-04-slow-network.md)。
