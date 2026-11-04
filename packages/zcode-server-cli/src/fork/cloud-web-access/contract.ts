@@ -51,6 +51,7 @@ export interface ServerCloudWebAccessPort {
   requireRemoteConnectionConfig(
     layout: ServerCloudWebAccessLayout,
   ): Promise<RemoteConnectionConfig>;
+  clearRemoteConnectionConfig(layout: ServerCloudWebAccessLayout): Promise<boolean>;
   readServerLogSnapshot(
     layout: ServerCloudWebAccessLayout,
     limit?: number,

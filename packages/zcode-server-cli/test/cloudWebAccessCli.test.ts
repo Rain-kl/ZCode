@@ -7,9 +7,12 @@ import { normalizeServerCommandGroup, runServerCli } from "../src/cli.js";
 import {
   configureRemoteConnection,
   CLOUD_WEB_ACCESS_REQUIRED_ENV,
+  CLOUD_WEB_ACCESS_UPDATE_FALLBACK_ENV,
   installPersistentServerLogger,
   followServerLogs,
+  hasActiveServerUpdate,
   isCloudWebAccessRequired,
+  isCloudWebAccessUpdateFallback,
   readRemoteConnectionConfig,
   readServerLogSnapshot,
   readServerLogTail,
@@ -17,7 +20,7 @@ import {
   serverCloudWebAccessModule,
 } from "../src/fork/cloud-web-access/module.js";
 import { createDaemonServiceDescriptor } from "../src/platform/serviceManager.js";
-import { resolveServerLayout } from "../src/runtime/paths.js";
+import { resolveCanonicalServerLayout, resolveServerLayout } from "../src/runtime/paths.js";
 
 const temporaryRoots: string[] = [];
 
@@ -32,6 +35,11 @@ test("server cloud web access exposes one managed public module", () => {
 test("server up requires cloud web access while ordinary serve stays optional", () => {
   assert.equal(isCloudWebAccessRequired({}), false);
   assert.equal(isCloudWebAccessRequired({ [CLOUD_WEB_ACCESS_REQUIRED_ENV]: "1" }), true);
+  assert.equal(isCloudWebAccessUpdateFallback({}), false);
+  assert.equal(
+    isCloudWebAccessUpdateFallback({ [CLOUD_WEB_ACCESS_UPDATE_FALLBACK_ENV]: "1" }),
+    true,
+  );
 
   const layout = resolveServerLayout("/tmp/zcode-cloud-web-service-test");
   const required = createDaemonServiceDescriptor({
@@ -42,6 +50,15 @@ test("server up requires cloud web access while ordinary serve stays optional", 
   const ordinary = createDaemonServiceDescriptor({ platform: "linux", layout });
   assert.match(required.content, /--require-remote-config/u);
   assert.doesNotMatch(ordinary.content, /--require-remote-config/u);
+});
+
+test("an in-flight update marker enables the Relay startup fallback for old Supervisors", async () => {
+  const root = await temporaryServerRoot();
+  const layout = resolveServerLayout(root);
+  assert.equal(await hasActiveServerUpdate(layout.updateTransactionFile), false);
+  await mkdir(layout.runDir, { recursive: true });
+  await writeFile(layout.updateTransactionFile, "{}");
+  assert.equal(await hasActiveServerUpdate(layout.updateTransactionFile), true);
 });
 
 async function temporaryServerRoot(): Promise<string> {
@@ -79,6 +96,49 @@ test("global server-root is removed before server subcommand dispatch", async ()
   }
 });
 
+test("server logout removes relay credentials without touching server data", async () => {
+  const root = await temporaryServerRoot();
+  const layout = await resolveCanonicalServerLayout(root);
+  await mkdir(join(layout.serverRoot, "config"), { recursive: true });
+  await writeFile(
+    layout.remoteConnectionFile,
+    JSON.stringify({
+      version: 2,
+      endpoint: "https://relay.example.com",
+      username: "owner",
+      sessionToken: "secret",
+      deviceMid: "mid",
+      deviceSid: "sid",
+      userInfo: { id: "owner", username: "owner", displayName: "Owner" },
+      updatedAt: "2026-11-04T00:00:00.000Z",
+    }),
+  );
+  await writeFile(`${layout.remoteConnectionFile}.1.abandoned.tmp`, "secret");
+  await writeFile(join(layout.serverRoot, "project-data.txt"), "keep");
+
+  const runLogout = async () => {
+    let output = "";
+    const code = await runServerCli(
+      ["server", "--server-root", layout.serverRoot, "logout", "--json"],
+      {
+        stdout: {
+          write: (value) => {
+            output += value;
+          },
+        },
+      },
+    );
+    assert.equal(code, 0);
+    return JSON.parse(output);
+  };
+
+  assert.deepEqual(await runLogout(), { ok: true, removed: true });
+  await assert.rejects(stat(layout.remoteConnectionFile), { code: "ENOENT" });
+  await assert.rejects(stat(`${layout.remoteConnectionFile}.1.abandoned.tmp`), { code: "ENOENT" });
+  assert.equal(await readFile(join(layout.serverRoot, "project-data.txt"), "utf8"), "keep");
+  assert.deepEqual(await runLogout(), { ok: true, removed: false });
+});
+
 afterEach(async () => {
   await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true })));
 });
@@ -94,6 +154,7 @@ test("server command group maps to the existing lifecycle owners", () => {
     "--daemon",
   ]);
   assert.deepEqual(normalizeServerCommandGroup(["server", "down"]), ["stop", "--wait"]);
+  assert.deepEqual(normalizeServerCommandGroup(["server", "logout"]), ["server-logout"]);
   assert.deepEqual(normalizeServerCommandGroup(["server", "proxy-stdio"]), ["proxy-stdio"]);
   assert.deepEqual(normalizeServerCommandGroup(["server", "logs", "-f"]), ["server-logs", "-f"]);
   assert.deepEqual(
@@ -304,10 +365,7 @@ test("a legacy config with a past expiresAt keeps satisfying the server-up confi
   assert.equal("expiresAt" in config, false);
 });
 
-function authenticatedRegistrationFetcher(
-  token: string,
-  deviceSid: string,
-): typeof fetch {
+function authenticatedRegistrationFetcher(token: string, deviceSid: string): typeof fetch {
   return async (input, init) => {
     const url = String(input);
     if (url.endsWith("/api/fork-remote/auth/login")) {

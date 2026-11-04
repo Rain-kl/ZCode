@@ -57,6 +57,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 ```text
 zcode server connect
+zcode server logout
 zcode server up
 zcode server up -d
 zcode server down
@@ -65,8 +66,9 @@ zcode server logs -f
 ```
 
 - `connect` 支持 TUI 或 `--url`、`--username`、`--password-stdin`；密码只从 masked TTY 或 stdin 读取，不进入 argv。先登录并注册设备，再以临时文件 + rename 原子写入 `config/remote-connection.json`，POSIX 权限为 `0600`。
+- `logout` 复用停止并等待的生命周期 owner；Server 收口后持有 data-root 锁删除 `config/remote-connection.json` 及其写入临时文件，避免运行中凭证继续有效或并发启动重新读回。无配置时幂等成功，不删除业务数据和其他配置。
 - 配置保存 endpoint、会话令牌、`deviceMid`、`deviceSid` 和用户显示信息；不保存密码。运行中的 Server 会被生命周期锁阻止换配置。
-- `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失会让启动失败并保留具体原因。普通 `serve` 没有配置时保持原有启动路径，有配置时启用 Relay。
+- `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失、认证失败会让正常启动失败并保留具体原因。更新候选 Core 使用独立的更新启动模式：Relay connector 启动失败时停止 connector、记录原因并继续完成版本切换，外部 Relay 状态不参与版本健康判定。
 - `down` 调用既有 stop-and-wait 生命周期，不停留成只关 Relay 的伪停止。
 - `logs`/`-f` 读取 canonical root 的 `logs/server-YYYY-MM-DD.log`，默认最近 200 行；日志写入前脱敏，按日文件轮转，保留 7 天，单文件日上限 10 MiB；`-f` 只跟踪日志，不启动或停止 Server，并会从快照之后新出现的文件开头跟踪。
 
@@ -113,4 +115,4 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 
 用户反馈的 `无法定位 CLI ZCode Built-in Provider Config` 根因为 staging 只复制 `zcode.cjs` 而没有复制它旁边的 `provider/zcode-builtin.json`；`--version` 无需 provider，之前的版本检查未覆盖这一缺件。`packaging/stage.ts` 现在把 Agent dist 同次构建的配置复制到 `runtime/provider` 并纳入 agent-runtime 的 paths、哈希与组件归档。缺件在 staging、发布校验和安装前置检查时都明确失败；不靠用户下载零散配置修补。
 
-规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。不增加通用 Web server 的 `--web` 模式，远控仍使用 `zcode server connect/up` 与 Relay 网页。
+规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。不增加通用 Web server 的 `--web` 模式，远控仍使用 `zcode server connect/logout/up` 与 Relay 网页。

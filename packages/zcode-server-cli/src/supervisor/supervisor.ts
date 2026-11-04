@@ -35,7 +35,11 @@ import { CrashBudget } from "./crashBudget.js";
 const log = createServiceLogger("server-supervisor");
 
 export interface CoreLauncher {
-  launch(generation: number, release?: ReleaseManifest | null): ChildProcess;
+  launch(
+    generation: number,
+    release?: ReleaseManifest | null,
+    options?: { allowRemoteUnavailable?: boolean },
+  ): ChildProcess;
 }
 
 export interface SupervisorOptions {
@@ -84,6 +88,7 @@ export class Supervisor {
   private activeRelease: ReleaseManifest | null = null;
   private coreVersion: string | undefined;
   private coreReleaseId: string | undefined;
+  private allowRemoteUnavailableForCore = false;
   /**
    * 当前 Core 的致命原因摘要：Core 发来的 fatal，或 Supervisor 判定的无响应；随 Core 作用域清空，
    * Core 退出时拼进 lastExitReason。
@@ -333,7 +338,8 @@ export class Supervisor {
       await this.releaseManager.applyPendingWithTransaction(previous);
       this.activeRelease = pending;
       this.state = "starting";
-      this.launchCore();
+      this.allowRemoteUnavailableForCore = true;
+      this.launchCore({ allowRemoteUnavailable: true });
       await waitForUpdateReady(
         () => this.state,
         this.options.coreReadyTimeoutMs ?? CORE_READY_TIMEOUT_MS,
@@ -371,7 +377,7 @@ export class Supervisor {
       this.state = "stopped";
       if (previous) {
         this.state = "starting";
-        this.launchCore();
+        this.launchCore({ allowRemoteUnavailable: this.allowRemoteUnavailableForCore });
         try {
           await waitForUpdateReady(
             () => this.state,
@@ -422,9 +428,9 @@ export class Supervisor {
     };
   }
 
-  private launchCore(): void {
+  private launchCore(options: { allowRemoteUnavailable?: boolean } = {}): void {
     const generation = ++this.generation;
-    const child = this.options.launcher.launch(generation, this.activeRelease);
+    const child = this.options.launcher.launch(generation, this.activeRelease, options);
     this.core = child;
     this.clearCoreScopedStatus();
     log.info("launching server core", { generation, pid: child.pid });
@@ -471,7 +477,7 @@ export class Supervisor {
       setTimeout(() => {
         if (this.state !== "crashed") return;
         this.state = "starting";
-        this.launchCore();
+        this.launchCore({ allowRemoteUnavailable: this.allowRemoteUnavailableForCore });
       }, decision.delayMs).unref();
     };
     // fork 的 execPath 不存在/不可执行时 Node 只发 error + close，不发 exit。

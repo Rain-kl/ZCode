@@ -27,7 +27,9 @@ import { createTaskActivityTracker } from "./taskActivityTracker.js";
 import { CORE_HEARTBEAT_INTERVAL_MS } from "../contracts.js";
 // FORK(cloud-web-access): Relay 配置由独立 managed 模块读取；Core 不解析或写入凭据文件。
 import {
+  hasActiveServerUpdate,
   isCloudWebAccessRequired,
+  isCloudWebAccessUpdateFallback,
   readRemoteConnectionConfig,
   requireRemoteConnectionConfig,
 } from "../fork/cloud-web-access/module.js";
@@ -72,6 +74,9 @@ export async function runServerCore(
   const layout = resolveServerLayout(process.env.ZCODE_SERVER_ROOT?.trim());
   // FORK-BEGIN(cloud-web-access): server up 强制 Relay；普通 serve 无配置时保持原生命周期。
   const remoteConnectionRequired = isCloudWebAccessRequired(process.env);
+  const allowRemoteUnavailableDuringUpdate =
+    isCloudWebAccessUpdateFallback(process.env) ||
+    (await hasActiveServerUpdate(layout.updateTransactionFile));
   const configuredRemoteConnection = remoteConnectionRequired
     ? await requireRemoteConnectionConfig({
         remoteConnectionFile: layout.remoteConnectionFile,
@@ -152,16 +157,29 @@ export async function runServerCore(
     try {
       await connector.start();
     } catch (error) {
-      await cleanupFailedRelayStartup({
-        stopConnector: () => {
-          connector?.stop();
-        },
-        closeHttp: () => http.close(),
-        disposeServices: () => disposeServiceResourcesAndWait(services),
-      });
-      throw new Error(`ZCode Server Relay startup failed for ${remoteConnection.endpoint}`, {
-        cause: error,
-      });
+      if (allowRemoteUnavailableDuringUpdate) {
+        try {
+          connector.stop();
+        } catch (stopError) {
+          console.error("Failed to stop Relay connector after update startup failure", stopError);
+        }
+        connector = undefined;
+        console.error(
+          `ZCode Server Relay startup failed for ${remoteConnection.endpoint}; update continues without remote access`,
+          error,
+        );
+      } else {
+        await cleanupFailedRelayStartup({
+          stopConnector: () => {
+            connector?.stop();
+          },
+          closeHttp: () => http.close(),
+          disposeServices: () => disposeServiceResourcesAndWait(services),
+        });
+        throw new Error(`ZCode Server Relay startup failed for ${remoteConnection.endpoint}`, {
+          cause: error,
+        });
+      }
     }
   }
   // FORK-END(cloud-web-access)

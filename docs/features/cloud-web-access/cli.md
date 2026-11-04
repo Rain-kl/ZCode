@@ -9,6 +9,7 @@
 | `zcode server`                                                                           | 输出本命令组帮助与使用方式                  | 否                      | 不启动                    |
 | `zcode server connect`                                                                   | TUI 配置向导，校验并保存连接信息            | 仅交互期间              | 不启动、不停止            |
 | `zcode server connect --url https://relay.example.com --username owner --password-stdin` | 非交互配置，密码由 stdin 提供               | 至验证/保存完成         | 不启动、不停止            |
+| `zcode server logout`                                                                    | 停止现有 Server 并清理本地 Relay 凭证       | 至停止和删除完成        | 停止 Server；重复执行成功 |
 | `zcode server up`                                                                        | 前台启动，直接输出日志，行为类似 compose up | 是，持续到服务停止/退出 | 启动本实例；Ctrl+C 停止它 |
 | `zcode server up -d`                                                                     | 后台启动并报告结果                          | 等就绪后返回            | 启动或复用已有后台实例    |
 | `zcode server down`                                                                      | 停止对应 Server 并等待结束                  | 至停止/超时             | 停止整个 Server           |

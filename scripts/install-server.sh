@@ -211,7 +211,7 @@ def main():
                 os.replace(staged_command, command)
 
     print("ZCode Server " + version + " installed: " + str(command))
-    print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f")
+    print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f\nLogout: zcode server logout")
     print("Server root: " + str(root) + " (shared with SSH installations)")
     print("Running-task and downgrade checks follow the Server updater; no force options are used.")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):

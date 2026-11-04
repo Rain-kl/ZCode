@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { chmod, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { z } from "zod";
 import type {
   ConfigureRemoteConnectionOptions,
@@ -93,6 +93,38 @@ export async function requireRemoteConnectionConfig(
     throw new Error("ZCode Server is not connected; run `zcode server connect` first");
   }
   return config;
+}
+
+export async function clearRemoteConnectionConfig(
+  layout: ServerCloudWebAccessLayout,
+): Promise<boolean> {
+  const directory = dirname(layout.remoteConnectionFile);
+  const filename = basename(layout.remoteConnectionFile);
+  let entries: string[];
+  try {
+    entries = await readdir(directory);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw new Error(`Failed to inspect relay connection credentials at ${directory}`, {
+      cause: error,
+    });
+  }
+  const credentialFiles = entries.filter(
+    (entry) => entry === filename || (entry.startsWith(`${filename}.`) && entry.endsWith(".tmp")),
+  );
+  let removed = false;
+  for (const entry of credentialFiles) {
+    try {
+      await unlink(`${directory}/${entry}`);
+      removed = true;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+      throw new Error(`Failed to remove relay connection credential at ${directory}/${entry}`, {
+        cause: error,
+      });
+    }
+  }
+  return removed;
 }
 
 export async function configureRemoteConnection(

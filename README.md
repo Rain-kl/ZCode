@@ -129,6 +129,7 @@ zcode server connect  # 向导中输入自建 Relay 地址、账号和密码
 zcode server up -d
 zcode server logs -f
 zcode server down
+zcode server logout   # 停止 Server 并清理本地 Relay 凭证
 ```
 
 安装后需按自己的模型服务配置 provider；安装不会配置账号或自动启动。浏览器访问所连接 Relay 的域名，登录后选择在线设备。完整部署说明见 [自建 Relay 部署](docs/features/cloud-web-access/deployment.md)。
