@@ -69,6 +69,7 @@ zcode server logs -f
 - `logout` 复用停止并等待的生命周期 owner；Server 收口后持有 data-root 锁删除 `config/remote-connection.json` 及其写入临时文件，避免运行中凭证继续有效或并发启动重新读回。无配置时幂等成功，不删除业务数据和其他配置。
 - 配置保存 endpoint、会话令牌、`deviceMid`、`deviceSid` 和用户显示信息；不保存密码。运行中的 Server 会被生命周期锁阻止换配置。
 - `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失、认证失败会让正常启动失败并保留具体原因。更新候选 Core 使用独立的更新启动模式：Relay connector 启动失败时停止 connector、记录原因并继续完成版本切换，外部 Relay 状态不参与版本健康判定。
+- 普通 `serve` 或更新 handoff 后的 Supervisor 遇到已有配置但 Relay connector 启动失败时，只停止 connector、记录原因并继续本地运行；显式 `server up` 仍严格失败。这样会话撤销不会造成 Core 重启循环，用户可随后重新 connect。
 - `down` 调用既有 stop-and-wait 生命周期，不停留成只关 Relay 的伪停止。
 - `logs`/`-f` 读取 canonical root 的 `logs/server-YYYY-MM-DD.log`，默认最近 200 行；日志写入前脱敏，按日文件轮转，保留 7 天，单文件日上限 10 MiB；`-f` 只跟踪日志，不启动或停止 Server，并会从快照之后新出现的文件开头跟踪。
 

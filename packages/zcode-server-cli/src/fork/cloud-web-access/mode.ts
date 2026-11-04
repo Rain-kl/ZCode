@@ -12,6 +12,13 @@ export function isCloudWebAccessUpdateFallback(env: NodeJS.ProcessEnv = process.
   return env[CLOUD_WEB_ACCESS_UPDATE_FALLBACK_ENV] === "1";
 }
 
+export function shouldAllowRelayStartupFallback(options: {
+  remoteConnectionRequired: boolean;
+  updateFallback: boolean;
+}): boolean {
+  return options.updateFallback || !options.remoteConnectionRequired;
+}
+
 export async function hasActiveServerUpdate(updateTransactionFile: string): Promise<boolean> {
   try {
     await access(updateTransactionFile);

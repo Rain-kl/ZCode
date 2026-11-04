@@ -32,6 +32,7 @@ import {
   isCloudWebAccessUpdateFallback,
   readRemoteConnectionConfig,
   requireRemoteConnectionConfig,
+  shouldAllowRelayStartupFallback,
 } from "../fork/cloud-web-access/module.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
@@ -74,9 +75,13 @@ export async function runServerCore(
   const layout = resolveServerLayout(process.env.ZCODE_SERVER_ROOT?.trim());
   // FORK-BEGIN(cloud-web-access): server up 强制 Relay；普通 serve 无配置时保持原生命周期。
   const remoteConnectionRequired = isCloudWebAccessRequired(process.env);
-  const allowRemoteUnavailableDuringUpdate =
+  const updateFallback =
     isCloudWebAccessUpdateFallback(process.env) ||
     (await hasActiveServerUpdate(layout.updateTransactionFile));
+  const allowRelayStartupFallback = shouldAllowRelayStartupFallback({
+    remoteConnectionRequired,
+    updateFallback,
+  });
   const configuredRemoteConnection = remoteConnectionRequired
     ? await requireRemoteConnectionConfig({
         remoteConnectionFile: layout.remoteConnectionFile,
@@ -157,7 +162,7 @@ export async function runServerCore(
     try {
       await connector.start();
     } catch (error) {
-      if (allowRemoteUnavailableDuringUpdate) {
+      if (allowRelayStartupFallback) {
         try {
           connector.stop();
         } catch (stopError) {
@@ -165,7 +170,7 @@ export async function runServerCore(
         }
         connector = undefined;
         console.error(
-          `ZCode Server Relay startup failed for ${remoteConnection.endpoint}; update continues without remote access`,
+          `ZCode Server Relay startup failed for ${remoteConnection.endpoint}; Core continues without remote access`,
           error,
         );
       } else {

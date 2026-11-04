@@ -13,6 +13,7 @@ import {
   hasActiveServerUpdate,
   isCloudWebAccessRequired,
   isCloudWebAccessUpdateFallback,
+  shouldAllowRelayStartupFallback,
   readRemoteConnectionConfig,
   readServerLogSnapshot,
   readServerLogTail,
@@ -50,6 +51,27 @@ test("server up requires cloud web access while ordinary serve stays optional", 
   const ordinary = createDaemonServiceDescriptor({ platform: "linux", layout });
   assert.match(required.content, /--require-remote-config/u);
   assert.doesNotMatch(ordinary.content, /--require-remote-config/u);
+  assert.equal(
+    shouldAllowRelayStartupFallback({
+      remoteConnectionRequired: false,
+      updateFallback: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldAllowRelayStartupFallback({
+      remoteConnectionRequired: true,
+      updateFallback: false,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldAllowRelayStartupFallback({
+      remoteConnectionRequired: true,
+      updateFallback: true,
+    }),
+    true,
+  );
 });
 
 test("an in-flight update marker enables the Relay startup fallback for old Supervisors", async () => {

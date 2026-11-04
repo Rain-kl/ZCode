@@ -12,6 +12,7 @@ export {
   hasActiveServerUpdate,
   isCloudWebAccessRequired,
   isCloudWebAccessUpdateFallback,
+  shouldAllowRelayStartupFallback,
 } from "./mode.js";
 export type {
   ConfigureRemoteConnectionOptions,

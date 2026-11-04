@@ -144,7 +144,7 @@ DO 存储与静态资源足够承载本期，不需要 D1/R2/KV 来保存聊天�
 
 connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner；down 复用停止并等待完成；logs 不加载 Core/Agent，也不触发服务启动。已有 serve/status/stop/restart/update/proxy-stdio 等内部接口继续可用，避免破坏桌面自动部署与重连。
 
-发布更新只以候选 Core 的本地 HTTP/Agent 生命周期就绪作为版本健康标准。候选 Core 在更新启动阶段遇到 Relay 认证撤销或网络不可用，应停止 Relay connector、记录完整原因并继续完成版本切换；不能让外部 Relay 状态触发版本回滚。新的 Supervisor 显式传递更新启动模式，已运行的旧 Supervisor 则通过其必写的更新事务文件兼容识别。普通 connect/up 仍按严格认证反馈，更新完成后用户可重新 connect 和启动远控。
+发布更新只以候选 Core 的本地 HTTP/Agent 生命周期就绪作为版本健康标准。候选 Core 在更新启动阶段遇到 Relay 认证撤销或网络不可用，应停止 Relay connector、记录完整原因并继续完成版本切换；不能让外部 Relay 状态触发版本回滚。新的 Supervisor 显式传递更新启动模式，已运行的旧 Supervisor 则通过其必写的更新事务文件兼容识别。handoff 后由新的 Supervisor 以普通 `serve` 启动时也允许 Relay 失效后本地继续运行；显式 `server up` 仍要求 Relay 成功，connect/up 的严格错误反馈不变。
 
 前台日志与后台日志有同一持久来源。先定义 Supervisor/Core/连接器的日志归属、文件轮转与 IPC/订阅接缝，再实现 logs，禁止把现有 detached stdio=ignore 误当已有持久日志支持。敏感信息在写入前脱敏，不能靠日志查看器临时遮掩。
 
