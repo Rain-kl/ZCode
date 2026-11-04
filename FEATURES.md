@@ -31,6 +31,12 @@
 - **文件与标记**：`packages/fork-remote-connector/src/connector.ts` 与就近回归测试；独立 fork 包无需上游逐行标记。
 - **设计与落地**：[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 
+### Headless 项目目录与能力边界（2026-11-03）
+
+- **背景与行为**：手机新建项目时，“此电脑”指当前 Server；`local` 由 Server 解析为自身 owner host，目录浏览直接读取云主机文件系统。local bridge 不提供桌面 `window-controller`，客户端也不再向不存在的可选通道发请求。
+- **文件与标记**：`packages/services/src/project/index.ts`、`packages/client/src/remoteServiceAccess.ts`、Web remote bridge 接线与回归测试；上游文件使用 `FORK(cloud-web-access)`。
+- **设计与落地**：[设计](docs/features/cloud-web-access/design.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
 ### Server 安装路径与资源统一（2026-11-03）
 
 - **背景与行为**：一键安装与 SSH 自动安装共用 `~/.zcode/server`、`current.json`、稳定启动入口和既有生命周期/任务/降级保护，避免双版本树。迁移旧脚本拥有的 PATH 命令，保留旧文件与业务数据。补齐独立 Agent 所需的同次构建 provider 配置，整包与 agent-runtime 组件共用资源身份。
@@ -260,13 +266,20 @@
 ### 远程 Server 从 GitHub 配套发布（2026-11-02）
 
 - **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
-  远程资源默认改为本仓库 `server-v<完整版本>` GitHub Release，复用原 descriptor、缓存、大小和 SHA-256 校验；
-  不跟随可变的 canary-build 指针，后续 canary 不破坏旧客户端安装。显式源覆盖和开发本地产物策略保留。
+  正式远程资源使用本仓库不可变的 `server-v<完整版本>` GitHub Release；开发资源使用固定的
+  `server-canary-build` Release，并在每次 canary 成功后替换旧包。两种通道均复用 descriptor、缓存、大小和 SHA-256 校验；显式源覆盖和开发本地产物策略保留。
 - **修改文件与标记**：`packages/desktop/src/main/{remoteCdn.ts,fork/github-update/feed.ts}`、
-  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`；
+  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`、
+  `scripts/{install-server.sh,ci/source-server-release.mjs}` 与独立 Source Server 发布流水线；
   上游接线使用 `FORK(github-update)`，下载失败携带 URL 与具体错误。
 - **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
-  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/source-server-release.md)。
+
+### 开发渠道 Source Server 版本门（2026-11-03）
+
+- **背景与行为**：dev Desktop 使用提交哈希作为版本后缀，哈希大小不代表构建先后，旧的字符串比较会把较新的 Server 误判为过旧。开发渠道连接 Source Server 时跳过最低版本比较与升级提示；正式版继续严格校验，缺失 compatibility manifest 的旧 Server 仍拒绝。
+- **文件与标记**：`packages/shared/src/source-server/compatibility.ts`、`packages/desktop/src/host/sourceServerConnectionManager.ts` 与回归测试；上游接线使用 `FORK(github-update)`。
+- **设计与落地**：[设计](docs/features/github-update/design.md#2026-11-03-开发渠道-source-server-版本门)、[实现](docs/features/github-update/implementation.md#8-开发渠道-source-server-版本门2026-11-03)。
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 

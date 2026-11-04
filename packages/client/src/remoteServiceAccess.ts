@@ -190,6 +190,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
       sourceServerManagementService?: boolean;
       deviceSyncStateService?: boolean;
       windowProjectDirectory?: boolean;
+      windowControllerService?: boolean;
     } = {},
   ) {
     // 远端工作区的 project 必须保留 Source 语义；只有显式能力才创建完整窗口目录组。
@@ -240,10 +241,12 @@ export class RemoteServiceAccess implements IServiceAccessor {
     this.zcodeTaskService = ProxyChannel.toService<IZCodeTaskService>(
       channelClient.getChannel(IZCodeTaskService.channelName),
     );
-    this.defineManifestGatedService(
-      "windowControllerService",
-      IWindowControllerService.channelName,
-    );
+    if (options.windowControllerService !== false) {
+      this.defineManifestGatedService(
+        "windowControllerService",
+        IWindowControllerService.channelName,
+      );
+    }
     this.zcodeAgentService = ProxyChannel.toService<IZCodeAgentService>(
       channelClient.getChannel(IZCodeAgentService.channelName),
     );

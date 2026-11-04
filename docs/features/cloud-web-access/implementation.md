@@ -46,6 +46,11 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 平台层只返回 headless 可用的安全结果；需要 Electron handler 的操作明确返回 unsupported，不挂起手机页面。
 
+项目创建沿用现有 `IProjectService`：浏览器发送 `hostId=local` 时，Server 将它解析为自身 owner host，
+目录浏览读取当前机器的 home 与目录，不依赖浏览器本地文件或桌面专用 Host attachment。local bridge 不向
+客户端暴露桌面 `window-controller`；web remote 连接在清单到达前不创建该可选代理，因此不会产生未知 channel
+请求。公网 local bridge 已实测从“新项目”→“选择文件夹”读取 `/home/ubuntu` 目录树。
+
 ## 4. Server CLI 和日志
 
 公开命令组映射到既有 Server 生命周期：

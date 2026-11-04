@@ -3,21 +3,41 @@ import test from "node:test";
 import {
   FORK_GITHUB_UPDATE_PREVIEW_CHANNEL,
   FORK_GITHUB_UPDATE_PREVIEW_TAG,
+  FORK_GITHUB_SERVER_PREVIEW_TAG,
   applyForkGithubUpdateFeed,
   createForkGithubUpdateFeed,
   normalizeForkGithubUpdateBaseUrl,
   resolveForkGithubUpdateBaseUrl,
   resolveForkGithubUpdateChannel,
+  resolveForkGithubServerReleaseBaseUrl,
   type ForkGithubUpdateFeed,
   type ForkGithubUpdateUpdaterLike,
 } from "../src/main/fork/github-update/feed.js";
 
-const STABLE_BASE = "https://github.com/Rain-kl/ZCode/releases/latest/download/";
+const STABLE_BASE =
+  "https://github.com/Rain-kl/ZCode/releases/latest/download/";
 const PREVIEW_BASE = `https://github.com/Rain-kl/ZCode/releases/download/${FORK_GITHUB_UPDATE_PREVIEW_TAG}/`;
 
 test("stable 走 releases/latest/download，preview 走指针 Release", () => {
-  assert.equal(resolveForkGithubUpdateBaseUrl({ channel: "stable" }), STABLE_BASE);
-  assert.equal(resolveForkGithubUpdateBaseUrl({ channel: "preview" }), PREVIEW_BASE);
+  assert.equal(
+    resolveForkGithubUpdateBaseUrl({ channel: "stable" }),
+    STABLE_BASE,
+  );
+  assert.equal(
+    resolveForkGithubUpdateBaseUrl({ channel: "preview" }),
+    PREVIEW_BASE,
+  );
+});
+
+test("正式 Server 使用版本 Release，dev Server 使用固定 canary Release", () => {
+  assert.equal(
+    resolveForkGithubServerReleaseBaseUrl("3.17.162"),
+    "https://github.com/Rain-kl/ZCode/releases/download/server-v3.17.162",
+  );
+  assert.equal(
+    resolveForkGithubServerReleaseBaseUrl("3.17.162-dev.12345678"),
+    `https://github.com/Rain-kl/ZCode/releases/download/${FORK_GITHUB_SERVER_PREVIEW_TAG}`,
+  );
 });
 
 test("基址必须以 / 结尾，否则 electron-updater 会吃掉最后一个路径段", () => {
@@ -25,17 +45,32 @@ test("基址必须以 / 结尾，否则 electron-updater 会吃掉最后一个�
   // base 不带尾斜杠时 `.../latest/download` 会被解析成 `.../latest/<asset>`（404）。
   // 这条契约由 packages/desktop/test/electronUpdaterFeedContract.test.ts 实证。
   for (const channel of ["stable", "preview"] as const) {
-    assert.equal(resolveForkGithubUpdateBaseUrl({ channel }).endsWith("/"), true);
+    assert.equal(
+      resolveForkGithubUpdateBaseUrl({ channel }).endsWith("/"),
+      true,
+    );
   }
-  assert.equal(normalizeForkGithubUpdateBaseUrl("https://host/a/b"), "https://host/a/b/");
-  assert.equal(normalizeForkGithubUpdateBaseUrl("https://host/a/b/"), "https://host/a/b/");
+  assert.equal(
+    normalizeForkGithubUpdateBaseUrl("https://host/a/b"),
+    "https://host/a/b/",
+  );
+  assert.equal(
+    normalizeForkGithubUpdateBaseUrl("https://host/a/b/"),
+    "https://host/a/b/",
+  );
   // 尾斜杠要进 pathname，不能拼在 query 后面。
-  assert.equal(normalizeForkGithubUpdateBaseUrl("https://host/feed?v=2"), "https://host/feed/?v=2");
+  assert.equal(
+    normalizeForkGithubUpdateBaseUrl("https://host/feed?v=2"),
+    "https://host/feed/?v=2",
+  );
 });
 
 test("只有 preview 使用 dev channel，stable 用默认 channel 文件", () => {
   assert.equal(resolveForkGithubUpdateChannel("stable"), null);
-  assert.equal(resolveForkGithubUpdateChannel("preview"), FORK_GITHUB_UPDATE_PREVIEW_CHANNEL);
+  assert.equal(
+    resolveForkGithubUpdateChannel("preview"),
+    FORK_GITHUB_UPDATE_PREVIEW_CHANNEL,
+  );
 });
 
 test("stable feed 不带 channel 字段，交给 electron-updater 用 latest.yml", () => {
@@ -61,15 +96,23 @@ test("dev 联调覆盖基址时只换地址，不改变 channel 语义", () => {
   assert.equal(feed.url, "http://127.0.0.1:8081/releases/");
   assert.equal("channel" in feed, false);
 
-  const blank = createForkGithubUpdateFeed({ channel: "stable", overrideBaseUrl: "   " });
+  const blank = createForkGithubUpdateFeed({
+    channel: "stable",
+    overrideBaseUrl: "   ",
+  });
   assert.equal(blank.url, STABLE_BASE);
 
   // 写错的覆盖地址不能把 updater 初始化打挂，退回真实 feed。
-  const invalid = createForkGithubUpdateFeed({ channel: "stable", overrideBaseUrl: "not a url" });
+  const invalid = createForkGithubUpdateFeed({
+    channel: "stable",
+    overrideBaseUrl: "not a url",
+  });
   assert.equal(invalid.url, STABLE_BASE);
 });
 
-function createUpdaterStub(): ForkGithubUpdateUpdaterLike & { applied: ForkGithubUpdateFeed[] } {
+function createUpdaterStub(): ForkGithubUpdateUpdaterLike & {
+  applied: ForkGithubUpdateFeed[];
+} {
   return {
     applied: [] as ForkGithubUpdateFeed[],
     allowPrerelease: false,

@@ -1496,6 +1496,8 @@ async function bootstrapExternalRelayWebRemoteControl(
       windowProjectDirectory:
         response.bridge.kind === "remote" &&
         response.bridge.capabilities?.windowProjectDirectory === true,
+      // FORK(cloud-web-access): Source Server local bridge 不提供桌面专用 window-controller。
+      windowControllerService: response.bridge.kind === "remote",
       activateTransport: () => {
         // 能力 RPC 必须先有收帧目标；服务与 Root 仍等就绪后才切换。
         pendingRelayProtocol = relayProtocol;

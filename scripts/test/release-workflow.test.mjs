@@ -7,16 +7,28 @@ import { test } from "node:test";
 import { parse } from "yaml";
 
 const workflow = parse(
-  await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8"),
+  await readFile(
+    new URL("../../.github/workflows/release.yml", import.meta.url),
+    "utf8",
+  ),
 );
 const { jobs } = workflow;
+const sourceServerWorkflow = parse(
+  await readFile(
+    new URL(
+      "../../.github/workflows/source-server-release.yml",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
+const sourceServerJobs = sourceServerWorkflow.jobs;
 const gates = [
   "resolve",
   "verify",
   "unit-tests",
   "build-macos",
   "build-windows",
-  "build-source-server",
 ];
 
 test("builds and complete test gates start after resolve without waiting for each other", () => {
@@ -30,7 +42,10 @@ test("builds and complete test gates start after resolve without waiting for eac
     }
   }
   assert.match(jobs.verify.if, /needs\.resolve\.outputs\.prerelease != 'true'/);
-  assert.match(jobs["unit-tests"].if, /needs\.resolve\.outputs\.prerelease != 'true'/);
+  assert.match(
+    jobs["unit-tests"].if,
+    /needs\.resolve\.outputs\.prerelease != 'true'/,
+  );
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
 });
 
@@ -42,8 +57,13 @@ test("publication requires builds and stable-only test gates", () => {
     const expression = condition
       .replace(/^\$\{\{\s*|\s*\}\}$/g, "")
       .replace(/cancelled\(\)/g, JSON.stringify(cancelled))
-      .replace(/needs\.resolve\.outputs\.prerelease/g, JSON.stringify(results.prerelease))
-      .replace(/needs\.([\w-]+)\.result/g, (_, gate) => JSON.stringify(results[gate]));
+      .replace(
+        /needs\.resolve\.outputs\.prerelease/g,
+        JSON.stringify(results.prerelease),
+      )
+      .replace(/needs\.([\w-]+)\.result/g, (_, gate) =>
+        JSON.stringify(results[gate]),
+      );
     return Function(`"use strict"; return (${expression});`)();
   }
   const success = {
@@ -61,18 +81,16 @@ test("publication requires builds and stable-only test gates", () => {
     }),
     true,
   );
-  for (const gate of [
-    "verify",
-    "unit-tests",
-    "build-macos",
-    "build-windows",
-    "build-source-server",
-  ]) {
+  for (const gate of ["verify", "unit-tests", "build-macos", "build-windows"]) {
     for (const result of ["failure", "skipped", "cancelled"]) {
-      assert.equal(permits({ ...success, [gate]: result }), false, `${gate}: ${result}`);
+      assert.equal(
+        permits({ ...success, [gate]: result }),
+        false,
+        `${gate}: ${result}`,
+      );
     }
   }
-  for (const gate of ["build-macos", "build-windows", "build-source-server"]) {
+  for (const gate of ["build-macos", "build-windows"]) {
     assert.equal(
       permits({
         ...success,
@@ -92,9 +110,14 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
   assert.deepEqual(job.strategy.matrix.shard, [1, 2, 3, 4]);
   assert.equal(job.strategy["fail-fast"], false);
   const commands = job.steps.filter((step) => step.run).map((step) => step.run);
-  const unitCommand = "pnpm test:unit --shard=${{ matrix.shard }}/${{ strategy.job-total }}";
+  const unitCommand =
+    "pnpm test:unit --shard=${{ matrix.shard }}/${{ strategy.job-total }}";
   assert.ok(commands.includes(unitCommand));
-  assert.ok(!commands.some((command) => /--passWithNoTests|--changed|--project/.test(command)));
+  assert.ok(
+    !commands.some((command) =>
+      /--passWithNoTests|--changed|--project/.test(command),
+    ),
+  );
   for (const prerequisite of [
     'pnpm --dir apps/zcode-cli -r --filter "@zcode/core..." --filter "@zcode/adapters" run build',
     "pnpm --filter @zcode/e2e-report build:node",
@@ -106,7 +129,9 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
       `missing build prerequisite before unit tests: ${prerequisite}`,
     );
   }
-  const verify = jobs.verify.steps.filter((step) => step.run).map((step) => step.run);
+  const verify = jobs.verify.steps
+    .filter((step) => step.run)
+    .map((step) => step.run);
   assert.ok(verify.includes("pnpm test:unit:fork"));
   assert.ok(
     verify.includes(
@@ -116,8 +141,8 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
   assert.ok(!verify.includes("pnpm test:unit"));
 });
 
-test("only publish may write Releases; builders use identical version and SHA outputs", () => {
-  for (const name of ["build-macos", "build-windows", "build-source-server"]) {
+test("Desktop publish is independent from Source Server and builders use identical version outputs", () => {
+  for (const name of ["build-macos", "build-windows"]) {
     const job = jobs[name];
     assert.match(job.if, /needs\.resolve\.result == 'success'/);
     assert.doesNotMatch(job.if, /needs\.(verify|unit-tests)/);
@@ -134,12 +159,30 @@ test("only publish may write Releases; builders use identical version and SHA ou
       commands,
       /gh release (create|edit|upload)|source-server-release\.mjs publish/,
     );
-    assert.equal(job.steps.find((step) => step.name === "Checkout repository").with, undefined);
+    assert.equal(
+      job.steps.find((step) => step.name === "Checkout repository").with,
+      undefined,
+    );
   }
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /build-source-server|source-server-release\.mjs/,
+  );
+  assert.deepEqual(sourceServerJobs["build-and-publish"].needs, ["resolve"]);
+  assert.match(
+    sourceServerJobs["build-and-publish"].steps
+      .map((step) => step.run ?? "")
+      .join("\n"),
+    /source-server-release\.mjs publish/,
+  );
+  assert.notEqual(
+    workflow.concurrency.group,
+    sourceServerWorkflow.concurrency.group,
+  );
 });
 
 test("Source Server installation retries only transient failures and preserves final diagnostics", async (t) => {
-  const step = jobs["build-source-server"].steps.find(
+  const step = sourceServerJobs["build-and-publish"].steps.find(
     (step) => step.name === "Install dependencies",
   );
   assert.equal(step.if, "steps.reuse.outputs.reused != 'true'");
@@ -186,18 +229,27 @@ exit 99
         },
       });
       assert.ifError(result.error);
-      assert.equal(result.status, status, `${mode}: ${result.stdout}\n${result.stderr}`);
+      assert.equal(
+        result.status,
+        status,
+        `${mode}: ${result.stdout}\n${result.stderr}`,
+      );
       assert.equal(Number(await readFile(counter, "utf8")), attempts);
       if (status !== 0) {
         assert.match(result.stdout, /::error title=pnpm install failed::/);
-        assert.match(result.stdout, mode === "config" ? /OUTDATED_LOCKFILE/ : /esbuild rename/);
+        assert.match(
+          result.stdout,
+          mode === "config" ? /OUTDATED_LOCKFILE/ : /esbuild rename/,
+        );
       }
     });
   }
 });
 
 test("unit test install retries with --force after a transient linker failure", async (t) => {
-  const step = jobs["unit-tests"].steps.find((step) => step.name === "Install dependencies");
+  const step = jobs["unit-tests"].steps.find(
+    (step) => step.name === "Install dependencies",
+  );
   const root = await mkdtemp(join(tmpdir(), "unit-test-install-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const pnpm = join(root, "pnpm");
@@ -242,14 +294,17 @@ fi
 });
 
 test("all dependency install retries force a clean relink after the first attempt", () => {
-  for (const name of [
-    "verify",
-    "unit-tests",
-    "build-macos",
-    "build-windows",
-    "build-source-server",
-  ]) {
-    const step = jobs[name].steps.find((step) => step.name === "Install dependencies");
+  for (const name of ["verify", "unit-tests", "build-macos", "build-windows"]) {
+    const step = jobs[name].steps.find(
+      (step) => step.name === "Install dependencies",
+    );
     assert.ok(step?.run?.includes("args+=(--force)"), name);
   }
+  const sourceServerInstall = sourceServerJobs["build-and-publish"].steps.find(
+    (step) => step.name === "Install dependencies",
+  );
+  assert.ok(
+    sourceServerInstall?.run?.includes("args+=(--force)"),
+    "source-server",
+  );
 });

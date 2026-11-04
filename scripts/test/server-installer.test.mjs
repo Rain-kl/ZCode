@@ -20,8 +20,13 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const installer = resolve("scripts/install-server.sh");
 
-async function fixture(t, { os = "Linux", arch = "x86_64", dev = false, releaseVersion } = {}) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "zcode server installer-")));
+async function fixture(
+  t,
+  { os = "Linux", arch = "x86_64", dev = false, releaseVersion } = {},
+) {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "zcode server installer-")),
+  );
   t.after(() => rm(root, { recursive: true, force: true }));
   const bin = join(root, "tools");
   const home = join(root, "home");
@@ -74,7 +79,10 @@ if (args[0] === 'update') {
 `,
   );
   await mkdir(join(bundle, "runtime/provider"));
-  await writeFile(join(bundle, "runtime/provider/zcode-builtin.json"), '{"fixture":true}\n');
+  await writeFile(
+    join(bundle, "runtime/provider/zcode-builtin.json"),
+    '{"fixture":true}\n',
+  );
   await chmod(join(bundle, "bin/zcode"), 0o755);
   await chmod(join(bundle, "runtime/node"), 0o755);
   const archive = join(root, `${name}.tar.gz`);
@@ -97,7 +105,11 @@ if (args[0] === 'update') {
   const latest = join(root, "latest.json");
   await writeFile(
     latest,
-    JSON.stringify({ tag_name: `v${version}`, prerelease: false, draft: false }),
+    JSON.stringify({
+      tag_name: `v${version}`,
+      prerelease: false,
+      draft: false,
+    }),
   );
   const devIndex = join(root, "dev.yml");
   await writeFile(devIndex, `version: ${version}\nfiles:\n`);
@@ -105,8 +117,10 @@ if (args[0] === 'update') {
   const routes = {
     "https://api.github.com/repos/Rain-kl/ZCode/releases/latest": latest,
     [`${base}/canary-build/dev.yml`]: devIndex,
-    [`${base}/server-v${version}/source-server-release.json`]: descriptorPath,
-    [`${base}/server-v${version}/${name}.tar.gz`]: archive,
+    [`${base}/${dev ? "server-canary-build" : `server-v${version}`}/source-server-release.json`]:
+      descriptorPath,
+    [`${base}/${dev ? "server-canary-build" : `server-v${version}`}/${name}.tar.gz`]:
+      archive,
   };
   const log = join(root, "requests.log");
   await writeFile(
@@ -133,7 +147,8 @@ if (args[0] === 'update') {
   delete env.ZCODE_SERVER_ROOT;
   const serverRoot = join(home, ".zcode/server");
   const command = join(env.ZCODE_SERVER_BIN_DIR, "zcode");
-  const run = (args = dev ? ["dev"] : []) => exec("sh", [installer, ...args], { env });
+  const run = (args = dev ? ["dev"] : []) =>
+    exec("sh", [installer, ...args], { env });
   return {
     root,
     home,
@@ -162,30 +177,46 @@ for (const [os, arch] of [
     const f = await fixture(t, { os, arch });
     const result = await f.run();
     assert.match(result.stdout, /3\.18\.0/);
-    const invoked = await exec(f.command, ["server", "connect", "two words"], { env: f.env });
-    assert.match(invoked.stdout, /runtime\/server-cli.js\nserver\nconnect\ntwo words\n$/);
+    const invoked = await exec(f.command, ["server", "connect", "two words"], {
+      env: f.env,
+    });
+    assert.match(
+      invoked.stdout,
+      /runtime\/server-cli.js\nserver\nconnect\ntwo words\n$/,
+    );
     assert.match(await readFile(f.log, "utf8"), /releases\/latest/);
     assert.equal((await lstat(f.command)).isFile(), true);
-    const current = JSON.parse(await readFile(join(f.serverRoot, "current.json"), "utf8"));
+    const current = JSON.parse(
+      await readFile(join(f.serverRoot, "current.json"), "utf8"),
+    );
     assert.equal(current.version, f.version);
     assert.ok(current.releaseDir.startsWith(join(f.serverRoot, "releases/")));
     const before = await readFile(f.command, "utf8");
     await f.run();
     assert.equal(await readFile(f.command, "utf8"), before);
-    const updateArgs = JSON.parse((await readFile(f.env.UPDATE_LOG, "utf8")).trim().split("\n")[0]);
+    const updateArgs = JSON.parse(
+      (await readFile(f.env.UPDATE_LOG, "utf8")).trim().split("\n")[0],
+    );
     assert.equal(updateArgs[0], "update");
     assert.ok(updateArgs.includes("--from-archive"));
-    assert.equal(updateArgs[updateArgs.indexOf("--server-root") + 1], f.serverRoot);
-    assert.ok(!updateArgs.includes("--force") && !updateArgs.includes("--allow-downgrade"));
+    assert.equal(
+      updateArgs[updateArgs.indexOf("--server-root") + 1],
+      f.serverRoot,
+    );
+    assert.ok(
+      !updateArgs.includes("--force") &&
+        !updateArgs.includes("--allow-downgrade"),
+    );
   });
 }
 
-test("dev pins canary's complete version to an immutable Server release", async (t) => {
+test("dev reads its complete version directly from the fixed Server canary", async (t) => {
   const f = await fixture(t, { dev: true });
   await f.run();
   const requests = await readFile(f.log, "utf8");
-  assert.match(requests, /canary-build\/dev.yml/);
-  assert.match(requests, /server-v3\.18\.0-dev\.12345678\/source-server-release.json/);
+  assert.match(requests, /server-canary-build\/source-server-release.json/);
+  assert.doesNotMatch(requests, /server-v3\.18\.0-dev\.12345678/);
+  assert.doesNotMatch(requests, /canary-build\/dev\.yml/);
   assert.doesNotMatch(requests, /releases\/latest/);
 });
 
@@ -200,17 +231,27 @@ test("accepts the documented piped sh -s -- dev invocation", async (t) => {
 test("upgrading switches the command and retains the previous release", async (t) => {
   const old = await fixture(t);
   await old.run();
-  const previous = JSON.parse(await readFile(join(old.serverRoot, "current.json"), "utf8"));
+  const previous = JSON.parse(
+    await readFile(join(old.serverRoot, "current.json"), "utf8"),
+  );
   const next = await fixture(t, { releaseVersion: "3.18.1" });
   next.env.HOME = old.env.HOME;
   next.env.ZCODE_SERVER_BIN_DIR = old.env.ZCODE_SERVER_BIN_DIR;
   await next.run();
-  const current = JSON.parse(await readFile(join(old.serverRoot, "current.json"), "utf8"));
+  const current = JSON.parse(
+    await readFile(join(old.serverRoot, "current.json"), "utf8"),
+  );
   assert.equal(current.version, "3.18.1");
   assert.notEqual(current.releaseDir, previous.releaseDir);
-  assert.match(await readFile(join(previous.releaseDir, "manifest.json"), "utf8"), /3\.18\.0/);
+  assert.match(
+    await readFile(join(previous.releaseDir, "manifest.json"), "utf8"),
+    /3\.18\.0/,
+  );
   // 模拟 SSH 切回旧 current：PATH 包装器无需重装便跟随唯一版本指针。
-  await writeFile(join(old.serverRoot, "current.json"), JSON.stringify(previous));
+  await writeFile(
+    join(old.serverRoot, "current.json"),
+    JSON.stringify(previous),
+  );
   assert.match(
     (await exec(old.command, ["server"], { env: old.env })).stdout,
     /3\.18\.0-linux-x64/,
@@ -237,17 +278,30 @@ for (const failure of [
     if (failure === "schema") f.descriptor.schemaVersion = 2;
     if (failure === "version") f.descriptor.version = "../invalid";
     if (failure === "download") f.env.ROUTES = "{}";
-    if (failure === "busy") f.env.UPDATE_FAILURE = "Running tasks require --force for update";
-    if (failure === "manifest" || failure === "traversal" || failure === "provider") {
-      if (failure === "provider") await rm(join(f.bundle, "runtime/provider/zcode-builtin.json"));
+    if (failure === "busy")
+      f.env.UPDATE_FAILURE = "Running tasks require --force for update";
+    if (
+      failure === "manifest" ||
+      failure === "traversal" ||
+      failure === "provider"
+    ) {
+      if (failure === "provider")
+        await rm(join(f.bundle, "runtime/provider/zcode-builtin.json"));
       if (failure === "manifest")
-        await writeFile(join(f.bundle, "manifest.json"), JSON.stringify({ product: "wrong" }));
+        await writeFile(
+          join(f.bundle, "manifest.json"),
+          JSON.stringify({ product: "wrong" }),
+        );
       if (failure === "traversal") {
         await exec("ln", ["-s", "../../escaped", join(f.bundle, "escape")]);
       }
-      await exec("tar", ["-czf", f.archive, "-C", f.root, `zcode-server-${f.entry.target}`], {
-        env: { ...process.env, COPYFILE_DISABLE: "1" },
-      });
+      await exec(
+        "tar",
+        ["-czf", f.archive, "-C", f.root, `zcode-server-${f.entry.target}`],
+        {
+          env: { ...process.env, COPYFILE_DISABLE: "1" },
+        },
+      );
       const bytes = await readFile(f.archive);
       f.entry.sizeBytes = bytes.length;
       f.entry.sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -270,7 +324,10 @@ test("does not overwrite an unrelated zcode command", async (t) => {
 
 test("migrates the old installer command without deleting its release or Server data", async (t) => {
   const f = await fixture(t);
-  const legacy = join(f.home, ".local/share/zcode-server/releases/old/.installer-launcher");
+  const legacy = join(
+    f.home,
+    ".local/share/zcode-server/releases/old/.installer-launcher",
+  );
   await mkdir(join(legacy, ".."), { recursive: true });
   await writeFile(legacy, "#!/bin/sh\n# zcode-server installer\nexit 0\n");
   await mkdir(f.env.ZCODE_SERVER_BIN_DIR, { recursive: true });
@@ -279,8 +336,14 @@ test("migrates the old installer command without deleting its release or Server 
   await writeFile(join(f.serverRoot, "config/sentinel"), "keep credentials");
   await f.run();
   assert.equal((await lstat(f.command)).isFile(), true);
-  assert.match(await readFile(f.command, "utf8"), /\.zcode\/server\/bin\/zcode/);
-  assert.equal(await readFile(join(f.serverRoot, "config/sentinel"), "utf8"), "keep credentials");
+  assert.match(
+    await readFile(f.command, "utf8"),
+    /\.zcode\/server\/bin\/zcode/,
+  );
+  assert.equal(
+    await readFile(join(f.serverRoot, "config/sentinel"), "utf8"),
+    "keep credentials",
+  );
   assert.match(await readFile(legacy, "utf8"), /installer/);
 });
 

@@ -6,7 +6,7 @@
  *   「最新的非 prerelease、非 draft 发布」，语义确定；不用 `provider: "github"`，
  *   因为它从 `releases.atom` 取第一条 entry 当最新版本，而该 feed 既包含 prerelease，
  *   本仓库的 entry 顺序还是「旧 → 新」，会解析到错误的 tag。
- * - preview 基址是固定 tag 的指针 Release，由发布流水线每次 `--clobber` 覆盖资产。
+ * - preview 基址是固定 tag 的指针 Release，由发布流水线每次更新到当前提交并重建资产。
  * - 本模块保持纯函数：不 import electron / electron-updater，便于单测。
  */
 
@@ -16,8 +16,11 @@ import type { ElectronReleaseChannel } from "@zcode/shared";
 export const FORK_GITHUB_UPDATE_OWNER = "Rain-kl";
 export const FORK_GITHUB_UPDATE_REPO = "ZCode";
 
-/** preview 通道的指针 Release tag，只换资产、不移动 tag。 */
+/** preview 通道的固定 Release tag；发布时更新到当前提交并重建 Release。 */
 export const FORK_GITHUB_UPDATE_PREVIEW_TAG = "canary-build";
+
+/** dev Source Server 的固定 Release；descriptor 版本仍必须与 Desktop 完整版本一致。 */
+export const FORK_GITHUB_SERVER_PREVIEW_TAG = "server-canary-build";
 
 /**
  * preview 通道的 channel 名。electron-updater 的 channel 文件名规则是 `` `${channel}.yml` ``
@@ -28,9 +31,12 @@ export const FORK_GITHUB_UPDATE_PREVIEW_CHANNEL = "dev";
 
 export const FORK_GITHUB_UPDATE_ORIGIN = "https://github.com";
 
-/** Server 与客户端完整版本绑定，不能跟随可变的桌面更新指针。 */
+/** 正式 Server 版本不可变；dev 复用固定 Release，但仍由 descriptor 校验完整版本。 */
 export function resolveForkGithubServerReleaseBaseUrl(version: string): string {
-  return `${FORK_GITHUB_UPDATE_ORIGIN}/${FORK_GITHUB_UPDATE_OWNER}/${FORK_GITHUB_UPDATE_REPO}/releases/download/server-v${encodeURIComponent(version)}`;
+  const tag = version.includes("-dev.")
+    ? FORK_GITHUB_SERVER_PREVIEW_TAG
+    : `server-v${encodeURIComponent(version)}`;
+  return `${FORK_GITHUB_UPDATE_ORIGIN}/${FORK_GITHUB_UPDATE_OWNER}/${FORK_GITHUB_UPDATE_REPO}/releases/download/${tag}`;
 }
 
 export interface ForkGithubUpdateFeed {
@@ -47,7 +53,9 @@ export interface ForkGithubUpdateUpdaterLike {
   allowPrerelease: boolean;
 }
 
-export function isForkPreviewUpdateChannel(channel: ElectronReleaseChannel): boolean {
+export function isForkPreviewUpdateChannel(
+  channel: ElectronReleaseChannel,
+): boolean {
   return channel === "preview";
 }
 
@@ -93,8 +101,12 @@ export function resolveForkGithubUpdateBaseUrl(options: {
 }
 
 /** stable 用默认 channel 文件（`latest.yml`），因此返回 null 而不是空串。 */
-export function resolveForkGithubUpdateChannel(channel: ElectronReleaseChannel): string | null {
-  return isForkPreviewUpdateChannel(channel) ? FORK_GITHUB_UPDATE_PREVIEW_CHANNEL : null;
+export function resolveForkGithubUpdateChannel(
+  channel: ElectronReleaseChannel,
+): string | null {
+  return isForkPreviewUpdateChannel(channel)
+    ? FORK_GITHUB_UPDATE_PREVIEW_CHANNEL
+    : null;
 }
 
 export function createForkGithubUpdateFeed(options: {

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IChannel, IChannelClient } from "@zcode/rpc";
-import { IClientConfigService, IMediaPreviewService, ISourceServerManagementService } from "@zcode/services";
+import {
+  IClientConfigService,
+  IMediaPreviewService,
+  ISourceServerManagementService,
+  IWindowControllerService,
+} from "@zcode/services";
 import { RemoteServiceAccess } from "../src/remoteServiceAccess.js";
 
 const channel: IChannel = {
@@ -40,6 +45,16 @@ describe("RemoteServiceAccess optional channels", () => {
     expect(services.clientConfigService).toBeDefined();
     expect(services.sourceServerManagementService).toBeUndefined();
     expect(getChannel).not.toHaveBeenCalledWith(ISourceServerManagementService.channelName);
+  });
+
+  it("does not create the desktop window controller for a local Server bridge", () => {
+    const getChannel = vi.fn(() => channel);
+    const services = new RemoteServiceAccess({ getChannel } as IChannelClient, {
+      windowControllerService: false,
+    });
+
+    expect(services.windowControllerService).toBeUndefined();
+    expect(getChannel).not.toHaveBeenCalledWith(IWindowControllerService.channelName);
   });
 });
 

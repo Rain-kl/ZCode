@@ -61,6 +61,8 @@ Desktop Main 继续作为桌面远控连接、设备身份和 attachment 调度�
 
 - `packages/zcode-server-cli` 是本期执行宿主；其 Core 已持有服务与 Agent，普通 `/ws` 已有 terminal-client/replayable scope。
 - 官方桌面 Relay 客户端位于 Electron main；它除了建立 WS，还负责 bootstrap、项目列表、workspace bridge 和平台请求。headless 接入需补这些宿主适配，不能只把一个 WS URL 改为 Relay。
+- 浏览器项目向导里的“此电脑”表示当前 attachment 所属 Server。Server 将 `local` 路由到自己的 owner host，按该机 home、目录和项目存储执行，不再要求浏览器知道内部 `remote:server:*` 身份。
+- Source Server local bridge 不声明桌面专用的 `window-controller`；客户端在 RPC 清单到达前不创建该可选通道代理，不向未提供的服务发送请求。
 - shared 的 Relay V2 类型、HTTP 响应、心跳以及 raw RPC 分片/CRC/ACK/重放机制可以复用。
 - 本期保持官方 V2 外层格式与单 owner 行为，不新增 channelId 多路外壳、不新增 Fork Relay v1 数据协议。
 - 账号密码登录是自建的新增入口；替换官方 OAuth 的必要适配独立放在 fork 入口，不伪造 Z.AI/BigModel 模型业务令牌。

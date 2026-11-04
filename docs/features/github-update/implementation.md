@@ -4,16 +4,16 @@
 
 ## 1. 落地位置
 
-| 变更 | 文件 |
-| --- | --- |
-| 更新 feed 解析（纯函数） | 新增 `packages/desktop/src/main/fork/github-update/feed.ts` |
-| 单测 | 新增 `packages/desktop/test/forkGithubUpdateFeed.test.ts`（7 例） |
-| 更新器接线、强更 gate 移除 | `packages/desktop/src/main/autoUpdater.ts` |
-| 启动强更 gate 调用点移除 | `packages/desktop/src/main/index.ts` |
-| second-instance 强更依赖移除 | `packages/desktop/src/main/desktopSecondInstanceDeepLink.ts` |
-| 更新元数据文件名 | `packages/desktop/electron-builder.config.js` |
-| 更新元数据发布 | `.github/workflows/release.yml` |
-| 强更死代码清理 | `packages/shared/src/{forceUpdate.ts,index.ts,remoteAppConfig.ts,coding-plan-subscription.ts}`、`packages/services/src/coding-plan-subscription/*`、两个语言文件 |
+| 变更                         | 文件                                                                                                                                                             |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 更新 feed 解析（纯函数）     | 新增 `packages/desktop/src/main/fork/github-update/feed.ts`                                                                                                      |
+| 单测                         | 新增 `packages/desktop/test/forkGithubUpdateFeed.test.ts`（7 例）                                                                                                |
+| 更新器接线、强更 gate 移除   | `packages/desktop/src/main/autoUpdater.ts`                                                                                                                       |
+| 启动强更 gate 调用点移除     | `packages/desktop/src/main/index.ts`                                                                                                                             |
+| second-instance 强更依赖移除 | `packages/desktop/src/main/desktopSecondInstanceDeepLink.ts`                                                                                                     |
+| 更新元数据文件名             | `packages/desktop/electron-builder.config.js`                                                                                                                    |
+| 更新元数据发布               | `.github/workflows/release.yml`                                                                                                                                  |
+| 强更死代码清理               | `packages/shared/src/{forceUpdate.ts,index.ts,remoteAppConfig.ts,coding-plan-subscription.ts}`、`packages/services/src/coding-plan-subscription/*`、两个语言文件 |
 
 删除的上游文件：`packages/desktop/src/main/manifestUpdateProvider.ts`、`forceUpdateGuard.ts`、`forceUpdatePrompt.ts`、`packages/shared/src/forceUpdate.ts`。
 
@@ -29,10 +29,10 @@
 `feed.ts` 只做纯函数：
 
 ```ts
-resolveForkGithubUpdateBaseUrl({ channel })  // stable → releases/latest/download；preview → releases/download/canary-build
-resolveForkGithubUpdateChannel("preview")    // → "dev"（决定 dev.yml / dev-mac.yml）
-createForkGithubUpdateFeed({ channel })      // → { provider: "generic", url, useMultipleRangeRequest: false, channel? }
-applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / channel / setFeedURL
+resolveForkGithubUpdateBaseUrl({ channel }); // stable → releases/latest/download；preview → releases/download/canary-build
+resolveForkGithubUpdateChannel("preview"); // → "dev"（决定 dev.yml / dev-mac.yml）
+createForkGithubUpdateFeed({ channel }); // → { provider: "generic", url, useMultipleRangeRequest: false, channel? }
+applyForkGithubUpdateFeed(updater, { channel }); // 同时写 allowPrerelease / channel / setFeedURL
 ```
 
 `autoUpdater.ts` 有三处必须重新应用 feed，缺一处就会出现「新 channel + 旧基址」的 404：
@@ -55,7 +55,7 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 
 - `electron-builder.config.js`：`detectUpdateChannel: false → true`。稳定版产出 `latest.yml` / `latest-mac.yml`，`3.14.3-dev.<sha>` 产出 `dev.yml` / `dev-mac.yml`。不打开时两种版本都写 `latest*.yml`，dev 包会顶掉稳定通道的元数据。
 - `release.yml`：macOS / Windows 的 artifact 上传列表补上 `*.blockmap` 与两个候选 yml 文件名（stable 与 dev 只会命中一个，`if-no-files-found: error` 只在全都没命中时触发）。
-- `release.yml` publish job：dev 构建把本次资产 `--clobber` 到固定 tag `canary-build` 的指针 Release（只覆盖资产、不移动 tag，因此不需要 force push）；不再创建 dev-<sha8> 发布。
+- `release.yml` publish job：dev 构建把固定 tag `canary-build` 更新到当前提交，重建指针 Release并只上传本次资产；不再创建 dev-<sha8> 发布。
 
 ### 2.4 防回归守卫：`pnpm fork:check-removals`
 
@@ -66,12 +66,12 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 
 因此新增 `scripts/check-fork-removals.mjs`，断言的是行为不变量而非路径墓碑：
 
-| 规则类型 | 作用 |
-| --- | --- |
-| `absentFiles` | 被删文件不许复活（覆盖 modify/delete 冲突误解决） |
-| `absentPatterns` | 被移除的符号/端点不许在任何代码与配置中出现（覆盖新文件重新实现、异地新增调用） |
-| `requiredFiles` | 我们的实现文件必须存在 |
-| `requiredPatterns` | 我们那版接线必须在位（覆盖上游文件整体胜出，例如上游版 `autoUpdater.ts`） |
+| 规则类型           | 作用                                                                            |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `absentFiles`      | 被删文件不许复活（覆盖 modify/delete 冲突误解决）                               |
+| `absentPatterns`   | 被移除的符号/端点不许在任何代码与配置中出现（覆盖新文件重新实现、异地新增调用） |
+| `requiredFiles`    | 我们的实现文件必须存在                                                          |
+| `requiredPatterns` | 我们那版接线必须在位（覆盖上游文件整体胜出，例如上游版 `autoUpdater.ts`）       |
 
 脚本内置 `selfTest`：为每条 `absentPatterns` 规则推导字面量探针，验证扫描器真的能命中它。
 这条自检是必需的——初版手写了一个 `forceUpdate|ForceUpdate|manifest` 的文件级预筛，
@@ -97,6 +97,7 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 这条也是 `AGENTS.md` 新增「依赖契约测试」约束的范例来源。
 
 ## 3. 上游改动标记
+
 10 处：7 个单点 `FORK(github-update)` + 3 对 `FORK-BEGIN/END`。
 
 - `packages/desktop/src/main/autoUpdater.ts`：2 个单点（通道同步点、通道切换）+ 2 对（feed 应用函数、初始化）
@@ -109,14 +110,14 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 
 已执行：
 
-| 项目 | 命令 | 结果 |
-| --- | --- | --- |
-| 类型检查 | `pnpm typecheck` | 通过（0 error） |
-| Lint | `pnpm lint` | 0 error / 71 warning，全部为改动前既有告警，我改动的文件无告警 |
-| 架构检查 | `pnpm architecture:check --changed` | OK，0 违规 |
-| feed 单测 | `pnpm exec tsx --test packages/desktop/test/forkGithubUpdateFeed.test.ts` | 7 pass / 0 fail |
-| 死代码清理核对 | `grep -rn "forceUpdate\|ForceUpdate" packages apps --include=*.ts` | 无残留引用（i18n 文案键已删） |
-| 强更请求确认消失 | `grep -rn "maybeBlockStartupForForceUpdate\|ForceUpdate" packages/desktop/src --include=*.ts` | 无残留 |
+| 项目             | 命令                                                                                          | 结果                                                           |
+| ---------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| 类型检查         | `pnpm typecheck`                                                                              | 通过（0 error）                                                |
+| Lint             | `pnpm lint`                                                                                   | 0 error / 71 warning，全部为改动前既有告警，我改动的文件无告警 |
+| 架构检查         | `pnpm architecture:check --changed`                                                           | OK，0 违规                                                     |
+| feed 单测        | `pnpm exec tsx --test packages/desktop/test/forkGithubUpdateFeed.test.ts`                     | 7 pass / 0 fail                                                |
+| 死代码清理核对   | `grep -rn "forceUpdate\|ForceUpdate" packages apps --include=*.ts`                            | 无残留引用（i18n 文案键已删）                                  |
+| 强更请求确认消失 | `grep -rn "maybeBlockStartupForForceUpdate\|ForceUpdate" packages/desktop/src --include=*.ts` | 无残留                                                         |
 
 **发现的相关依赖（未处理）**：`/api/v1/client/configs` 并没有从代码里消失。仍有两处访问它，
 与本功能无关，属于既有的服务端灰度开关机制：
@@ -157,16 +158,15 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 
 ### 落地位置与接线
 
-- `main/fork/github-update/feed.ts` 复用本项目仓库身份，提供完整版本的 `server-v<VERSION>` 下载根。
+- `main/fork/github-update/feed.ts` 复用本项目仓库身份：正式版提供 `server-v<VERSION>` 下载根，dev 提供固定 `server-canary-build` 下载根。
 - `main/remoteCdn.ts` 仅替换生产默认源；显式覆盖、构建期源覆盖、test 内网源和开发态 mock-cdn 仍保留。
 - `packages/server/src/remote/remoteAssetCdn.ts` 识别 GitHub Release 的平铺资产路径，不追加版本子目录。
 - `host/sourceServerReleaseResolver.ts` 沿用原解析/下载/缓存/校验，清单错误保留各源上下文与 cause；
   展示层仍遵守 URL 脱敏合同，HTTP 状态和解析/网络错误可见。上游接线标记均为 `github-update`。
-- `.github/workflows/release.yml` 的 `build-source-server` 消费 resolve 的同一版本，复用四平台 staging，
-  校验完整 descriptor/归档，并在 Ubuntu 执行 Linux x64 归档的 `bin/zcode --version` 冒烟。
-- `scripts/ci/source-server-release.mjs` 负责验证、已发布包复用和 draft 发布。独立 Server 发布完成后
-  才更新桌面 Release；不移动 tag，不覆盖已公开归档。重跑优先复用原包，避免 tar 时间戳漂移。
-- `cleanup-prerelease-tags.yml` 保留 `server-v*`，桌面 canary 指针清理不接触 Server 资产。
+- `.github/workflows/source-server-release.yml` 独立解析同一提交版本、构建四个平台归档，并在完整性校验和 Linux x64 入口冒烟后立即发布；它不依赖 Desktop workflow。
+- `scripts/ci/source-server-release.mjs` 负责验证、重跑复用与发布。正式版保持不可变；dev 每次重新公开固定 `server-canary-build`，发布成功后删除历史 `server-v*-dev.*` Release 和 tag。
+- dev Desktop 与一键安装脚本直接消费固定 Server descriptor 中的完整 dev 版本，避免 Server 先发布、Desktop 指针尚未更新时产生跨 workflow 版本竞态；正式版仍要求 descriptor 版本与客户端完全一致。
+- `cleanup-prerelease-tags.yml` 保留 `server-canary-build` 与正式 `server-v*`，清理已经被固定入口取代的开发版发布。
 
 ### 回归与依赖契约
 
@@ -207,3 +207,10 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 - 验证：updater scoped Vitest 72/72、GitHub feed/第三方依赖/未签名策略 node 契约 15/15 通过；
   `pnpm typecheck` 全部通过（含 desktop main/host/E2E、remote-main、CUA）；4 个修改文件 lint
   0 warning / 0 error，移除守卫全部通过。真实 Windows 未签名下载、安装和 SmartScreen 未验证。
+
+## 8. 开发渠道 Source Server 版本门（2026-11-03）
+
+- dev Desktop 连接 Source Server 时跳过最低兼容版本比较；正式版仍按 compatibility manifest 执行完整门禁。
+- 连接前安装检查与握手后的双端比较共享同一渠道判定，避免只修一处后另一处继续拦截。
+- 开发渠道不再因两个提交哈希的字典序显示升级要求；缺少 compatibility manifest 的旧 Server 仍 fail closed。
+- 回归覆盖 `3.17.162-dev.c1ea55a4` 连接更旧/更高哈希 dev Server 均放行，以及正式版旧 Server 仍被拒绝。

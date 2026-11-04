@@ -14,14 +14,14 @@ function sha256(contents: string): string {
   return createHash("sha256").update(contents).digest("hex");
 }
 
-function descriptor(contents: string) {
+function descriptor(contents: string, version = ZCODE_VERSION) {
   return {
     schemaVersion: 1,
-    version: ZCODE_VERSION,
+    version,
     archives: [
       {
         target: "linux-x64",
-        version: ZCODE_VERSION,
+        version,
         fileName,
         sha256: sha256(contents),
         sizeBytes: Buffer.byteLength(contents),
@@ -50,8 +50,28 @@ describe("Source Server release resolver", () => {
     expect(release).toMatchObject({ version: ZCODE_VERSION, sizeBytes: 15 });
     expect(release.localArchivePath).toBeUndefined();
     expect(
-      fetch.mock.calls.every(([url]) => String(url).endsWith("source-server-release.json")),
+      fetch.mock.calls.every(([url]) =>
+        String(url).endsWith("source-server-release.json"),
+      ),
     ).toBe(true);
+  });
+
+  it("dev controller accepts the current dev pointer version and returns that install version", async () => {
+    const latestDevVersion = "0.0.0-dev.12345678";
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify(descriptor("latest-dev-package", latestDevVersion)),
+        ),
+    );
+    const release = await resolveSourceServerReleaseAsset(
+      probe,
+      { remoteCdnBaseUrl: "https://release.test" },
+      target,
+      { fetch },
+      { metadataOnly: true },
+    );
+    expect(release.version).toBe(latestDevVersion);
   });
   it("uses and verifies a staged local archive for local-download-upload", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-source-release-local-"));
@@ -64,7 +84,11 @@ describe("Source Server release resolver", () => {
       JSON.stringify(descriptor(contents)),
     );
 
-    const release = await resolveSourceServerReleaseAsset(probe, { mockCdnDir: root }, target);
+    const release = await resolveSourceServerReleaseAsset(
+      probe,
+      { mockCdnDir: root },
+      target,
+    );
 
     expect(release).toMatchObject({
       localArchivePath: join(releaseDir, fileName),
@@ -76,7 +100,9 @@ describe("Source Server release resolver", () => {
   });
 
   it("uses the staged local archive for development even when SSH prefers remote download", async () => {
-    const root = await mkdtemp(join(tmpdir(), "zcode-source-release-dev-local-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "zcode-source-release-dev-local-"),
+    );
     const releaseDir = join(root, "releases", ZCODE_VERSION);
     const contents = "development-source-server";
     await mkdir(releaseDir, { recursive: true });
@@ -104,7 +130,9 @@ describe("Source Server release resolver", () => {
   });
 
   it("fails closed without a staged local development descriptor", async () => {
-    const fetchMock = vi.fn(async () => new Response("production-release", { status: 200 }));
+    const fetchMock = vi.fn(
+      async () => new Response("production-release", { status: 200 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
@@ -125,7 +153,8 @@ describe("Source Server release resolver", () => {
     const contents = "remote-source-server";
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (!url.endsWith("/source-server-release.json")) return new Response(null, { status: 404 });
+      if (!url.endsWith("/source-server-release.json"))
+        return new Response(null, { status: 404 });
       return new Response(JSON.stringify(descriptor(contents)), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -136,7 +165,9 @@ describe("Source Server release resolver", () => {
     const release = await resolveSourceServerReleaseAsset(
       probe,
       {
-        remoteCdnBaseUrls: [`https://cdn.example.test/releases/${ZCODE_VERSION}`],
+        remoteCdnBaseUrls: [
+          `https://cdn.example.test/releases/${ZCODE_VERSION}`,
+        ],
         remoteCacheDir: root,
       },
       { ...target, assetInstallMode: "remote-download" },
@@ -158,9 +189,12 @@ describe("Source Server release resolver", () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/source-server-release.json")) {
-        return new Response(JSON.stringify(descriptor(contents)), { status: 200 });
+        return new Response(JSON.stringify(descriptor(contents)), {
+          status: 200,
+        });
       }
-      if (url.endsWith(`/${fileName}`)) return new Response(contents, { status: 200 });
+      if (url.endsWith(`/${fileName}`))
+        return new Response(contents, { status: 200 });
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -168,14 +202,20 @@ describe("Source Server release resolver", () => {
     const release = await resolveSourceServerReleaseAsset(
       probe,
       {
-        remoteCdnBaseUrls: [`https://cdn.example.test/releases/${ZCODE_VERSION}`],
+        remoteCdnBaseUrls: [
+          `https://cdn.example.test/releases/${ZCODE_VERSION}`,
+        ],
         remoteCacheDir: root,
       },
       target,
     );
 
-    expect(release.localArchivePath).toBe(join(root, "source-server", ZCODE_VERSION, fileName));
-    await expect(readFile(release.localArchivePath!, "utf8")).resolves.toBe(contents);
+    expect(release.localArchivePath).toBe(
+      join(root, "source-server", ZCODE_VERSION, fileName),
+    );
+    await expect(readFile(release.localArchivePath!, "utf8")).resolves.toBe(
+      contents,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -185,9 +225,12 @@ describe("Source Server release resolver", () => {
     const remoteAssetFetch = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith("/source-server-release.json")) {
-        return new Response(JSON.stringify(descriptor(contents)), { status: 200 });
+        return new Response(JSON.stringify(descriptor(contents)), {
+          status: 200,
+        });
       }
-      if (url.endsWith(`/${fileName}`)) return new Response(contents, { status: 200 });
+      if (url.endsWith(`/${fileName}`))
+        return new Response(contents, { status: 200 });
       return new Response(null, { status: 404 });
     });
     const directFetch = vi
@@ -198,22 +241,29 @@ describe("Source Server release resolver", () => {
     const release = await resolveSourceServerReleaseAsset(
       probe,
       {
-        remoteCdnBaseUrls: [`https://cdn.example.test/releases/${ZCODE_VERSION}`],
+        remoteCdnBaseUrls: [
+          `https://cdn.example.test/releases/${ZCODE_VERSION}`,
+        ],
         remoteCacheDir: root,
       },
       target,
       { fetch: remoteAssetFetch },
     );
 
-    expect(release.localArchivePath).toBe(join(root, "source-server", ZCODE_VERSION, fileName));
+    expect(release.localArchivePath).toBe(
+      join(root, "source-server", ZCODE_VERSION, fileName),
+    );
     expect(remoteAssetFetch).toHaveBeenCalledTimes(2);
     expect(directFetch).not.toHaveBeenCalled();
   });
 
   it("does not fall back to direct fetch when the injected network fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "zcode-source-release-proxy-failure-"));
+    const root = await mkdtemp(
+      join(tmpdir(), "zcode-source-release-proxy-failure-"),
+    );
     const directFetch = vi.fn<typeof fetch>(
-      async () => new Response(JSON.stringify(descriptor("direct-source-server"))),
+      async () =>
+        new Response(JSON.stringify(descriptor("direct-source-server"))),
     );
     vi.stubGlobal("fetch", directFetch);
     const remoteAssetFetch = vi
@@ -224,7 +274,9 @@ describe("Source Server release resolver", () => {
       resolveSourceServerReleaseAsset(
         probe,
         {
-          remoteCdnBaseUrls: [`https://cdn.example.test/releases/${ZCODE_VERSION}`],
+          remoteCdnBaseUrls: [
+            `https://cdn.example.test/releases/${ZCODE_VERSION}`,
+          ],
           remoteCacheDir: root,
         },
         target,
@@ -242,15 +294,24 @@ describe("Source Server release resolver", () => {
 
   it("GitHub descriptor 404 保留 HTTP 状态，URL 遵循连接日志脱敏边界", async () => {
     const base = `https://github.com/Rain-kl/ZCode/releases/download/server-v${ZCODE_VERSION}`;
-    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("missing", { status: 404 }));
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () => new Response("missing", { status: 404 }),
+    );
     await expect(
-      resolveSourceServerReleaseAsset(probe, { remoteCdnBaseUrls: [base] }, target, {
-        fetch: fetchImpl,
-      }),
+      resolveSourceServerReleaseAsset(
+        probe,
+        { remoteCdnBaseUrls: [base] },
+        target,
+        {
+          fetch: fetchImpl,
+        },
+      ),
     ).rejects.toMatchObject({
       message: expect.stringContaining("HTTP 404"),
       cause: expect.objectContaining({
-        message: expect.stringContaining(`${base}/source-server-release.json: HTTP 404`),
+        message: expect.stringContaining(
+          `${base}/source-server-release.json: HTTP 404`,
+        ),
       }),
       code: "remote-download-failed",
     });
