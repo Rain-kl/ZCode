@@ -37,6 +37,7 @@
   "packages/shared/test/zcodeProtocolV4Wire.test.ts",
   "packages/ui/src/fork/codex-collaboration/contract.test.ts",
   "packages/ui/test/codexCollaborationTools.test.ts",
+  "packages/ui/test/draftSessionPrewarmError.test.ts",
   "packages/ui/test/messageTaskControlToolCallBlock.test.ts",
   "packages/ui/test/modelProviderCodingPlan.test.ts",
   "packages/ui/test/providerFamilyConnectionVisibility.test.ts",

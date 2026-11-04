@@ -215,10 +215,15 @@ export function createProjectService(options: {
           if (!(await stat(path)).isDirectory()) throw new Error("project.directory-required");
         }),
       );
+      // FORK(cloud-web-access): local 是当前 attachment owner 的 UI 别名，不能作为持库身份写入；见 FEATURES.md 的 cloud-web-access 条目
+      const canonicalInput =
+        input.hostId === "local" ? { ...input, hostId: options.ownerHostId ?? "local" } : input;
       const result = (await options.repository()).saveProject({
-        ...input,
+        ...canonicalInput,
         roots,
-        ...(input.primaryRoot ? { primaryRoot: normalize(input.primaryRoot) } : {}),
+        ...(canonicalInput.primaryRoot
+          ? { primaryRoot: normalize(canonicalInput.primaryRoot) }
+          : {}),
       });
       await changed();
       return result;

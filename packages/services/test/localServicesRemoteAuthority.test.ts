@@ -380,6 +380,7 @@ describe("createLocalServices remote authority", () => {
       await Promise.all([import("../src/node.js"), import("../src/index.js")]);
     const services = createLocalServices({
       hostApiNetworkTransport: transport,
+      zcodeBuiltinProviderConfigFilePath: writeZCodeBuiltinProviderConfig(home),
       serviceAuthorityMode: "desktop-attached-remote",
     });
 
