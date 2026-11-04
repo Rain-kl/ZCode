@@ -44,8 +44,11 @@ export function startDraftSessionPrewarm(params: {
   onSettled?: () => void;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
   resolveInitialConfig?: () => Partial<SessionConfigState> | undefined;
+  /** 保留预处理失败的原始原因，供等待首发的同代 owner 报告。 */
+  onError?: (error: unknown) => void;
 }): DraftPrewarmController {
-  const { workspaceKey, dispatchCommand, onReady, onSettled, resolveInitialConfig } = params;
+  const { workspaceKey, dispatchCommand, onReady, onSettled, resolveInitialConfig, onError } =
+    params;
   let disposed = false;
   let promotionState: "draft" | "pending" | "promoted" | "discarded" = "draft";
   let createdSessionId: string | null = null;
@@ -89,11 +92,13 @@ export function startDraftSessionPrewarm(params: {
         return;
       }
       if (ack.status !== "accepted" || ack.result?.type !== "createSession") {
+        const error = new Error(`草稿会话创建被拒绝：${ack.reasonCode ?? ack.status}`);
         logger.warn("[v4-draft-prewarm] createSession 被拒", {
           status: ack.status,
           reasonCode: ack.reasonCode ?? null,
           workspaceKey,
         });
+        onError?.(error);
         return;
       }
       createdSessionId = ack.result.sessionId;
@@ -113,6 +118,7 @@ export function startDraftSessionPrewarm(params: {
         error: error instanceof Error ? error.message : String(error),
         workspaceKey,
       });
+      onError?.(error);
     })
     .finally(() => {
       onSettled?.();
@@ -176,6 +182,7 @@ interface DraftPrewarmCurrent {
   settled: boolean;
   completion: Promise<void>;
   retiring: boolean;
+  failure: unknown;
   /** 本代是第几次退避重试的产物；0 表示首发。 */
   retryAttempt: number;
 }
@@ -265,7 +272,14 @@ class DraftSessionPrewarmCoordinator {
       this.requestedInvalidationVersion() !== invalidationVersion
     )
       throw new Error("草稿会话已切换，请重新发送");
-    if (!current.binding) throw new Error("草稿会话创建失败，请重试");
+    if (!current.binding) {
+      if (current.failure instanceof Error) {
+        throw new Error(`草稿会话创建失败：${current.failure.message}`, {
+          cause: current.failure,
+        });
+      }
+      throw new Error("草稿会话创建失败，请重试");
+    }
     return current.binding;
   }
 
@@ -377,6 +391,9 @@ class DraftSessionPrewarmCoordinator {
       dispatchCommand: (type, payload, targetSessionId) =>
         this.dispatchCommand(type, payload, targetSessionId),
       resolveInitialConfig: () => this.resolveInitialConfig?.(),
+      onError: (error) => {
+        if (this.current === current && !current.retiring) current.failure = error;
+      },
       onReady: (sessionId) => {
         if (this.current !== current || current.retiring) {
           return;
@@ -436,6 +453,7 @@ class DraftSessionPrewarmCoordinator {
       settled: false,
       completion,
       retiring: false,
+      failure: null,
       retryAttempt,
     };
     this.current = current;

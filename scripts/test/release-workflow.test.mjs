@@ -10,14 +10,14 @@ const workflow = parse(
   await readFile(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8"),
 );
 const { jobs } = workflow;
-const gates = [
-  "resolve",
-  "verify",
-  "unit-tests",
-  "build-macos",
-  "build-windows",
-  "build-source-server",
-];
+const sourceServerWorkflow = parse(
+  await readFile(
+    new URL("../../.github/workflows/source-server-release.yml", import.meta.url),
+    "utf8",
+  ),
+);
+const sourceServerJobs = sourceServerWorkflow.jobs;
+const gates = ["resolve", "verify", "unit-tests", "build-macos", "build-windows"];
 
 test("builds and complete test gates start after resolve without waiting for each other", () => {
   for (const name of gates.slice(1)) {
@@ -61,18 +61,12 @@ test("publication requires builds and stable-only test gates", () => {
     }),
     true,
   );
-  for (const gate of [
-    "verify",
-    "unit-tests",
-    "build-macos",
-    "build-windows",
-    "build-source-server",
-  ]) {
+  for (const gate of ["verify", "unit-tests", "build-macos", "build-windows"]) {
     for (const result of ["failure", "skipped", "cancelled"]) {
       assert.equal(permits({ ...success, [gate]: result }), false, `${gate}: ${result}`);
     }
   }
-  for (const gate of ["build-macos", "build-windows", "build-source-server"]) {
+  for (const gate of ["build-macos", "build-windows"]) {
     assert.equal(
       permits({
         ...success,
@@ -116,8 +110,8 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
   assert.ok(!verify.includes("pnpm test:unit"));
 });
 
-test("only publish may write Releases; builders use identical version and SHA outputs", () => {
-  for (const name of ["build-macos", "build-windows", "build-source-server"]) {
+test("Desktop publish is independent from Source Server and builders use identical version outputs", () => {
+  for (const name of ["build-macos", "build-windows"]) {
     const job = jobs[name];
     assert.match(job.if, /needs\.resolve\.result == 'success'/);
     assert.doesNotMatch(job.if, /needs\.(verify|unit-tests)/);
@@ -136,10 +130,17 @@ test("only publish may write Releases; builders use identical version and SHA ou
     );
     assert.equal(job.steps.find((step) => step.name === "Checkout repository").with, undefined);
   }
+  assert.doesNotMatch(JSON.stringify(workflow), /build-source-server|source-server-release\.mjs/);
+  assert.deepEqual(sourceServerJobs["build-and-publish"].needs, ["resolve"]);
+  assert.match(
+    sourceServerJobs["build-and-publish"].steps.map((step) => step.run ?? "").join("\n"),
+    /source-server-release\.mjs publish/,
+  );
+  assert.notEqual(workflow.concurrency.group, sourceServerWorkflow.concurrency.group);
 });
 
 test("Source Server installation retries only transient failures and preserves final diagnostics", async (t) => {
-  const step = jobs["build-source-server"].steps.find(
+  const step = sourceServerJobs["build-and-publish"].steps.find(
     (step) => step.name === "Install dependencies",
   );
   assert.equal(step.if, "steps.reuse.outputs.reused != 'true'");
@@ -155,8 +156,14 @@ count=$(cat "$TEST_INSTALL_COUNTER")
 count=$((count + 1))
 echo "$count" > "$TEST_INSTALL_COUNTER"
 case "$TEST_INSTALL_MODE" in
-  transient) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
-  network) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'EAI_AGAIN registry lookup'; exit 34 ;;
+  transient)
+    if [ "$count" -gt 1 ]; then test ! -e node_modules/stale-marker; exit 0; fi
+    mkdir -p node_modules; echo stale > node_modules/stale-marker
+    echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
+  network)
+    if [ "$count" -gt 1 ]; then test ! -e node_modules/stale-marker; exit 0; fi
+    mkdir -p node_modules; echo stale > node_modules/stale-marker
+    echo 'EAI_AGAIN registry lookup'; exit 34 ;;
   exhausted) echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
   config) echo 'ERR_PNPM_OUTDATED_LOCKFILE immutable lock mismatch'; exit 42 ;;
 esac
@@ -196,7 +203,7 @@ exit 99
   }
 });
 
-test("unit test install retries with --force after a transient linker failure", async (t) => {
+test("unit test install cleans node_modules after a transient linker failure", async (t) => {
   const step = jobs["unit-tests"].steps.find((step) => step.name === "Install dependencies");
   const root = await mkdtemp(join(tmpdir(), "unit-test-install-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -238,18 +245,18 @@ fi
   const invocations = (await readFile(args, "utf8")).trim().split("\n");
   assert.equal(invocations.length, 2);
   assert.doesNotMatch(invocations[0], /--force/);
-  assert.match(invocations[1], /--force/);
+  assert.doesNotMatch(invocations[1], /--force/);
 });
 
-test("all dependency install retries force a clean relink after the first attempt", () => {
-  for (const name of [
-    "verify",
-    "unit-tests",
-    "build-macos",
-    "build-windows",
-    "build-source-server",
-  ]) {
+test("all dependency install retries remove node_modules after the first attempt", () => {
+  for (const name of ["verify", "unit-tests", "build-macos", "build-windows"]) {
     const step = jobs[name].steps.find((step) => step.name === "Install dependencies");
-    assert.ok(step?.run?.includes("args+=(--force)"), name);
+    assert.match(step?.run ?? "", /rm -rf node_modules/, name);
+    assert.doesNotMatch(step?.run ?? "", /args\+=\(--force\)/, name);
   }
+  const sourceServerInstall = sourceServerJobs["build-and-publish"].steps.find(
+    (step) => step.name === "Install dependencies",
+  );
+  assert.match(sourceServerInstall?.run ?? "", /rm -rf node_modules/);
+  assert.doesNotMatch(sourceServerInstall?.run ?? "", /args\+=\(--force\)/);
 });

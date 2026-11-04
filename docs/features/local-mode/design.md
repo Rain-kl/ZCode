@@ -85,6 +85,7 @@
 | 账号连接丢失监听           | 同文件 `:121`                                                                                                | 不挂载                                  |
 | 账号 provider 下发到 Agent | `packages/services/src/zcode-agent/zcodeAgentService.ts:1381`（`syncAccountProviderConfigToClient`）及调用点 | 开关开启时提前返回空交付并记 debug 日志 |
 | 账号 provider 刷新         | `packages/services/src/node.ts:1644`（`refreshAccountProviders`）                                            | 开关开启时不触发                        |
+| Built-in Provider 配置     | `packages/services/src/node.ts`（Provider Config Runtime 装配）                                              | 开关开启时使用随包配置                  |
 
 未登录状态下账号 provider 集合本就为空，上述停用是为「保证应用不再与云账号后端交互」；OAuth 服务、凭据读写、账号 provider 解析代码全部保留，开关回退即可恢复原行为。
 

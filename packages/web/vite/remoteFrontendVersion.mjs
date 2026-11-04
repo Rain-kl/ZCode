@@ -5,9 +5,17 @@ function parseVersion(version) {
       /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/,
     );
   const prerelease = match && match[4] ? match[4].split(".") : [];
-  if (!match || match[0] !== version || prerelease.some((part) => /^0\d+$/.test(part))) {
+  // FORK-BEGIN(cloud-web-access)
+  // 根发布器使用八位 Git 哈希；全数字且以零开头的哈希仍是同一个开发制品身份。
+  const developmentHash = /^dev\.[a-f0-9]{8}$/.test(match?.[4] ?? "");
+  if (
+    !match ||
+    match[0] !== version ||
+    (!developmentHash && prerelease.some((part) => /^0\d+$/.test(part)))
+  ) {
     throw new Error("Expected a package version such as 3.12.2");
   }
+  // FORK-END(cloud-web-access)
   return { core: match.slice(1, 4).map(BigInt), prerelease };
 }
 

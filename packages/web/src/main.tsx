@@ -4,6 +4,8 @@ import { createWebPlatform } from "#src/platform/index.js";
 import { mobilePluginDiscoveryTelemetrySchema } from "@zcode/shared";
 import {
   sessionCreateTelemetrySchema,
+  // FORK(cloud-web-access): 当前目录宿主由可信 bridge 身份解析，供 UI 区分本机与跨设备项目。
+  remoteHostIdFromWorkspaceIdentity,
   WEB_REMOTE_CONTROL_WORKSPACE_RECONNECT_TIMEOUT_MS,
   createWebRemoteControlConnectionRecoveryTimeoutFailure,
   resolveWebRemoteControlRelayWsUrl,
@@ -1496,8 +1498,12 @@ async function bootstrapExternalRelayWebRemoteControl(
       windowProjectDirectory:
         response.bridge.kind === "remote" &&
         response.bridge.capabilities?.windowProjectDirectory === true,
-      // FORK(cloud-web-access): Source Server local bridge 不提供桌面专用 window-controller。
-      windowControllerService: response.bridge.kind === "remote",
+      // FORK-BEGIN(cloud-web-access)
+      // 独立 Server 使用真实 remote 身份，窗口能力由宿主声明。
+      windowControllerService:
+        response.bridge.kind === "remote" &&
+        response.bridge.capabilities?.windowController !== false,
+      // FORK-END(cloud-web-access)
       activateTransport: () => {
         // 能力 RPC 必须先有收帧目标；服务与 Root 仍等就绪后才切换。
         pendingRelayProtocol = relayProtocol;
@@ -1508,6 +1514,15 @@ async function bootstrapExternalRelayWebRemoteControl(
       isCurrent,
       signal: bridgeAbort.signal,
     });
+    // FORK-BEGIN(cloud-web-access)
+    // Source-only attachment 的目录 owner 是 Server；窗口目录仍由 Desktop 持有。
+    Object.assign(services, {
+      projectHostId:
+        response.bridge.kind === "remote" && !services.windowProjectDirectory
+          ? (remoteHostIdFromWorkspaceIdentity(response.bridge.workspaceIdentity) ?? "local")
+          : "local",
+    });
+    // FORK-END(cloud-web-access)
     const bridgeServiceRegistration = registerWebRemoteControlWorkspaceBridgeServices({
       bridge: response.bridge,
       services,
@@ -1540,6 +1555,8 @@ async function bootstrapExternalRelayWebRemoteControl(
     initialNavigationIntent?: WebRemoteControlMobileNavigationIntent,
     initialTaskDraft?: ComponentProps<typeof Root>["initialTaskDraft"],
     initialSidebarFileTreeOpen = false,
+    // FORK(cloud-web-access): 启动默认值由 Root 在保存的草稿之后选择。
+    defaultInitialTaskDraft?: ComponentProps<typeof Root>["initialTaskDraft"],
   ) => {
     if (terminated || versionGuard.isBlocked()) return;
     ready = true;
@@ -1575,6 +1592,8 @@ async function bootstrapExternalRelayWebRemoteControl(
             }
             initialTaskId={bridge.initialTaskId}
             initialTaskDraft={initialTaskDraft}
+            // FORK(cloud-web-access): 显式打开项目保持优先，首屏默认项目尊重已有草稿。
+            defaultInitialTaskDraft={defaultInitialTaskDraft}
             composerClientNamespace={`mobile:${relayParams.deviceMid ?? relayParams.deviceSid}`}
             terminalOwnerId={bridge.terminalOwnerId}
             initialSidebarFileTreeOpen={initialSidebarFileTreeOpen}
@@ -1771,11 +1790,32 @@ async function bootstrapExternalRelayWebRemoteControl(
       return;
     }
 
+    // FORK-BEGIN(cloud-web-access)
+    // 宿主给出首屏默认项目；浏览器已保存的项目选择由 Root 恢复。
+    const selectedTarget = bootstrapResult.workspaces.find(
+      (workspace) =>
+        resolveWebRemoteControlWorkspaceKey(workspace) === selectedWorkspace.workspaceKey,
+    );
+    const projectIntent =
+      !selectedWorkspace.taskId && selectedTarget?.projectId
+        ? {
+            projectId: selectedTarget.projectId,
+            hostId: remoteHostIdFromWorkspaceIdentity(selectedWorkspace.workspaceKey) ?? "local",
+          }
+        : undefined;
     const result = await openWorkspaceBridge(selectedWorkspace.workspaceKey, {
       taskId: selectedWorkspace.taskId,
       taskHostId: selectedWorkspace.taskHostId,
     });
-    renderExternalRelayRoot(result.services, result.bridge);
+    renderExternalRelayRoot(
+      result.services,
+      result.bridge,
+      undefined,
+      undefined,
+      false,
+      projectIntent,
+    );
+    // FORK-END(cloud-web-access)
   };
 
   const lifecycle = createWebRemoteControlLifecycleRecovery({

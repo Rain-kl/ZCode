@@ -1,13 +1,23 @@
 import { normalizeRemoteConnectionError } from "@zcode/shared";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { dirname, join } from "node:path";
 import {
   SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME,
   ZCODE_VERSION,
+  // FORK(github-update): dev 固定 Release 接受当前 dev descriptor 版本；正式版仍严格相等。
+  isSourceServerReleaseVersionAccepted,
   normalizeRemoteAssetInstallMode,
   sourceServerReleaseDescriptorSchema,
   type RemoteTarget,
@@ -23,7 +33,10 @@ import {
   type RemoteAssetNetworkPort,
 } from "@zcode/server/remote/remoteAssetNetwork.js";
 import { createUnsupportedRemotePlatformError } from "@zcode/server/remote/remotePlatformSupport.js";
-import type { ServerReleaseAsset, SourceServerProbeResult } from "@zcode/server/source-server";
+import type {
+  ServerReleaseAsset,
+  SourceServerProbeResult,
+} from "@zcode/server/source-server";
 import type { WindowRemoteAssetDirs } from "./windowRemoteConnectionRegistry.js";
 
 interface ResolvedDescriptor {
@@ -44,15 +57,23 @@ async function sha256File(path: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function verifyArchive(path: string, archive: SourceServerReleaseArchive): Promise<boolean> {
+async function verifyArchive(
+  path: string,
+  archive: SourceServerReleaseArchive,
+): Promise<boolean> {
   const fileStat = await stat(path).catch(() => null);
   if (!fileStat?.isFile() || fileStat.size !== archive.sizeBytes) return false;
   return (await sha256File(path)) === archive.sha256;
 }
 
 function readDescriptor(text: string): SourceServerReleaseDescriptor {
-  const descriptor = sourceServerReleaseDescriptorSchema.parse(JSON.parse(text));
-  if (descriptor.version !== ZCODE_VERSION) {
+  const descriptor = sourceServerReleaseDescriptorSchema.parse(
+    JSON.parse(text),
+  );
+  // FORK(github-update): Server workflow 独立发布，dev 指针可能先于 Desktop 更新；按通道校验而非哈希相等。
+  if (
+    !isSourceServerReleaseVersionAccepted(ZCODE_VERSION, descriptor.version)
+  ) {
     throw new Error(
       `Source Server descriptor version mismatch: expected ${ZCODE_VERSION}, received ${descriptor.version}`,
     );
@@ -64,16 +85,25 @@ function findArchive(
   descriptor: SourceServerReleaseDescriptor,
   target: string,
 ): SourceServerReleaseArchive {
-  const archive = descriptor.archives.find((candidate) => candidate.target === target);
-  if (!archive) throw new Error(`Source Server descriptor is missing target: ${target}`);
+  const archive = descriptor.archives.find(
+    (candidate) => candidate.target === target,
+  );
+  if (!archive)
+    throw new Error(`Source Server descriptor is missing target: ${target}`);
   return archive;
 }
 
-function resolveArchiveUrls(releaseBases: string[], archive: SourceServerReleaseArchive): string[] {
+function resolveArchiveUrls(
+  releaseBases: string[],
+  archive: SourceServerReleaseArchive,
+): string[] {
   const absolute = archive.urls.filter((url) => /^https?:\/\//u.test(url));
   const relative = archive.urls.filter((url) => !/^https?:\/\//u.test(url));
   return Array.from(
-    new Set([...absolute, ...buildReleaseAssetUrlCandidates(releaseBases, relative)]),
+    new Set([
+      ...absolute,
+      ...buildReleaseAssetUrlCandidates(releaseBases, relative),
+    ]),
   );
 }
 
@@ -91,14 +121,22 @@ async function writeTextAtomic(path: string, text: string): Promise<void> {
 async function resolveLocalDescriptor(
   releaseDir: string,
   target: string,
-): Promise<{ archive: SourceServerReleaseArchive; archivePath: string } | null> {
-  const descriptorPath = join(releaseDir, SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME);
+): Promise<{
+  archive: SourceServerReleaseArchive;
+  archivePath: string;
+} | null> {
+  const descriptorPath = join(
+    releaseDir,
+    SOURCE_SERVER_RELEASE_DESCRIPTOR_FILE_NAME,
+  );
   if (!(await pathExists(descriptorPath))) return null;
   const descriptor = readDescriptor(await readFile(descriptorPath, "utf8"));
   const archive = findArchive(descriptor, target);
   const archivePath = join(releaseDir, archive.fileName);
   if (!(await verifyArchive(archivePath, archive))) {
-    throw new Error(`Source Server local archive failed descriptor verification: ${archivePath}`);
+    throw new Error(
+      `Source Server local archive failed descriptor verification: ${archivePath}`,
+    );
   }
   return { archive, archivePath };
 }
@@ -129,7 +167,8 @@ async function resolveRemoteDescriptor(
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const text = await response.text();
       const descriptor = readDescriptor(text);
-      if (cachedDescriptorPath) await writeTextAtomic(cachedDescriptorPath, text);
+      if (cachedDescriptorPath)
+        await writeTextAtomic(cachedDescriptorPath, text);
       return { descriptor, releaseBases };
     } catch (error) {
       // FORK-BEGIN(github-update)
@@ -174,13 +213,16 @@ async function downloadArchive(
     const temporary = `${cached}.${process.pid}.${randomUUID()}.tmp`;
     try {
       const response = await fetchImpl(url);
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok || !response.body)
+        throw new Error(`HTTP ${response.status}`);
       await pipeline(
         Readable.fromWeb(response.body as never),
         createWriteStream(temporary, { mode: 0o600 }),
       );
       if (!(await verifyArchive(temporary, archive))) {
-        throw new Error(`Source Server archive checksum mismatch: ${archive.fileName}`);
+        throw new Error(
+          `Source Server archive checksum mismatch: ${archive.fileName}`,
+        );
       }
       await rename(temporary, cached);
       return cached;
@@ -189,9 +231,12 @@ async function downloadArchive(
       await rm(temporary, { force: true }).catch(() => undefined);
     }
   }
-  throw new Error(`Unable to download Source Server release ${archive.fileName}`, {
-    cause: lastError,
-  });
+  throw new Error(
+    `Unable to download Source Server release ${archive.fileName}`,
+    {
+      cause: lastError,
+    },
+  );
 }
 
 export async function resolveSourceServerReleaseAsset(
@@ -201,7 +246,10 @@ export async function resolveSourceServerReleaseAsset(
     return await resolveReleaseAsset(...args);
   } catch (error) {
     const failure = normalizeRemoteConnectionError(error, "download");
-    throw Object.assign(error instanceof Error ? error : new Error(failure.message), failure);
+    throw Object.assign(
+      error instanceof Error ? error : new Error(failure.message),
+      failure,
+    );
   }
 }
 
@@ -291,18 +339,27 @@ async function resolveReleaseAsset(
   if (installMode === "remote-download" || options.metadataOnly) {
     return {
       target,
-      version: ZCODE_VERSION,
+      // FORK(github-update): 固定 dev Release 的 descriptor 版本才是实际安装版本。
+      version: resolvedDescriptor.descriptor.version,
       sha256: archive.sha256,
       sizeBytes: archive.sizeBytes,
       urls,
     };
   }
   if (!cacheRoot)
-    throw new Error(`Source Server release cache is unavailable: ${archive.fileName}`);
+    throw new Error(
+      `Source Server release cache is unavailable: ${archive.fileName}`,
+    );
   return {
-    localArchivePath: await downloadArchive(archive, urls, cacheRoot, remoteAssetNetwork),
+    localArchivePath: await downloadArchive(
+      archive,
+      urls,
+      cacheRoot,
+      remoteAssetNetwork,
+    ),
     target,
-    version: ZCODE_VERSION,
+    // FORK(github-update): 固定 dev Release 的 descriptor 版本才是实际安装版本。
+    version: resolvedDescriptor.descriptor.version,
     sha256: archive.sha256,
     sizeBytes: archive.sizeBytes,
     urls,

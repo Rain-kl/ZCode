@@ -10,7 +10,12 @@ import {
 } from "@/web-remote-control/domain/presentation.js";
 import { memo, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import { DesktopCommandIds, type BotProvider, type WebRemoteControlStatus } from "@zcode/shared";
+import {
+  DesktopCommandIds,
+  type BotProvider,
+  type WebRemoteControlRelayConfigurationStatus,
+  type WebRemoteControlStatus,
+} from "@zcode/shared";
 import {
   Bot as BotIcon,
   CopyIcon,
@@ -38,6 +43,11 @@ import { useOAuth } from "@/hooks/useOAuth.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { getBotProviderRegionTagLabelId } from "@/botsUi.js";
+// FORK(cloud-web-access): Desktop 本地模式需要在远控弹层配置自建 Relay；见 FEATURES.md 的 cloud-web-access 条目。
+import {
+  DesktopSelfHostedRelaySetup,
+  shouldShowSelfHostedRelaySetup,
+} from "@/fork/cloud-web-access/module.js";
 
 type RemoteControlBotProvider = Extract<BotProvider, "weixin" | "feishu" | "lark" | "telegram">;
 
@@ -102,6 +112,9 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [botsDialogOpen, setBotsDialogOpen] = useState(false);
   const [botEntryProvider, setBotEntryProvider] = useState<RemoteControlBotProvider | null>(null);
+  // FORK(cloud-web-access): undefined 表示尚未读取，null 表示平台不提供自建 Relay 配置；见 FEATURES.md 的 cloud-web-access 条目。
+  const [relayConfiguration, setRelayConfiguration] =
+    useState<WebRemoteControlRelayConfigurationStatus | null>();
 
   const statusLabel = useMemo(
     () => getStatusLabel(status, intl.formatMessage),
@@ -132,6 +145,18 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       setLoading(true);
 
       try {
+        // FORK-BEGIN(cloud-web-access)
+        // Desktop 首次必须先建立自建 Relay 登录事实，不能退回已隐藏的官方 OAuth；见 FEATURES.md 的 cloud-web-access 条目。
+        if (platform.getWebRemoteControlRelayConfiguration && relayConfiguration === undefined) {
+          const configuration = await platform.getWebRemoteControlRelayConfiguration();
+          if (!cancelled) setRelayConfiguration(configuration);
+          return;
+        }
+        if (relayConfiguration && !relayConfiguration.authenticated) {
+          if (!cancelled) setStatus({ status: "auth-required" });
+          return;
+        }
+        // FORK-END(cloud-web-access)
         const currentStatus = await platform.getWebRemoteControlStatus();
         let nextStatus: WebRemoteControlStatus;
         if (
@@ -172,7 +197,13 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       } catch (error) {
         const currentStatus = await platform.getWebRemoteControlStatus().catch(() => null);
         if (currentStatus?.status === "auth-required") {
-          if (!cancelled) setStatus(currentStatus);
+          if (!cancelled) {
+            setStatus(currentStatus);
+            // FORK(cloud-web-access): 会话过期时刷新自建配置状态并回到同一登录表单；见 FEATURES.md 的 cloud-web-access 条目。
+            if (platform.getWebRemoteControlRelayConfiguration) {
+              setRelayConfiguration(await platform.getWebRemoteControlRelayConfiguration());
+            }
+          }
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
@@ -204,7 +235,16 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
     return () => {
       cancelled = true;
     };
-  }, [intl, open, platform, remoteSessionId, workspaceIdentity, workspacePath, initialTaskId]);
+  }, [
+    intl,
+    open,
+    platform,
+    relayConfiguration,
+    remoteSessionId,
+    workspaceIdentity,
+    workspacePath,
+    initialTaskId,
+  ]);
 
   useEffect(() => {
     if (!open) {
@@ -420,7 +460,18 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                 data-testid="web-remote-control-scan-card"
                 className="flex min-h-[360px] flex-col rounded-xl border border-border bg-card p-4"
               >
-                {status.status === "auth-required" ? (
+                {/* FORK-BEGIN(cloud-web-access) */}
+                {/* Desktop 自建 Relay 未配置或会话过期时在原弹层完成登录，不进入官方 OAuth；见 FEATURES.md 的 cloud-web-access 条目。 */}
+                {shouldShowSelfHostedRelaySetup(relayConfiguration, status) ? (
+                  <DesktopSelfHostedRelaySetup
+                    current={relayConfiguration ?? undefined}
+                    onConfigured={(configuration) => {
+                      setStatus({ status: "idle" });
+                      setRelayConfiguration(configuration);
+                    }}
+                  />
+                ) : status.status === "auth-required" ? (
+                  // FORK-END(cloud-web-access)
                   <div
                     data-testid="web-remote-control-auth-required"
                     className="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-6 text-center"
@@ -490,17 +541,38 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
                         {loading ? (
                           <LoaderCircle className="size-4 animate-spin text-foreground-subtle" />
                         ) : (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="default"
-                            className="shrink-0 gap-2 enabled:cursor-pointer"
-                            onClick={() => void handleStop()}
-                            disabled={status.status === "idle"}
-                          >
-                            <Unplug className="size-3.5" />
-                            {intl.formatMessage({ id: "webRemoteControl.stop" })}
-                          </Button>
+                          <div className="flex shrink-0 gap-2">
+                            {/* FORK-BEGIN(cloud-web-access) */}
+                            {/* 已配置用户必须能从同一入口切换 Relay 或重新登录；见 FEATURES.md 的 cloud-web-access 条目。 */}
+                            {relayConfiguration?.configured ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="default"
+                                className="enabled:cursor-pointer"
+                                onClick={() =>
+                                  setRelayConfiguration({
+                                    ...relayConfiguration,
+                                    authenticated: false,
+                                  })
+                                }
+                              >
+                                {intl.formatMessage({ id: "webRemoteControl.selfHosted.reconfigure" })}
+                              </Button>
+                            ) : null}
+                            {/* FORK-END(cloud-web-access) */}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="default"
+                              className="gap-2 enabled:cursor-pointer"
+                              onClick={() => void handleStop()}
+                              disabled={status.status === "idle"}
+                            >
+                              <Unplug className="size-3.5" />
+                              {intl.formatMessage({ id: "webRemoteControl.stop" })}
+                            </Button>
+                          </div>
                         )}
                       </div>
                       {failureDescription ? (

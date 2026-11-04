@@ -1,19 +1,22 @@
 # 自建 Relay 部署与运行
 
-本页是操作清单，不把未执行的公网验收写成已通过。所有命令从仓库根目录执行，Node 版本以 `mise.toml` 为准。
+所有命令从仓库根目录执行，Node 版本以 `mise.toml` 为准。
 
 ## 1. 构建并部署 Worker
 
-Worker 的 `assets.directory` 指向 `packages/web/dist`，因此必须先构建 Web：
+Cloudflare Workers Builds 监听 `canary`，使用以下命令：
 
 ```sh
-pnpm --filter @zcode/web build
+# Build command
+pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @zcode/web build
+
+# Deploy command
 pnpm --filter @zcode/fork-remote-relay exec wrangler deploy --config wrangler.jsonc
 ```
 
-`wrangler.jsonc` 当前是一个 Worker 名称和一套 DO migration。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
+自定义域名在 Cloudflare 控制台绑定，不写入仓库。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
 
-部署前确认 Web 构建产物属于当前提交；旧 `packages/web/dist` 可能让页面能打开但缺少本次登录入口。
+Worker 使用本次 Web 构建产物提供 `/remote/v4` 页面及静态资源。网页与 Server 随 canary 更新部署。
 
 ## 2. 设置单租户认证
 
@@ -37,7 +40,7 @@ pnpm --filter @zcode/fork-remote-relay exec wrangler secret put AUTH_SECRET --co
 pnpm --filter @zcode/fork-remote-relay exec wrangler secret put AUTH_EPOCH --config wrangler.jsonc
 ```
 
-`AUTH_EPOCH` 用于撤销已经签发的 12 小时浏览器会话；轮换 epoch 后所有旧会话失效。`AUTH_SECRET` 少于 32 字节会导致认证失败。Worker 当前不提供账号注册或管理后台，单租户值由部署者维护。
+`AUTH_EPOCH` 是唯一的会话撤销开关：轮换 epoch 后，已经签发的浏览器与 Server 会话全部失效，需要重新登录。`AUTH_SECRET` 少于 32 字节会导致认证失败。Worker 当前不提供账号注册或管理后台，单租户值由部署者维护。
 
 ## 3. Server 配置与启动
 
@@ -87,13 +90,11 @@ zcode server down
 按顺序检查：
 
 1. `https://<relay>/` 重定向到 `/remote/v4`，且该路径返回当前 Web SPA；
-2. 一个带哈希的 `/assets/...` 资源返回实际文件，而不是 HTML；
+2. 页面引用的 `/assets/...` 返回实际资源及正确内容类型；
 3. 未知 `/api/not-real` 返回 JSON 404；
 4. 匿名、错误密码和正确账号密码的登录结果分别为 401、401、200；
 5. Server 日志出现认证/登记和 `auth_ack waiting`，设备列表显示在线；
 6. 手机或电脑浏览器登录、选择设备后可进入工作区并发送受控测试请求；真实模型回复必须单独实测，不能用页面能打开代替。
-
-若只完成本地 workerd 和 Web 构建，没有公网 Worker，不得声称公网闭环已通过。若没有真机模型回复，也必须在交付说明中保留“模型和公网未验证”的边界。
 
 ## 5. 资源与安全边界
 

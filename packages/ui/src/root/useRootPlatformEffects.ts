@@ -33,6 +33,8 @@ export function useRootPlatformEffects({
   initialWorkspacePurpose,
   initialTaskId,
   initialTaskDraft,
+  // FORK(cloud-web-access): 宿主默认项目不能覆盖浏览器保存的用户选择。
+  defaultInitialTaskDraft,
   clientMode = "desktop-continuous",
   canBootstrapInitialWorkspace = true,
   addTab,
@@ -62,6 +64,8 @@ export function useRootPlatformEffects({
   initialWorkspacePurpose?: import("@zcode/shared").WorkspacePurpose;
   initialTaskId?: string;
   initialTaskDraft?: CreateTaskOptions;
+  // FORK(cloud-web-access): 缺少显式导航和已保存归属时才采用默认项目。
+  defaultInitialTaskDraft?: CreateTaskOptions;
   clientMode?: ZCodeTaskClientMode;
   canBootstrapInitialWorkspace?: boolean;
   addTab: (
@@ -154,7 +158,9 @@ export function useRootPlatformEffects({
           : undefined) ??
         (savedDraft?.projectId !== undefined
           ? { projectId: savedDraft.projectId, taskGroupId: savedDraft.taskGroupId }
-          : undefined);
+          : undefined) ??
+        // FORK(cloud-web-access): 同目录多个项目刷新后曾被首屏默认项目抢走归属；保留用户已存的选择。
+        defaultInitialTaskDraft;
       addTab(
         initialWorkspaceAbsPath,
         initialWorkspaceIdentity || initialWorkspacePurpose
@@ -187,6 +193,8 @@ export function useRootPlatformEffects({
     canBootstrapInitialWorkspace,
     initialTaskId,
     initialTaskDraft,
+    // FORK(cloud-web-access): 默认值参与同一初始化代际。
+    defaultInitialTaskDraft,
     composerClientNamespace,
     clientMode,
     initialWorkspaceAbsPath,

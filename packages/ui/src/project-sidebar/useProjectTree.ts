@@ -17,6 +17,8 @@ import { getTaskListRowActivity } from "@/v4/taskListRowActivity.js";
 import { getWindowControllerTaskListRegistry } from "@/v4/windowControllerTaskListRegistry.js";
 import { buildRemoteHostWorkspaceIdentity } from "@/project-sidebar/contract.js";
 import { logger } from "@/logger.js";
+// FORK(cloud-web-access): Source-only base attachment 的订阅 endpoint 仍属于真实远端 session。
+import { findRemoteWorkspaceSessionIdForAgentService } from "@/store/remoteWorkspaceSessionStore.js";
 import { useProjectUnreadSignals } from "@/project-sidebar/useProjectUnreadSignals.js";
 import { areStabilizedValuesEquivalent } from "@/v4/taskListItemStabilization.js";
 
@@ -278,12 +280,17 @@ export function useProjectTree(isDesktop = false) {
     void refresh();
   }, [refresh, version, tabs, directoryRevision]);
   const scopes = useMemo(() => {
+    // FORK(cloud-web-access): 当前目录宿主是 Server 时，roots 及订阅键必须保留其稳定身份。
+    const sourceOnly = Boolean(services.projectHostId && services.projectHostId !== "local");
+    const endpointKey = sourceOnly
+      ? findRemoteWorkspaceSessionIdForAgentService(services.zcodeAgentService)
+      : undefined;
     const byKey = new Map<string, { workspacePath: string; workspaceIdentity?: string }>();
     for (const task of tree.tasks) byKey.set(task.workspaceIdentity || task.workspacePath, task);
     for (const project of tree.projects)
       for (const root of project.roots) {
         const identity =
-          registry && project.hostId !== "local"
+          (registry || sourceOnly) && project.hostId !== "local"
             ? buildRemoteHostWorkspaceIdentity(project.hostId, root.rootPath)
             : undefined;
         byKey.set(identity || root.rootPath, {
@@ -299,8 +306,10 @@ export function useProjectTree(isDesktop = false) {
       .map(([, { workspacePath, workspaceIdentity }]) => ({
         workspacePath,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        // FORK(cloud-web-access): 同 endpoint/workspace 共享订阅，避免静默替换另一条订阅。
+        ...(endpointKey ? { endpointKey } : {}),
       }));
-  }, [tree, tabs, registry]);
+  }, [tree, tabs, registry, services]);
   const scopeKey = JSON.stringify(scopes);
   useProjectUnreadSignals(scopes, refresh, isDesktop);
   const sourceVersion = JSON.stringify(

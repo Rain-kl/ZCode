@@ -46,6 +46,31 @@ export const webRemoteControlAuthStateChangeSchema = z
   .strict();
 export type WebRemoteControlAuthStateChange = z.infer<typeof webRemoteControlAuthStateChangeSchema>;
 
+// FORK-BEGIN(cloud-web-access)
+// Desktop 自建 Relay 配置需要跨 Renderer/Main 边界传递，必须使用严格共享合同；见 FEATURES.md 的 cloud-web-access 条目。
+export const webRemoteControlRelayConfigurationInputSchema = z
+  .object({
+    endpoint: z.string().min(1).max(2_048),
+    username: z.string().min(1).max(256),
+    password: z.string().min(1).max(4_096),
+  })
+  .strict();
+export type WebRemoteControlRelayConfigurationInput = z.infer<
+  typeof webRemoteControlRelayConfigurationInputSchema
+>;
+export const webRemoteControlRelayConfigurationStatusSchema = z
+  .object({
+    configured: z.boolean(),
+    authenticated: z.boolean(),
+    endpoint: z.string().url().optional(),
+    username: z.string().min(1).optional(),
+  })
+  .strict();
+export type WebRemoteControlRelayConfigurationStatus = z.infer<
+  typeof webRemoteControlRelayConfigurationStatusSchema
+>;
+// FORK-END(cloud-web-access)
+
 export type WebRemoteControlStatusKind =
   | "auth-required"
   | "idle"
@@ -400,7 +425,8 @@ export interface WebRemoteControlExternalRemoteWorkspaceBridge {
   remoteSessionId: string;
   initialTaskId?: string;
   /** 旧桌面不声明；客户端不能根据惰性 RPC proxy 是否存在猜测能力。 */
-  capabilities?: { windowProjectDirectory?: true };
+  // FORK(cloud-web-access): 独立 Server 复用 remote 身份接线，按实际宿主声明窗口能力；见 FEATURES.md。
+  capabilities?: { windowProjectDirectory?: true; windowController?: boolean };
 }
 
 export type WebRemoteControlExternalWorkspaceBridge =
@@ -635,6 +661,8 @@ export type WebRemoteControlAppPayload =
   | WebRemoteControlMobileLogAppPayload;
 
 export interface WebRemoteControlWorkspaceTarget {
+  // FORK(cloud-web-access): 启动草稿保留精确项目归属，同目录不同项目不可按路径猜测。
+  projectId?: string;
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;

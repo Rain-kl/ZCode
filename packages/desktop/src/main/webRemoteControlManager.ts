@@ -62,6 +62,8 @@ import {
   type MobileLogSink,
 } from "#src/main/web-remote-relay/index.js";
 import type { WebRemoteControlDeviceStorage } from "#src/main/web-remote-relay/index.js";
+// FORK(cloud-web-access): Desktop 自建 Relay 复用现有 manager 的唯一生命周期 owner；见 FEATURES.md 的 cloud-web-access 条目。
+import type { DesktopSelfHostedRemoteRelayConfiguration } from "#src/fork/cloud-web-access/contract.js";
 
 import type { WebRemoteControlFeatureGate } from "./webRemoteControlFeatureGate.js";
 import {
@@ -228,6 +230,8 @@ interface WebRemoteControlManagerDependencies {
   mobileLogSink?: Pick<MobileLogSink, "append">;
   /** 手机日志拉取单片超时（单测注入）。 */
   mobileLogPullShardTimeoutMs?: number;
+  // FORK(cloud-web-access): 配置和登录来源注入现有 manager，避免创建第二个 Desktop connector；见 FEATURES.md 的 cloud-web-access 条目。
+  selfHostedRelayConfiguration?: DesktopSelfHostedRemoteRelayConfiguration;
 }
 
 /** 可拉取手机日志的目标连接。 */
@@ -2213,6 +2217,30 @@ export function createWebRemoteControlManager(dependencies: WebRemoteControlMana
 
       return buildRuntimeStatus(runtime);
     },
+
+    // FORK-BEGIN(cloud-web-access)
+    // Desktop 自建 Relay 配置必须和当前窗口连接生命周期串行切换；见 FEATURES.md 的 cloud-web-access 条目。
+    async getRelayConfiguration() {
+      return (
+        (await dependencies.selfHostedRelayConfiguration?.getStatus()) ?? {
+          configured: false,
+          authenticated: false,
+        }
+      );
+    },
+
+    async configureRelay(
+      windowId: number,
+      input: import("@zcode/shared").WebRemoteControlRelayConfigurationInput,
+    ) {
+      const configuration = dependencies.selfHostedRelayConfiguration;
+      if (!configuration) throw new Error("Self-hosted Web remote control is unavailable");
+      const result = await configuration.configure(input);
+      await stopWindowRuntime(windowId, "self-hosted-relay-reconfigured");
+      authRequiredWindows.delete(windowId);
+      return result;
+    },
+    // FORK-END(cloud-web-access)
 
     syncAvailableWorkspaces(windowId: number, workspaces: WebRemoteControlWorkspaceTarget[]): void {
       availableWorkspacesByWindowId.set(windowId, workspaces);

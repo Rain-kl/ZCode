@@ -51,6 +51,12 @@ export function createDesktopPlatform(options: {
     startWebRemoteControl: (context) => window.zcode.startWebRemoteControl(context),
     stopWebRemoteControl: () => window.zcode.stopWebRemoteControl(),
     getWebRemoteControlStatus: () => window.zcode.getWebRemoteControlStatus(),
+    // FORK-BEGIN(cloud-web-access)
+    // Desktop 自建 Relay 配置复用 Platform 注入，UI 不直接访问 preload 全局；见 FEATURES.md 的 cloud-web-access 条目。
+    getWebRemoteControlRelayConfiguration: () =>
+      window.zcode.getWebRemoteControlRelayConfiguration(),
+    configureWebRemoteControlRelay: (input) => window.zcode.configureWebRemoteControlRelay(input),
+    // FORK-END(cloud-web-access)
     onWebRemoteControlStatusChanged: (handler) =>
       window.zcode.onWebRemoteControlStatusChanged?.(handler) ?? (() => {}),
     disposeRemoteSession: (sessionId) => window.zcode.disposeRemoteSession(sessionId),

@@ -134,11 +134,7 @@ def main():
         temp = Path(temp)
         index = temp / "index"
         if dev:
-            download(DOWNLOADS + "/canary-build/dev.yml", index)
-            versions = re.findall(r"^version: *([^\s]+) *$", index.read_text(), re.MULTILINE)
-            require(len(versions) == 1, "Invalid canary dev.yml version")
-            version = versions[0]
-            require("-dev." in version, "Canary version must be a dev release")
+            base = DOWNLOADS + "/server-canary-build"
         else:
             download("https://api.github.com/repos/" + REPO + "/releases/latest", index)
             release = json.loads(index.read_text())
@@ -148,11 +144,15 @@ def main():
             require(isinstance(tag, str) and tag.startswith("v"), "Invalid stable release tag")
             version = tag[1:]
             require("-" not in version, "Stable version cannot be a prerelease")
-        require(VERSION.fullmatch(version) is not None, "Invalid release version: " + version)
-        base = DOWNLOADS + "/server-v" + version
+            require(VERSION.fullmatch(version) is not None, "Invalid release version: " + version)
+            base = DOWNLOADS + "/server-v" + version
         descriptor_path = temp / "descriptor.json"
         download(base + "/source-server-release.json", descriptor_path)
         descriptor = json.loads(descriptor_path.read_text())
+        if dev:
+            version = descriptor.get("version", "")
+            require(VERSION.fullmatch(version) is not None and "-dev." in version,
+                    "Canary descriptor must declare a dev version")
         require(descriptor.get("schemaVersion") == 1 and descriptor.get("version") == version,
                 "Invalid Source Server descriptor schema/version")
         entries = descriptor.get("archives")
@@ -192,6 +192,8 @@ def main():
         # 复用 SSH 的唯一安装 owner：不自行发布版本目录、current 或完整性记录。
         update_args = [str(unpacked / "bin/zcode"), "update", "--from-archive", str(archive_path),
                        "--server-root", str(root), "--json"]
+        if dev:
+            update_args.insert(-1, "--allow-downgrade")
         result = subprocess.run(update_args)
         require(result.returncode == 0, "Server installation command failed (exit " + str(result.returncode)
                 + "): " + shlex.join(update_args))
@@ -211,9 +213,9 @@ def main():
                 os.replace(staged_command, command)
 
     print("ZCode Server " + version + " installed: " + str(command))
-    print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f")
+    print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f\nLogout: zcode server logout")
     print("Server root: " + str(root) + " (shared with SSH installations)")
-    print("Running-task and downgrade checks follow the Server updater; no force options are used.")
+    print("Running-task checks follow the Server updater; no force options are used.")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print("Add to PATH: export PATH=" + shlex.quote(str(bin_dir)) + ':"$PATH"')
 

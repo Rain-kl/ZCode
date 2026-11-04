@@ -98,7 +98,17 @@ const worker: ExportedHandler<ForkRemoteRelayEnv> = {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/"))
       return json(404, { error: "api route not found" });
 
-    if (env.ASSETS) return env.ASSETS.fetch(request);
+    if (env.ASSETS) {
+      const entry = url.pathname.replace(/\/+$/, "") === "/remote/v4";
+      const response = await env.ASSETS.fetch(
+        entry ? new Request(new URL("/index.html", url), request) : request,
+      );
+      if (!entry) return response;
+      // 入口始终取当前部署，静态资源由构建哈希定位；连接版本参数不参与文件选择。
+      const headers = new Headers(response.headers);
+      headers.set("cache-control", "no-store");
+      return new Response(response.body, { status: response.status, headers });
+    }
     return new Response("ZCode self-hosted relay", {
       status: 200,
       headers: { "content-type": "text/plain; charset=utf-8" },

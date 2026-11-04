@@ -66,6 +66,8 @@ export interface RootProps {
   initialTaskId?: string;
   /** 手机目录 admission 完成后，在 prewarm 前接收项目和输入草稿。 */
   initialTaskDraft?: CreateTaskOptions;
+  // FORK(cloud-web-access): 首屏默认项目仅在浏览器没有已保存草稿归属时使用。
+  defaultInitialTaskDraft?: CreateTaskOptions;
   /** 本客户端连接目标的稳定身份，手机跨设备切换必须隔离草稿和 Recent。 */
   composerClientNamespace?: string;
   terminalOwnerId?: string;

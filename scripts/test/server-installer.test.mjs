@@ -97,7 +97,11 @@ if (args[0] === 'update') {
   const latest = join(root, "latest.json");
   await writeFile(
     latest,
-    JSON.stringify({ tag_name: `v${version}`, prerelease: false, draft: false }),
+    JSON.stringify({
+      tag_name: `v${version}`,
+      prerelease: false,
+      draft: false,
+    }),
   );
   const devIndex = join(root, "dev.yml");
   await writeFile(devIndex, `version: ${version}\nfiles:\n`);
@@ -105,8 +109,9 @@ if (args[0] === 'update') {
   const routes = {
     "https://api.github.com/repos/Rain-kl/ZCode/releases/latest": latest,
     [`${base}/canary-build/dev.yml`]: devIndex,
-    [`${base}/server-v${version}/source-server-release.json`]: descriptorPath,
-    [`${base}/server-v${version}/${name}.tar.gz`]: archive,
+    [`${base}/${dev ? "server-canary-build" : `server-v${version}`}/source-server-release.json`]:
+      descriptorPath,
+    [`${base}/${dev ? "server-canary-build" : `server-v${version}`}/${name}.tar.gz`]: archive,
   };
   const log = join(root, "requests.log");
   await writeFile(
@@ -162,7 +167,9 @@ for (const [os, arch] of [
     const f = await fixture(t, { os, arch });
     const result = await f.run();
     assert.match(result.stdout, /3\.18\.0/);
-    const invoked = await exec(f.command, ["server", "connect", "two words"], { env: f.env });
+    const invoked = await exec(f.command, ["server", "connect", "two words"], {
+      env: f.env,
+    });
     assert.match(invoked.stdout, /runtime\/server-cli.js\nserver\nconnect\ntwo words\n$/);
     assert.match(await readFile(f.log, "utf8"), /releases\/latest/);
     assert.equal((await lstat(f.command)).isFile(), true);
@@ -180,13 +187,17 @@ for (const [os, arch] of [
   });
 }
 
-test("dev pins canary's complete version to an immutable Server release", async (t) => {
+test("dev reads its complete version directly from the fixed Server canary", async (t) => {
   const f = await fixture(t, { dev: true });
   await f.run();
   const requests = await readFile(f.log, "utf8");
-  assert.match(requests, /canary-build\/dev.yml/);
-  assert.match(requests, /server-v3\.18\.0-dev\.12345678\/source-server-release.json/);
+  assert.match(requests, /server-canary-build\/source-server-release.json/);
+  assert.doesNotMatch(requests, /server-v3\.18\.0-dev\.12345678/);
+  assert.doesNotMatch(requests, /canary-build\/dev\.yml/);
   assert.doesNotMatch(requests, /releases\/latest/);
+  const updateArgs = JSON.parse((await readFile(f.env.UPDATE_LOG, "utf8")).trim().split("\n")[0]);
+  assert.ok(updateArgs.includes("--allow-downgrade"));
+  assert.ok(!updateArgs.includes("--force"));
 });
 
 test("accepts the documented piped sh -s -- dev invocation", async (t) => {

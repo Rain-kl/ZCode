@@ -18,7 +18,6 @@ const authSecret = "test-secret-at-least-thirty-two-bytes-for-hmac-signing";
 let worker: ChildProcess | undefined;
 let runtimeDirectory = "";
 let origin = "";
-
 async function availablePort(): Promise<number> {
   const server = createServer();
   server.listen(0, "127.0.0.1");
@@ -51,10 +50,9 @@ before(async () => {
   runtimeDirectory = await mkdtemp(resolve(tmpdir(), "zcode-relay-workerd-"));
   const assetDirectory = resolve(runtimeDirectory, "assets");
   await mkdir(resolve(assetDirectory, "assets"), { recursive: true });
-  await writeFile(
-    resolve(assetDirectory, "index.html"),
-    "<!doctype html><title>relay-test-spa</title><main>isolated-spa-marker</main>",
-  );
+  const currentHtml =
+    "<!doctype html><title>relay-test-spa</title><main>isolated-spa-marker</main>";
+  await writeFile(resolve(assetDirectory, "index.html"), currentHtml);
   await writeFile(resolve(assetDirectory, "assets/probe.txt"), "isolated-asset-marker\n");
   origin = `http://127.0.0.1:${port}`;
   worker = spawn(
@@ -177,6 +175,26 @@ test("isolated assets serve the SPA and never swallow API routes", async () => {
   assert.equal(missingApi.status, 404);
   assert.match(missingApi.headers.get("content-type") ?? "", /^application\/json/);
   assert.doesNotMatch(await missingApi.text(), /isolated-spa-marker/);
+});
+
+test("workerd always serves the current page regardless of host version metadata", async () => {
+  for (const version of ["3.17.162", "3.17.162-dev.abcdef01", "3.0.0"]) {
+    const response = await fetch(`${origin}/remote/v4?app_version=${version}`);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /isolated-spa-marker/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  const entry = await fetch(`${origin}/remote/v4`, { method: "HEAD" });
+  assert.equal(entry.status, 200);
+  assert.match(entry.headers.get("content-type") ?? "", /^text\/html/);
+  assert.equal(await entry.text(), "");
+  const head = await fetch(`${origin}/assets/probe.txt`, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  assert.match(head.headers.get("content-type") ?? "", /^text\/plain/);
+  const absent = await fetch(`${origin}/assets/absent.js`);
+  assert.equal(absent.status, 404);
+  assert.doesNotMatch(await absent.text(), /isolated-spa-marker/);
 });
 
 test("real workerd runtime enforces authentication and V2 request contracts", async () => {

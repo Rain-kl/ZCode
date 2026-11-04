@@ -345,6 +345,8 @@ function initializeBusinessRoot(port: MessagePort): void {
           services={services}
           platform={desktopPlatform}
           isDesktop
+          // FORK(cloud-web-access): Desktop 自建 Relay 入口在本地模式也必须可见；见 FEATURES.md 的 cloud-web-access 条目。
+          webRemoteControlFeatureEnabled
           assistantCodeCommentCardsEnabled
           isMacDesktop={isMacDesktop}
           isWindowsDesktop={isWindowsDesktop}

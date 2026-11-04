@@ -47,6 +47,13 @@ test("bootstrap and workspace list use the injected Server snapshot", async () =
       workspaces: [{ workspacePath: "/srv/a", label: "A", kind: "local" }],
       activeWorkspaceKey: "/srv/a",
     }),
+    prepareWorkspace: async (request) => ({
+      workspaceKey: request.workspaceKey,
+      workspacePath: request.workspaceKey,
+      workspaceIdentity: `remote:server:test:${request.workspaceKey}`,
+      remoteSessionId: "core-session",
+      ...(request.taskId ? { initialTaskId: request.taskId } : {}),
+    }),
     openCoreBridge: async () => fakeBridge().bridge,
     sendPayload: (payload) => (output.push(payload), true),
   });
@@ -92,6 +99,13 @@ test("bridge-ready is sent before queued raw frames and stale frames are ignored
     listWorkspaces: async () => ({
       workspaces: [{ workspacePath: "/srv/a", label: "A", kind: "local" }],
       activeWorkspaceKey: "/srv/a",
+    }),
+    prepareWorkspace: async (request) => ({
+      workspaceKey: request.workspaceKey,
+      workspacePath: request.workspaceKey,
+      workspaceIdentity: `remote:server:test:${request.workspaceKey}`,
+      remoteSessionId: "core-session",
+      ...(request.taskId ? { initialTaskId: request.taskId } : {}),
     }),
     openCoreBridge: async () => next.bridge,
     sendPayload: (payload) => (output.push(payload), true),
@@ -142,6 +156,13 @@ test("a stale asynchronous bridge open cannot replace a newer generation", async
     listWorkspaces: async () => ({
       workspaces: [{ workspacePath: "/srv/a", label: "A", kind: "local" }],
     }),
+    prepareWorkspace: async (request) => ({
+      workspaceKey: request.workspaceKey,
+      workspacePath: request.workspaceKey,
+      workspaceIdentity: `remote:server:test:${request.workspaceKey}`,
+      remoteSessionId: "core-session",
+      ...(request.taskId ? { initialTaskId: request.taskId } : {}),
+    }),
     openCoreBridge: ({ taskId }) =>
       taskId === "stale"
         ? new Promise((resolve) => {
@@ -183,7 +204,10 @@ test("a stale asynchronous bridge open cannot replace a newer generation", async
         bridge: {
           bridgeSessionId: "bridge-current",
           bridgeGeneration: 2,
-          kind: "local",
+          kind: "remote",
+          workspaceIdentity: "remote:server:test:/srv/a",
+          remoteSessionId: "core-session",
+          capabilities: { windowController: false },
           workspaceKey: "/srv/a",
           workspacePath: "/srv/a",
           initialTaskId: "current",
@@ -202,6 +226,13 @@ test("headless platform requests return safe results or explicit unsupported err
     appVersion: "3.17.162",
     logger,
     listWorkspaces: async () => ({ workspaces: [] }),
+    prepareWorkspace: async (request) => ({
+      workspaceKey: request.workspaceKey,
+      workspacePath: request.workspaceKey,
+      workspaceIdentity: `remote:server:test:${request.workspaceKey}`,
+      remoteSessionId: "core-session",
+      ...(request.taskId ? { initialTaskId: request.taskId } : {}),
+    }),
     openCoreBridge: async () => fakeBridge().bridge,
     sendPayload: (payload) => (output.push(payload), true),
   });

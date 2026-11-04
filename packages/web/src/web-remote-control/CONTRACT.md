@@ -22,11 +22,11 @@ bootstrap 请求只读取响应。version guard 校验当前请求代际与版�
 
 `cloud-web-access` 部署的 `/remote/v4` 不使用官方 OAuth。登录页向同源
 `POST /api/fork-remote/auth/login` 提交 `{ username, password }`，成功响应中的
-`token`、`expiresAt` 和 `userInfo` 是浏览器远控登录事实。token 是 Relay 自有的
-签名会话，不假设 JWT 三段格式；浏览器以 `expiresAt` 判断本地恢复是否仍有效。
+`token` 和 `userInfo` 是浏览器远控登录事实。token 是 Relay 自有的
+签名会话，不假设 JWT 三段格式；会话不随时间过期，Relay 轮换 `AUTH_EPOCH` 后旧会话才会失效。
 
 会话只保存在当前 origin 的 localStorage，用于刷新恢复和后续同源设备列表、
-terminal token 的 Bearer 请求。401 显示固定的凭据错误，不保存失败输入；过期、
-损坏和 logout 都原子清除整套会话。它不替代模型账号，也不写官方 OAuth key。
+terminal token 的 Bearer 请求。401 显示固定的凭据错误，不保存失败输入；损坏和
+logout 都原子清除整套会话。它不替代模型账号，也不写官方 OAuth key。
 旧的 `/remote/v4?state=...&code=...` 形状不再进入官方 OAuth callback；官方 OAuth
 只保留给 `/share/callback` 与 `/cn/share/callback`。

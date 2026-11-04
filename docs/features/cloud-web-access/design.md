@@ -1,31 +1,33 @@
 # 自建 Cloudflare Relay 与 ZCode Server 接入设计
 
-版本：2.1，2026-11-03；功能 id：`cloud-web-access`。状态：分支内最小实现完成，本地 workerd + Server + 浏览器闭环已验证；未部署、未验证真实模型和公网手机。
+版本：2.2，2026-11-04；功能 id：`cloud-web-access`。
 
 本稿取代此前多对多、离线只读与 Tunnel 草案。用户明确要求：本期保留官方连接替换和离线页面行为，只做对应 Relay、Server 连接层与 `zcode server` 命令组。
 
 配套文档：[命令行规格](cli.md)、[协议设计](protocol.md)、[验收矩阵](acceptance.md)、[实施记录](implementation.md)、[部署与运行](deployment.md)、[影响分析](impact.md)。
 
+项目导航、会话恢复、宿主能力和页面版本遵循[远控宿主合同](host-contract.md)。
+
 ## 1. 本期目标
 
-用户在 Linux 云主机安装 ZCode，用 `zcode server connect` 配置自建 Cloudflare 服务，使用 `zcode server up` 前台启动或 `up -d` 后台运行。Server 主动连接 Relay，手机/电脑浏览器登录同一固定账号密码，通过现有手机远控界面操作云端项目、任务和 Agent。
+用户可以在 Linux 云主机运行 ZCode Server，也可以让 ZCode Desktop 连接同一个自建 Relay。两类客户端都主动连接 Relay，手机或电脑浏览器登录同一固定账号密码后访问对应设备上的项目、任务和 Agent。
 
 Cloudflare 接受两端出站 WSS，负责登录、设备、一次性票据、配对、心跳及透明转发。云端无需开放 ZCode 公网端口，也不需要 Cloudflare Tunnel/cloudflared。
 
 ## 2. 已确认范围
 
-| 能力                                | 本期决定                                                         |
-| ----------------------------------- | ---------------------------------------------------------------- |
-| 单租户固定账号密码                  | 保留用户既定要求；不做注册、组织与多角色管理                     |
-| Worker 后端                         | Worker + Durable Objects，附带手机网页静态资源                   |
-| Server 主动连接 Relay               | 本期核心，复用现有 Core/services/Agent                           |
-| 同一客户端多个手机                  | 按官方：同 SID 同角色只有一个当前 owner，新连接替换旧连接        |
-| 多个 Server 设备登记                | 沿用官方设备目录；不同 SID 的配对彼此隔离，不做新的多对多协议    |
-| Server 离线后手机体验               | 按官方：现有等待/重连/离线失败页规则，不新增离线只读入口         |
-| 手机缓存                            | 沿用现有实现；不新增 IndexedDB、app shell 离线启动或缓存同步策略 |
-| Server 管理                         | `connect`、`up [-d]`、`down`、`logs [-f]`                        |
-| WebDAV、官方设备配置同步            | 保持现状，不修改、不移除                                         |
-| Electron 桌面经新 Relay 控制 Server | 不新增桌面 connector；本期控制入口是手机/电脑浏览器              |
+| 能力                         | 本期决定                                                         |
+| ---------------------------- | ---------------------------------------------------------------- |
+| 单租户固定账号密码           | 保留用户既定要求；不做注册、组织与多角色管理                     |
+| Worker 后端                  | Worker + Durable Objects，附带手机网页静态资源                   |
+| Server 主动连接 Relay        | 本期核心，复用现有 Core/services/Agent                           |
+| 同一客户端多个手机           | 按官方：同 SID 同角色只有一个当前 owner，新连接替换旧连接        |
+| 多个 Server 设备登记         | 沿用官方设备目录；不同 SID 的配对彼此隔离，不做新的多对多协议    |
+| Server 离线后手机体验        | 按官方：现有等待/重连/离线失败页规则，不新增离线只读入口         |
+| 手机缓存                     | 沿用现有实现；不新增 IndexedDB、app shell 离线启动或缓存同步策略 |
+| Server 管理                  | `connect`、`up [-d]`、`down`、`logs [-f]`                        |
+| WebDAV、官方设备配置同步     | 保持现状，不修改、不移除                                         |
+| ZCode Desktop 接入自建 Relay | 复用现有桌面远控连接与 attachment，不新增第二套运行时            |
 
 此前讨论的多对多与离线阅读从本期删除，不再作为 P1/P2 必交付阶段；将来用户重新提出时另行设计。
 
@@ -44,11 +46,14 @@ flowchart LR
 
 Server 连接器由既有 Core 组合根装配，不创建第二份 `createServerHostServices`、Host 或 Agent。手机 attachment 按现有 replayable 边界接入原服务，同一任务继续由原 runtime/CommandInbox 接受命令。
 
+Desktop Main 继续作为桌面远控连接、设备身份和 attachment 调度的唯一 owner。Renderer 只持有尚未提交的配置表单和连接状态投影；密码不进入 Renderer 持久化。配置切换只更换 Relay 地址和登录身份，不改变任务、队列、快照或 workspace 的所有权。
+
 | 状态                           | 唯一 owner                          | 持久化/缓存                                            |
 | ------------------------------ | ----------------------------------- | ------------------------------------------------------ |
 | 固定账号、密码校验、登录凭据   | Relay 认证组件                      | 安全密码校验信息与可撤销会话元数据                     |
 | 设备记录、票据、配对 owner     | RelayRoom                           | DO 元数据；活跃 socket attachment                      |
 | 自建连接地址与凭据引用         | Server 配置端口                     | 对应 server-root 下的受限配置/凭据文件                 |
+| Desktop Relay 配置与会话       | Desktop Main                        | 非敏感设置与安全凭据存储                               |
 | Supervisor/Core 生命周期与锁   | 既有 Server Supervisor              | canonical server-root、原 control endpoint、原状态记录 |
 | 手机 bridge 与订阅             | Server terminal attachment          | 连接期 scope；不另存权威任务数据                       |
 | 项目、聊天、任务队列、权限结果 | 既有 Core/CLI/runtime               | 云主机已有数据库与文件                                 |
@@ -72,6 +77,7 @@ Server 连接器由既有 Core 组合根装配，不创建第二份 `createServe
 
 ```text
 zcode server connect
+zcode server logout
 zcode server up
 zcode server up -d
 zcode server down
@@ -85,6 +91,10 @@ zcode server logs -f
 4. 手机打开自建服务页面，使用相同账号密码登录，扫码或从设备列表选择在线 Server。
 5. 由现有手机页面完成 bootstrap、选项目、聊天和权限处理；任务与文件均在云主机。
 6. logs 读取同一实例的持久日志；down 显式停止整个 Server，保留配置、凭据和业务数据。
+
+logout 删除 Server 的本地 Relay 会话和连接配置。运行中的 Server 必须先完整停止，避免内存中的已认证连接继续存活；停止失败时不得删除凭证。命令不删除项目、日志、模型配置、历史任务或已安装版本，重复执行保持成功。
+
+Desktop 用户从项目侧栏底部打开“移动端远程控制”。首次使用时输入 Relay 地址、账号和密码；登录成功后在同一弹层展示自建网页的二维码与链接。密码仅用于本次登录，保存的会话不随时间过期；只有 Relay 轮换 `AUTH_EPOCH` 或用户重新登录才会使旧会话失效。用户可以在弹层内更换 Relay 或账号。
 
 Server 模型配置在云主机预先完成；首次远控不自动要求官方账号、不把账号密码当模型 API Key。缺少模型时展示真实配置错误。
 
@@ -128,7 +138,7 @@ DO 存储与静态资源足够承载本期，不需要 D1/R2/KV 来保存聊天�
 
 浏览器登录/注销检查同源/CSRF，WS 校验 Origin；Node 登录与票据请求使用 HTTPS 认证而非伪造浏览器来源。票据若出现在 WS query，日志必须脱敏；官方单次/过期语义保持。生产拒绝非 HTTPS，localhost 调试例外显式配置。
 
-凭据到期/撤销停止认证重试并报告需 connect；网络/5xx 用现有有界退避。连接到新 endpoint 需重新验证，不向旧域或其他域发送新密码。Relay 位于 TLS 信任边界内，本期不声称端到端加密。
+凭据失效或被撤销后停止认证重试并报告需 connect；网络/5xx 用现有有界退避。连接到新 endpoint 需重新验证，不向旧域或其他域发送新密码。Relay 位于 TLS 信任边界内，本期不声称端到端加密。
 
 ## 10. 服务生命周期与日志
 
@@ -136,15 +146,17 @@ DO 存储与静态资源足够承载本期，不需要 D1/R2/KV 来保存聊天�
 
 connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner；down 复用停止并等待完成；logs 不加载 Core/Agent，也不触发服务启动。已有 serve/status/stop/restart/update/proxy-stdio 等内部接口继续可用，避免破坏桌面自动部署与重连。
 
+发布更新只以候选 Core 的本地 HTTP/Agent 生命周期就绪作为版本健康标准。候选 Core 在更新启动阶段遇到 Relay 认证撤销或网络不可用，应停止 Relay connector、记录完整原因并继续完成版本切换；不能让外部 Relay 状态触发版本回滚。新的 Supervisor 显式传递更新启动模式，已运行的旧 Supervisor 则通过其必写的更新事务文件兼容识别。handoff 后由新的 Supervisor 以普通 `serve` 启动时也允许 Relay 失效后本地继续运行；显式 `server up` 仍要求 Relay 成功，connect/up 的严格错误反馈不变。
+
 前台日志与后台日志有同一持久来源。先定义 Supervisor/Core/连接器的日志归属、文件轮转与 IPC/订阅接缝，再实现 logs，禁止把现有 detached stdio=ignore 误当已有持久日志支持。敏感信息在写入前脱敏，不能靠日志查看器临时遮掩。
 
 ## 11. 阶段与完成标准
 
-| 阶段             | 交付                                                     | 完成证据                                                       |
-| ---------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| 阶段             | 交付                                                     | 完成证据                                                              |
+| ---------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
 | A：合同与 Relay  | 单租户登录、兼容 V2 的设备/票据/配对/透明转发            | workerd 已通过认证、V2、单次票据、owner 替换和 alarm；eviction 未验收 |
-| B：Server 与 CLI | connect/up/down/logs、Core 接入、持久日志与生命周期复用  | 本地真实 Core、连接、bootstrap 和 down 已通过；发行包/完整矩阵未验收 |
-| C：手机真实闭环  | 同账号登录、项目/任务、模型回复、权限与官方离线/替换行为 | 本地浏览器已进入工作区；真实模型、公网 Worker 和手机网络未验收 |
+| B：Server 与 CLI | connect/up/down/logs、Core 接入、持久日志与生命周期复用  | 本地真实 Core、连接、bootstrap 和 down 已通过；发行包/完整矩阵未验收  |
+| C：手机真实闭环  | 同账号登录、项目/任务、模型回复、权限与官方离线/替换行为 | 本地浏览器已进入工作区；真实模型、公网 Worker 和手机网络未验收        |
 
 整个本期完成需要 A/B/C；纯 WebSocket echo、单测通过、或者命令帮助能打印不能视作产品完成。多设备同账号分别配对可作为隔离回归，但不是多手机同控的产品承诺。
 

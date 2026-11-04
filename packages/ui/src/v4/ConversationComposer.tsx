@@ -534,7 +534,7 @@ export interface ConversationComposerProps {
   onDismissError?: () => void;
   /** 无可用模型横幅的恢复动作；由 SessionPane 注入壳层导航，组件不直接操作 tab。 */
   onOpenModelSettings?: () => void;
-  onOpenModelUpgrade?: () => void;
+  // FORK(其他更新): 缺模型横幅的升级套餐 CTA 与对应回调链路已移除；见 FEATURES.md 的 其他更新 条目
   modelConfigTarget?: ChatErrorBannerModelConfigTarget;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   /**
@@ -629,7 +629,6 @@ function ConversationComposerImpl({
   error,
   onDismissError,
   onOpenModelSettings,
-  onOpenModelUpgrade,
   modelConfigTarget = "local",
   onOpenCodeViewer,
   listenAddToChatEvents = true,
@@ -2759,7 +2758,6 @@ function ConversationComposerImpl({
             onRetry={onRetryError}
             onDismiss={onDismissError}
             onOpenModelSettings={onOpenModelSettings}
-            onOpenUpgrade={onOpenModelUpgrade}
             modelConfigTarget={modelConfigTarget}
           />
         </div>

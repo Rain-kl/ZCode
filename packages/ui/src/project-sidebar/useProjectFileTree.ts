@@ -9,12 +9,16 @@ import type {
 import { getPathLeaf } from "@/lib/path.js";
 import { resolveProjectFileTarget } from "@/project-sidebar/project-file-navigation.js";
 import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
+// FORK(cloud-web-access): 当前 Server 的 canonical host 不在跨设备成员目录内。
+import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 
 export function useProjectFileTree(
   props: ProjectSidebarProps,
   directory: RemoteProjectDirectory,
   remoteService?: IRemoteProjectService,
 ) {
+  // FORK(cloud-web-access): 当前宿主仍使用稳定 remote identity 读取文件，不退回浏览器本机路径。
+  const currentHostId = useBaseWorkspaceServices().projectHostId ?? "local";
   const request = useRef(0);
   const consumedRequest = useRef<ProjectSidebarProps["fileTreeOpenRequest"]>(null);
   useEffect(
@@ -38,7 +42,10 @@ export function useProjectFileTree(
         rootPath,
         props,
         remoteService,
-        isRemote: directory.hosts.some((host) => host.id === project.hostId),
+        // FORK(cloud-web-access): 独立 Server 是当前目录 owner，无需伪造远程设备成员。
+        isRemote:
+          (currentHostId !== "local" && project.hostId === currentHostId) ||
+          directory.hosts.some((host) => host.id === project.hostId),
         findSession: (identity) =>
           Object.values(useRemoteWorkspaceSessionStore.getState().sessionsById).find(
             (session) => session.workspaceIdentity === identity,
@@ -47,7 +54,7 @@ export function useProjectFileTree(
       // 原因：连接完成可能晚于另一次查看/关闭，旧目标不得覆盖最新文件树选择。
       if (target && generation === request.current) props.onOpenFileManager?.(target);
     },
-    [props, directory, remoteService],
+    [props, directory, remoteService, currentHostId],
   );
 
   const openTaskFiles = useCallback(

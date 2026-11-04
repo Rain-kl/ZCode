@@ -84,6 +84,8 @@ const webRemoteControlTransportIdSchema = nonEmptyStringSchema
   .regex(/^[A-Za-z0-9._~-]+$/u);
 
 export const webRemoteControlWorkspaceTargetSchema = z.object({
+  // FORK(cloud-web-access): 宿主可声明启动工作区的项目，保持同目录多项目的精确导航。
+  projectId: nonEmptyStringSchema.optional(),
   workspacePath: nonEmptyStringSchema,
   workspaceIdentity: nonEmptyStringSchema.optional(),
   remoteSessionId: nonEmptyStringSchema.optional(),
@@ -154,7 +156,15 @@ export const webRemoteControlExternalWorkspaceBridgeSchema = z.discriminatedUnio
     workspacePurpose: z.enum(["project", "conversation"]).optional(),
     remoteSessionId: nonEmptyStringSchema,
     initialTaskId: nonEmptyStringSchema.optional(),
-    capabilities: z.object({ windowProjectDirectory: z.literal(true).optional() }).optional(),
+    // FORK-BEGIN(cloud-web-access)
+    // 独立 Server 明确声明 windowController=false，避免创建桌面专用 RPC 代理。
+    capabilities: z
+      .object({
+        windowProjectDirectory: z.literal(true).optional(),
+        windowController: z.boolean().optional(),
+      })
+      .optional(),
+    // FORK-END(cloud-web-access)
   }),
 ]);
 

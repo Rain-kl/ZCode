@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCompatibilityManifest,
   evaluateSourceServerCompatibility,
+  isSourceServerReleaseVersionAccepted,
   shouldEnforceSourceServerVersionCompatibility,
 } from "../src/source-server/compatibility.js";
 
@@ -16,7 +17,21 @@ describe("Source Server compatibility channel policy", () => {
       "3.17.162-dev.cb9b2489",
     );
 
-    expect(shouldEnforceSourceServerVersionCompatibility(controller)).toBe(false);
+    expect(shouldEnforceSourceServerVersionCompatibility(controller)).toBe(
+      false,
+    );
+    expect(
+      isSourceServerReleaseVersionAccepted(
+        controller.productVersion,
+        server.productVersion,
+      ),
+    ).toBe(true);
+    expect(
+      isSourceServerReleaseVersionAccepted(
+        controller.productVersion,
+        "3.17.162",
+      ),
+    ).toBe(false);
     expect(evaluateSourceServerCompatibility(controller, server)).toEqual({
       compatible: true,
       updateAvailable: false,
@@ -31,12 +46,28 @@ describe("Source Server compatibility channel policy", () => {
     const controller = createCompatibilityManifest("3.17.162", "3.17.162");
     const server = createCompatibilityManifest("3.17.120", "3.17.120");
 
-    expect(shouldEnforceSourceServerVersionCompatibility(controller)).toBe(true);
-    expect(evaluateSourceServerCompatibility(controller, server)).toMatchObject({
-      compatible: false,
-      upgradeTarget: "server",
-      olderVersion: "3.17.120",
-      requiredMinimumVersion: "3.17.162",
-    });
+    expect(shouldEnforceSourceServerVersionCompatibility(controller)).toBe(
+      true,
+    );
+    expect(
+      isSourceServerReleaseVersionAccepted(
+        controller.productVersion,
+        "3.17.162",
+      ),
+    ).toBe(true);
+    expect(
+      isSourceServerReleaseVersionAccepted(
+        controller.productVersion,
+        "3.17.163",
+      ),
+    ).toBe(false);
+    expect(evaluateSourceServerCompatibility(controller, server)).toMatchObject(
+      {
+        compatible: false,
+        upgradeTarget: "server",
+        olderVersion: "3.17.120",
+        requiredMinimumVersion: "3.17.162",
+      },
+    );
   });
 });

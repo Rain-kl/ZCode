@@ -77,6 +77,8 @@ import {
   resolveDefaultZCodeAgentCommand,
   startupStorage,
 } from "@zcode/services/node";
+// FORK(cloud-web-access): Desktop 自建 Relay 配置作为 Main 私有适配器注入现有远控 manager；见 FEATURES.md 的 cloud-web-access 条目。
+import { createDesktopSelfHostedRemoteRelayConfiguration } from "#src/fork/cloud-web-access/module.js";
 import {
   desktopMenuMessageIds,
   type Locale,
@@ -745,6 +747,15 @@ app.whenReady().then(() => {
 // FORK-END(local-mode)
 const mainSettingService = createSettingService();
 const webRemoteControlCredentialService = createCredentialService();
+// FORK-BEGIN(cloud-web-access)
+// Desktop 自建 Relay 的密码只用于一次登录，会话令牌交给现有加密凭据服务；见 FEATURES.md 的 cloud-web-access 条目。
+const desktopSelfHostedRemoteRelayConfiguration =
+  createDesktopSelfHostedRemoteRelayConfiguration({
+    loadSettings: () => mainSettingService.get(),
+    patchSettings: (patch) => mainSettingService.update(patch),
+    credentialStore: webRemoteControlCredentialService,
+  });
+// FORK-END(cloud-web-access)
 const appLaunchGate = createAppLaunchGate();
 const appLaunchCoordinator = createAppLaunchCoordinator(appLaunchGate);
 const appTelemetryCredentialService = createCredentialService();
@@ -979,11 +990,19 @@ function getMobileLogSink(): MobileLogSink {
 }
 
 const webRemoteControlManager = createWebRemoteControlManager({
+  // FORK(cloud-web-access): 复用既有 V2 transport/attachment，只替换 endpoint 与登录来源；见 FEATURES.md 的 cloud-web-access 条目。
+  selfHostedRelayConfiguration: desktopSelfHostedRemoteRelayConfiguration,
   mobileLogSink: { append: (target, events) => getMobileLogSink().append(target, events) },
   getEndpointUrls: async () => {
-    const derived = buildZCodeEndpointUrls(await resolveCurrentZCodeEndpointOrigin(), {
-      appVersion: webRemoteControlAppVersion,
-    });
+    // FORK-BEGIN(cloud-web-access)
+    // 配置自建 Relay 后，远控 HTTP/WS/网页地址必须作为同一 origin 原子切换；见 FEATURES.md 的 cloud-web-access 条目。
+    const selfHostedOrigin =
+      await desktopSelfHostedRemoteRelayConfiguration.getEndpointOrigin();
+    const derived = buildZCodeEndpointUrls(
+      selfHostedOrigin ?? (await resolveCurrentZCodeEndpointOrigin()),
+      { appVersion: webRemoteControlAppVersion },
+    );
+    // FORK-END(cloud-web-access)
     return {
       ...derived,
       relayWsUrl: resolveWebRemoteControlRelayWsUrl({
@@ -1002,6 +1021,12 @@ const webRemoteControlManager = createWebRemoteControlManager({
   deviceName: hostname(),
   appVersion: webRemoteControlAppVersion,
   getLogin: async () => {
+    // FORK-BEGIN(cloud-web-access)
+    // 自建 Relay 登录与官方账号凭据隔离；配置存在时只使用自建可撤销会话；见 FEATURES.md 的 cloud-web-access 条目。
+    if (await desktopSelfHostedRemoteRelayConfiguration.getEndpointOrigin()) {
+      return desktopSelfHostedRemoteRelayConfiguration.getLogin();
+    }
+    // FORK-END(cloud-web-access)
     const userId = await loadRemoteControlUserId();
     const authorization = await loadRemoteControlAuthorization(userId);
     return authorization ? { userId, jwt: authorization.slice("Bearer ".length) } : undefined;

@@ -20,7 +20,6 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem
 
 const session = {
   token: "signed-payload.signature",
-  expiresAt: "2030-01-01T00:00:00.000Z",
   userInfo: { id: "owner", username: "owner", displayName: "Owner" },
 };
 
@@ -36,7 +35,6 @@ describe("self-hosted Web remote authentication", () => {
       origin: "https://relay.example",
       storage,
       fetcher,
-      now: () => Date.parse("2029-01-01T00:00:00.000Z"),
     });
 
     await auth.startLogin({ username: " owner ", password: "secret" });
@@ -55,7 +53,6 @@ describe("self-hosted Web remote authentication", () => {
       origin: "https://relay.example",
       storage,
       fetcher,
-      now: () => Date.parse("2029-06-01T00:00:00.000Z"),
     });
     expect(restored.getZCodeJwtToken()).toBe(session.token);
     expect(calls, "refresh restore must not submit the password again").toHaveLength(1);
@@ -91,25 +88,27 @@ describe("self-hosted Web remote authentication", () => {
     });
   });
 
-  it("clears expired or logged-out sessions as one credential set", async () => {
+  it("restores legacy sessions regardless of their stored expiry and clears damaged ones", async () => {
     const storage = new MemoryStorage();
     storage.setItem(
       "zcode:self-hosted-remote-session",
       JSON.stringify({ ...session, expiresAt: "2028-01-01T00:00:00.000Z" }),
     );
-    const expired = createSelfHostedRemoteAuth({
+    const legacy = createSelfHostedRemoteAuth({
       origin: "https://relay.example",
       storage,
-      now: () => Date.parse("2029-01-01T00:00:00.000Z"),
       fetcher: async () => Response.json(session),
     });
-    expect(expired.getZCodeJwtToken()).toBeNull();
+    expect(legacy.getZCodeJwtToken()).toBe(session.token);
+
+    storage.setItem("zcode:self-hosted-remote-session", JSON.stringify({ userInfo: {} }));
+    expect(legacy.getZCodeJwtToken()).toBeNull();
     expect(storage.getItem("zcode:self-hosted-remote-session")).toBeNull();
 
-    await expired.startLogin({ username: "owner", password: "secret" });
-    await expired.logout();
-    expect(expired.getZCodeJwtToken()).toBeNull();
-    expect(expired.getActiveAccount()).toBeNull();
+    await legacy.startLogin({ username: "owner", password: "secret" });
+    await legacy.logout();
+    expect(legacy.getZCodeJwtToken()).toBeNull();
+    expect(legacy.getActiveAccount()).toBeNull();
   });
 
   it("treats unavailable browser storage as logged out without leaking a partial session", async () => {
@@ -128,7 +127,6 @@ describe("self-hosted Web remote authentication", () => {
       origin: "https://relay.example",
       storage: unavailableStorage,
       fetcher: async () => Response.json(session),
-      now: () => Date.parse("2029-01-01T00:00:00.000Z"),
     });
 
     expect(auth.getZCodeJwtToken()).toBeNull();
@@ -145,7 +143,6 @@ describe("self-hosted Web remote authentication", () => {
       origin: "https://relay.example",
       storage,
       fetcher: async () => Response.json(session),
-      now: () => Date.parse("2029-01-01T00:00:00.000Z"),
     });
     const views: string[] = [];
     const entry = new WebRemoteControlEntry({

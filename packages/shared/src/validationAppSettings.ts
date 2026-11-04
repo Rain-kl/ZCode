@@ -165,6 +165,19 @@ const webRemoteControlLastEnabledContextSchema = z.object({
   workspaceIdentity: nonEmptyStringSchema.optional(),
   initialTaskId: nonEmptyStringSchema.optional(),
 });
+// FORK-BEGIN(cloud-web-access)
+// Desktop 自建 Relay 只允许持久化非敏感配置和加密凭据引用；见 FEATURES.md 的 cloud-web-access 条目。
+const webRemoteControlSelfHostedRelaySchema = z
+  .object({
+    endpointOrigin: z.url(),
+    username: nonEmptyStringSchema,
+    userId: nonEmptyStringSchema,
+    // 旧版本写入过会话过期时间；会话不再过期后只兼容读取旧设置文件。
+    expiresAt: z.string().datetime().optional(),
+    tokenCredentialKey: nonEmptyStringSchema,
+  })
+  .strict();
+// FORK-END(cloud-web-access)
 const zcodeEndpointOriginSchema = z.preprocess((value) => {
   if (typeof value !== "string") {
     return undefined;
@@ -580,6 +593,8 @@ const appSettingsObjectSchema = z.object({
   webRemoteControlRelayV2Device: webRemoteControlRelayV2DeviceSchema.optional(),
   webRemoteControlExternalRelayDevice: webRemoteControlExternalRelayDeviceSchema.optional(),
   webRemoteControlLastEnabledContext: webRemoteControlLastEnabledContextSchema.optional(),
+  // FORK(cloud-web-access): Desktop 自建 Relay 的非敏感配置参与完整设置解析；见 FEATURES.md 的 cloud-web-access 条目。
+  webRemoteControlSelfHostedRelay: webRemoteControlSelfHostedRelaySchema.optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
 });
 
@@ -692,5 +707,7 @@ export const appSettingsPatchSchema = z.object({
   webRemoteControlRelayV2Device: webRemoteControlRelayV2DeviceSchema.optional(),
   webRemoteControlExternalRelayDevice: webRemoteControlExternalRelayDeviceSchema.optional(),
   webRemoteControlLastEnabledContext: webRemoteControlLastEnabledContextSchema.optional(),
+  // FORK(cloud-web-access): Desktop 自建 Relay 的非敏感配置参与设置 patch 校验；见 FEATURES.md 的 cloud-web-access 条目。
+  webRemoteControlSelfHostedRelay: webRemoteControlSelfHostedRelaySchema.optional(),
   zcodeEndpointOrigin: zcodeEndpointOriginSchema.optional(),
 });

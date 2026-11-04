@@ -2667,6 +2667,19 @@ const enUS: Record<string, string> = {
   "webRemoteControl.authRequired.description":
     "Sign in to control this computer from your phone. Use the same account on both devices.",
   "webRemoteControl.authRequired.login": "Sign in",
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop self-hosted Relay setup needs copy independent from official OAuth; see cloud-web-access in FEATURES.md.
+  "webRemoteControl.selfHosted.title": "Connect a self-hosted remote service",
+  "webRemoteControl.selfHosted.description": "Enter the Relay URL and shared account. This computer will connect to it outbound.",
+  "webRemoteControl.selfHosted.endpoint": "Relay URL",
+  "webRemoteControl.selfHosted.username": "Username",
+  "webRemoteControl.selfHosted.password": "Password",
+  "webRemoteControl.selfHosted.connect": "Connect and start remote control",
+  "webRemoteControl.selfHosted.reconfigure": "Change Relay",
+  "webRemoteControl.selfHosted.configured": "Self-hosted Relay configured",
+  "webRemoteControl.selfHosted.unavailable": "This platform cannot configure a self-hosted Relay",
+  "webRemoteControl.selfHosted.configureFailed": "Could not configure self-hosted Relay: {error}",
+  // FORK-END(cloud-web-access)
   "webRemoteControl.title": "Mobile remote control",
   "webRemoteControl.description":
     "Scan the QR code or open the link on your phone to control this workspace.",
@@ -7296,7 +7309,8 @@ const enUS: Record<string, string> = {
   "chat.error.collapseDetails": "Hide details",
   "chat.error.feedback": "Report issue",
   "chat.error.feedbackOpened": "Feedback opened with the error context attached",
-  "chat.error.noAvailableModel": "No model available. Upgrade or set a custom model.",
+  // FORK(其他更新): 缺模型提示去掉开通套餐引导；见 FEATURES.md 的 其他更新 条目
+  "chat.error.noAvailableModel": "No model available.",
   "chat.error.remoteNoAvailableModel":
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",

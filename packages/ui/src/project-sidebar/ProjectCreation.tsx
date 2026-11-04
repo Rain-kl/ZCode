@@ -52,6 +52,8 @@ export function ProjectCreation({
 }) {
   // Root 的动作 controller 没有装配 projection；设备全集必须直接订阅同一个 Source 服务。
   const management = useOptionalBaseWorkspaceServices()?.sourceServerManagementService;
+  // FORK(cloud-web-access): 独立 Server 返回自己的真实 hostId，保存当前宿主项目无需跨设备登记。
+  const currentHostId = useOptionalBaseWorkspaceServices()?.projectHostId ?? "local";
   const { snapshot } = useSourceServerManagementSnapshot(management);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -113,7 +115,8 @@ export function ProjectCreation({
         status: host.connectionStatus ?? "offline",
       }));
   const prepareHost = async (hostId: string, isCurrent = () => active.current) => {
-    if (hostId === "local") return;
+    // FORK(cloud-web-access): local 是当前宿主的界面别名。
+    if (hostId === "local" || hostId === currentHostId) return;
     const current = (await remoteService.readDirectory()).hosts.find((host) => host.id === hostId);
     if (!active.current || !isCurrent()) throw new Error("project.creation-cancelled");
     const previous = admittedHosts.current.get(hostId);
@@ -142,7 +145,8 @@ export function ProjectCreation({
   };
   const saved = async (project: VirtualProject) => {
     if (!active.current) return;
-    if (project.hostId !== "local") {
+    // FORK(cloud-web-access): 仅跨宿主项目进入成员登记；当前 Core 已完成权威保存。
+    if (project.hostId !== currentHostId) {
       const host = admittedHosts.current.get(project.hostId);
       if (!host) throw new Error("remote-project.host-removed");
       await remoteService.addEntry({

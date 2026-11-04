@@ -4,7 +4,7 @@
 
 提供独立 `scripts/install-server.sh`，通过 `curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh` 安装 Source Server；`sh -s -- dev` 选择开发版，无参数选择正式版，其他参数报错。支持 Linux/macOS x64/arm64，需要 curl、Python 3（3.8+）；使用发行包自带 Node，不安装系统包、不使用 sudo、不启动服务、不写连接凭据。
 
-正式版读取 GitHub `/repos/Rain-kl/ZCode/releases/latest` 的稳定 `v<version>`；开发版读取 `canary-build/dev.yml` 顶层 version。两者均固定到不可变的 `server-v<完整版本>`，下载 `source-server-release.json` 与当前平台归档。不得用发布时间排序选择 Server，也不得在正式版缺包时回退开发版。
+正式版读取 GitHub `/repos/Rain-kl/ZCode/releases/latest` 的稳定 `v<version>`，并从不可变的 `server-v<version>` 下载；开发版直接读取固定 `server-canary-build` 的 descriptor，以 descriptor 声明的完整 dev 版本安装，不等待 Desktop canary。两种通道都必须校验 descriptor 版本、目标、大小与 SHA-256。不得用发布时间排序选择 Server，也不得在正式版缺包时回退开发版。
 
 2026-11-03 统一安装：curl 与 SSH 都由既有 Server `update --from-archive` / ReleaseInstaller / ReleaseManager 维护安装。统一根为 `~/.zcode/server`，运行包在 `releases/<version>-<target>-<sha前12位>`，当前版本由 `current.json` 指定，稳定入口为 `bin/zcode`。安装脚本不得自行写 releases、current/pending、完整性或安装所有权文件。通过 `ZCODE_DATA_BASE_DIR` 改变基目录时同样拼接 `.zcode/server`；旧 `ZCODE_SERVER_INSTALL_DIR` 明确报错并提示新设置，不继续创建独立版本树。
 
@@ -12,9 +12,9 @@
 
 CLI 必须先解析并移除全局 `--server-root`，再归一化 server 子命令；单独 `zcode server --server-root <root>` 仍是帮助，root 位于命令前后均命中同一分发流程，不能把全局参数当作子命令。
 
-安装与更新沿用 SSH 的生命周期锁、运行任务保护、降级确认及幂等完整性规则。不得使用 `--force` / `--allow-downgrade`；busy 时拒绝并保持当前版本，空闲运行中的实例由现有更新流程协调重启，无实例时只安装、不启动。未知错误保留具体命令、退出码及 stderr。脚本只有 Server 安装成功才切换 PATH 入口。
+安装与更新沿用 SSH 的生命周期锁、运行任务保护、降级确认及幂等完整性规则。固定 canary 包是 `dev` 安装的权威版本，允许其覆盖 commit hash 排序更低的开发版本；稳定版仍要求降级确认。所有安装都不使用 `--force`；busy 时拒绝并保持当前版本，空闲运行中的实例由现有更新流程协调重启，无实例时只安装、不启动。未知错误保留具体命令、退出码及 stderr。脚本只有 Server 安装成功才切换 PATH 入口。
 
-资源统一：所有 Source Server 归档和 agent-runtime 组件必须包含与 Agent bundle 同次构建的 `runtime/provider/zcode-builtin.json`；缺失时 staging 失败。该文件进入既有组件哈希与归档，不在安装时从仓库拉取零散配置，不改用户 provider 配置。`zcode server connect/up/down/logs` 为本发行包的远控命令；不增加通用 `--web` 模式。
+资源统一：所有 Source Server 归档和 agent-runtime 组件必须包含与 Agent bundle 同次构建的 `runtime/provider/zcode-builtin.json`；缺失时 staging 失败。该文件进入既有组件哈希与归档，不在安装时从仓库拉取零散配置，不改用户 provider 配置。`zcode server connect/logout/up/down/logs` 为本发行包的远控命令；不增加通用 `--web` 模式。
 
 ## 安装顺序与失败边界
 

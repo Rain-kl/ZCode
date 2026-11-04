@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { chmod, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import { z } from "zod";
 import type {
   ConfigureRemoteConnectionOptions,
@@ -10,7 +10,6 @@ import type {
 
 const loginResponseSchema = z.strictObject({
   token: z.string().min(1).max(16_384),
-  expiresAt: z.string().datetime(),
   userInfo: z.strictObject({
     id: z.string().min(1).max(256),
     username: z.string().min(1).max(256),
@@ -23,7 +22,8 @@ const remoteConnectionConfigSchema = z.strictObject({
   endpoint: z.string().url(),
   username: z.string().min(1).max(256),
   sessionToken: z.string().min(1).max(16_384),
-  expiresAt: z.string().datetime(),
+  // 旧版 connect 写入过会话过期时间；会话不再随时间失效，这里只兼容读取旧文件，不再写回。
+  expiresAt: z.string().datetime().optional(),
   deviceMid: z.string().uuid(),
   deviceSid: z.string().min(1).max(128),
   userInfo: loginResponseSchema.shape.userInfo,
@@ -73,9 +73,10 @@ export async function readRemoteConnectionConfig(
   layout: ServerCloudWebAccessLayout,
 ): Promise<RemoteConnectionConfig | null> {
   try {
-    return remoteConnectionConfigSchema.parse(
+    const { expiresAt: _legacyExpiresAt, ...config } = remoteConnectionConfigSchema.parse(
       JSON.parse(await readFile(layout.remoteConnectionFile, "utf8")),
     );
+    return config;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
     throw new Error(`Failed to read relay connection config at ${layout.remoteConnectionFile}`, {
@@ -91,10 +92,39 @@ export async function requireRemoteConnectionConfig(
   if (!config) {
     throw new Error("ZCode Server is not connected; run `zcode server connect` first");
   }
-  if (Date.parse(config.expiresAt) <= Date.now()) {
-    throw new Error("ZCode Server relay login has expired; run `zcode server connect` again");
-  }
   return config;
+}
+
+export async function clearRemoteConnectionConfig(
+  layout: ServerCloudWebAccessLayout,
+): Promise<boolean> {
+  const directory = dirname(layout.remoteConnectionFile);
+  const filename = basename(layout.remoteConnectionFile);
+  let entries: string[];
+  try {
+    entries = await readdir(directory);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw new Error(`Failed to inspect relay connection credentials at ${directory}`, {
+      cause: error,
+    });
+  }
+  const credentialFiles = entries.filter(
+    (entry) => entry === filename || (entry.startsWith(`${filename}.`) && entry.endsWith(".tmp")),
+  );
+  let removed = false;
+  for (const entry of credentialFiles) {
+    try {
+      await unlink(`${directory}/${entry}`);
+      removed = true;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") continue;
+      throw new Error(`Failed to remove relay connection credential at ${directory}/${entry}`, {
+        cause: error,
+      });
+    }
+  }
+  return removed;
 }
 
 export async function configureRemoteConnection(
@@ -177,7 +207,6 @@ export async function configureRemoteConnection(
     endpoint,
     username,
     sessionToken: login.token,
-    expiresAt: login.expiresAt,
     deviceMid,
     deviceSid,
     userInfo: login.userInfo,

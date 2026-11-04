@@ -3,7 +3,6 @@ import { homedir, hostname } from "node:os";
 // FORK-END(cloud-web-access)
 // FORK-BEGIN(cloud-web-access): 独立连接器复用既有 Core bridge 与项目快照，不复制服务容器。
 import {
-  buildHeadlessWorkspaceSnapshot,
   createForkRemoteConnector,
   openLoopbackCoreBridge,
 } from "@zcode/fork-remote-connector/module";
@@ -16,8 +15,12 @@ import {
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
   createTopicResourcePeers,
 } from "@zcode/services/node";
-// FORK(cloud-web-access): connector 读取现有项目服务的 primary root，不建立第二份项目事实。
-import { IProjectService, IZCodeAgentService } from "@zcode/services";
+// FORK(cloud-web-access): 宿主适配层复用既有项目与身份登记服务，不建立第二份事实。
+import {
+  IProjectService,
+  ISourceServerWorkspaceService,
+  IZCodeAgentService,
+} from "@zcode/services";
 import { ZCODE_APP_VERSION_ENV, ZCODE_VERSION } from "@zcode/shared";
 import { createCoreHttpServer } from "./http.js";
 import { createIngressToken } from "./ingressToken.js";
@@ -27,9 +30,13 @@ import { createTaskActivityTracker } from "./taskActivityTracker.js";
 import { CORE_HEARTBEAT_INTERVAL_MS } from "../contracts.js";
 // FORK(cloud-web-access): Relay 配置由独立 managed 模块读取；Core 不解析或写入凭据文件。
 import {
+  createHeadlessRemoteWorkspaceHost,
+  hasActiveServerUpdate,
   isCloudWebAccessRequired,
+  isCloudWebAccessUpdateFallback,
   readRemoteConnectionConfig,
   requireRemoteConnectionConfig,
+  shouldAllowRelayStartupFallback,
 } from "../fork/cloud-web-access/module.js";
 import { resolveServerLayout } from "../runtime/paths.js";
 
@@ -72,6 +79,13 @@ export async function runServerCore(
   const layout = resolveServerLayout(process.env.ZCODE_SERVER_ROOT?.trim());
   // FORK-BEGIN(cloud-web-access): server up 强制 Relay；普通 serve 无配置时保持原生命周期。
   const remoteConnectionRequired = isCloudWebAccessRequired(process.env);
+  const updateFallback =
+    isCloudWebAccessUpdateFallback(process.env) ||
+    (await hasActiveServerUpdate(layout.updateTransactionFile));
+  const allowRelayStartupFallback = shouldAllowRelayStartupFallback({
+    remoteConnectionRequired,
+    updateFallback,
+  });
   const configuredRemoteConnection = remoteConnectionRequired
     ? await requireRemoteConnectionConfig({
         remoteConnectionFile: layout.remoteConnectionFile,
@@ -81,17 +95,9 @@ export async function runServerCore(
         remoteConnectionFile: layout.remoteConnectionFile,
         logsDir: layout.logsDir,
       });
-  const remoteConnection =
-    configuredRemoteConnection && Date.parse(configuredRemoteConnection.expiresAt) > Date.now()
-      ? configuredRemoteConnection
-      : undefined;
+  const remoteConnection = configuredRemoteConnection;
   if (!remoteConnection && remoteConnectionRequired) {
-    throw new Error("ZCode Server Relay configuration is missing or expired");
-  }
-  if (configuredRemoteConnection && !remoteConnection) {
-    console.warn(
-      "ZCode Server Relay login has expired; ordinary serve continues without remote access",
-    );
+    throw new Error("ZCode Server Relay configuration is missing");
   }
   // FORK-END(cloud-web-access)
   const topicResourcePeers = createTopicResourcePeers();
@@ -133,7 +139,14 @@ export async function runServerCore(
   // FORK-BEGIN(cloud-web-access): 只有有效配置存在时才挂接 Relay owner。
   let connector: ReturnType<typeof createForkRemoteConnector> | undefined;
   if (remoteConnection) {
-    const projectService = services.get(IProjectService);
+    const { projectServiceForAttachment, ...workspaceHost } = createHeadlessRemoteWorkspaceHost({
+      sourceServerId,
+      projectService: services.get(IProjectService),
+      workspaceService: services.get(ISourceServerWorkspaceService),
+      fallbackWorkspacePath: homedir(),
+    });
+    // 新项目可能在首屏之后创建；普通项目树 RPC 也必须在订阅前登记身份。运行时闭包仍用原服务。
+    services.register(IProjectService, projectServiceForAttachment);
     connector = createForkRemoteConnector({
       endpoint: remoteConnection.endpoint,
       sessionToken: remoteConnection.sessionToken,
@@ -147,29 +160,36 @@ export async function runServerCore(
         warn: (message, details) => console.warn(message, details ?? ""),
         error: (message, details) => console.error(message, details ?? ""),
       },
-      async listWorkspaces() {
-        return buildHeadlessWorkspaceSnapshot({
-          sourceServerId,
-          fallbackWorkspacePath: homedir(),
-          projects: await projectService.readProjects(),
-        });
-      },
+      ...workspaceHost,
       openCoreBridge: async () =>
         await openLoopbackCoreBridge({ host: http.host, port: http.port, ingressToken }),
     });
     try {
       await connector.start();
     } catch (error) {
-      await cleanupFailedRelayStartup({
-        stopConnector: () => {
-          connector?.stop();
-        },
-        closeHttp: () => http.close(),
-        disposeServices: () => disposeServiceResourcesAndWait(services),
-      });
-      throw new Error(`ZCode Server Relay startup failed for ${remoteConnection.endpoint}`, {
-        cause: error,
-      });
+      if (allowRelayStartupFallback) {
+        try {
+          connector.stop();
+        } catch (stopError) {
+          console.error("Failed to stop Relay connector after update startup failure", stopError);
+        }
+        connector = undefined;
+        console.error(
+          `ZCode Server Relay startup failed for ${remoteConnection.endpoint}; Core continues without remote access`,
+          error,
+        );
+      } else {
+        await cleanupFailedRelayStartup({
+          stopConnector: () => {
+            connector?.stop();
+          },
+          closeHttp: () => http.close(),
+          disposeServices: () => disposeServiceResourcesAndWait(services),
+        });
+        throw new Error(`ZCode Server Relay startup failed for ${remoteConnection.endpoint}`, {
+          cause: error,
+        });
+      }
     }
   }
   // FORK-END(cloud-web-access)

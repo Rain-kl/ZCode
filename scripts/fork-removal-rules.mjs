@@ -136,7 +136,8 @@ export const REGISTRY = [
       },
       {
         path: "packages/services/src/providers/api/nodeApiClient.ts",
-        pattern: /this.authorizeRequest\?\.\(input, resolveMethod\(init\), activeEndpointOrigin\)/,
+        pattern:
+          /this.authorizeRequest\?\.\(input, resolveMethod\(init\), activeEndpointOrigin\)/,
         reason: "端点重写不能掩盖原上游目标",
       },
       {
@@ -167,7 +168,8 @@ export const REGISTRY = [
       })),
       {
         path: "packages/desktop/src/main/observeBeforeRequest.ts",
-        pattern: /callback\(\s*isUpstreamRequestAllowed\(details.url, details.method\)/,
+        pattern:
+          /callback\(\s*isUpstreamRequestAllowed\(details.url, details.method\)/,
         reason: "网络观测共用 listener 必须保持请求门禁",
       },
       {
@@ -188,7 +190,8 @@ export const REGISTRY = [
     absentFiles: [
       {
         path: "packages/desktop/src/main/manifestUpdateProvider.ts",
-        reason: "上游服务端 manifest 更新 provider，已由 GitHub Release feed 取代",
+        reason:
+          "上游服务端 manifest 更新 provider，已由 GitHub Release feed 取代",
       },
       {
         path: "packages/desktop/src/main/forceUpdateGuard.ts",
@@ -198,18 +201,39 @@ export const REGISTRY = [
         path: "packages/desktop/src/main/forceUpdatePrompt.ts",
         reason: "强更原生对话框，随强更 gate 一并移除",
       },
-      { path: "packages/shared/src/forceUpdate.ts", reason: "强更最低版本比较，已无消费方" },
+      {
+        path: "packages/shared/src/forceUpdate.ts",
+        reason: "强更最低版本比较，已无消费方",
+      },
     ],
     absentPatterns: [
-      { pattern: /\bmaybeBlockStartupForForceUpdate\b/, reason: "启动强更 gate 调用入口" },
-      { pattern: /\brequestForceAutoUpdate\b/, reason: "强更触发的自动升级入口" },
+      {
+        pattern: /\bmaybeBlockStartupForForceUpdate\b/,
+        reason: "启动强更 gate 调用入口",
+      },
+      {
+        pattern: /\brequestForceAutoUpdate\b/,
+        reason: "强更触发的自动升级入口",
+      },
       { pattern: /\bForceAutoUpdateState\b/, reason: "强更状态类型" },
-      { pattern: /\bManifestUpdateProvider\b/, reason: "上游服务端 manifest provider" },
-      { pattern: /\bgetForceUpdateConfig\b/, reason: "强更配置的 RPC 服务方法" },
-      { pattern: /\bgetForceUpdateMinimalVersionFromConfig\b/, reason: "强更最低版本解析" },
+      {
+        pattern: /\bManifestUpdateProvider\b/,
+        reason: "上游服务端 manifest provider",
+      },
+      {
+        pattern: /\bgetForceUpdateConfig\b/,
+        reason: "强更配置的 RPC 服务方法",
+      },
+      {
+        pattern: /\bgetForceUpdateMinimalVersionFromConfig\b/,
+        reason: "强更最低版本解析",
+      },
       { pattern: /\bresolveForceUpdateRequirement\b/, reason: "强更判定" },
       { pattern: /\bForceUpdateConfig\b/, reason: "强更配置类型" },
-      { pattern: /configs\.forceUpdate\b/, reason: "client/configs 的强更字段" },
+      {
+        pattern: /configs\.forceUpdate\b/,
+        reason: "client/configs 的强更字段",
+      },
       { pattern: /forceUpdate\.minimalVersion/, reason: "强更最低版本字段" },
       {
         pattern: /\/api\/v1\/releases\/electron\/manifest/,
@@ -224,6 +248,10 @@ export const REGISTRY = [
       {
         path: "packages/desktop/test/forkGithubUpdateFeed.test.ts",
         reason: "feed 单测",
+      },
+      {
+        path: ".github/workflows/source-server-release.yml",
+        reason: "Source Server 独立构建并立即发布，不得重新并入 Desktop 门禁",
       },
     ],
     requiredPatterns: [
@@ -250,13 +278,31 @@ export const REGISTRY = [
       {
         path: ".github/workflows/release.yml",
         pattern: /latest-mac\.yml/,
-        reason: "发布流水线必须上传 macOS 更新元数据，否则客户端报找不到 channel 文件",
+        reason:
+          "发布流水线必须上传 macOS 更新元数据，否则客户端报找不到 channel 文件",
       },
       {
         path: ".github/workflows/release.yml",
         // 独立匹配赋值语句：只匹配 canary-build 的话，注释里的字样就能满足规则。
         pattern: /pointer_tag="canary-build"/,
         reason: "preview 通道的固定指针 Release",
+      },
+      {
+        path: "packages/desktop/src/main/fork/github-update/feed.ts",
+        pattern: /FORK_GITHUB_SERVER_PREVIEW_TAG\s*=\s*"server-canary-build"/,
+        reason: "dev Source Server 必须复用固定 canary Release",
+      },
+      {
+        path: ".github/workflows/source-server-release.yml",
+        pattern: /source-server-release\.mjs publish/,
+        reason: "Source Server 构建完成后由独立 workflow 直接发布",
+      },
+      {
+        path: "packages/desktop/src/host/sourceServerReleaseResolver.ts",
+        pattern:
+          /isSourceServerReleaseVersionAccepted\(ZCODE_VERSION, descriptor\.version\)/,
+        reason:
+          "dev Desktop 必须接受独立 Server workflow 当前发布的 dev descriptor 版本",
       },
     ],
   },
@@ -293,13 +339,16 @@ export const REGISTRY = [
     absentPatternsInFile: [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
-        pattern: /runWithModelInvocationContext|web_fetch_processing|processFetchedContent/,
-        reason: "WebFetch handler 不得再调用任何加工模型：上游版本胜出会让每次抓取多付一次模型往返",
+        pattern:
+          /runWithModelInvocationContext|web_fetch_processing|processFetchedContent/,
+        reason:
+          "WebFetch handler 不得再调用任何加工模型：上游版本胜出会让每次抓取多付一次模型往返",
       },
       {
         path: "apps/zcode-cli/packages/contracts/src/tools/webfetch.ts",
         pattern: /^\s*prompt:/m,
-        reason: "prompt 参数必须缺席——它没有接收方，留着等于让模型传入一个会被静默忽略的字段",
+        reason:
+          "prompt 参数必须缺席——它没有接收方，留着等于让模型传入一个会被静默忽略的字段",
       },
     ],
     requiredFiles: [
@@ -319,7 +368,8 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
         pattern: /maxModelChars:\s*MAX_WEBFETCH_PERSIST_CHARS/,
-        reason: "上下文封顶必须接在字符阈值上，否则「取消摘要」会退化成整页正文进上下文",
+        reason:
+          "上下文封顶必须接在字符阈值上，否则「取消摘要」会退化成整页正文进上下文",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts",
@@ -330,7 +380,8 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
         pattern: /MAX_WEBFETCH_PERSIST_CHARS\s*=\s*15_000/,
-        reason: "落盘字符阈值的定义点（改值属产品决策，须同步改本规则与设计文档）",
+        reason:
+          "落盘字符阈值的定义点（改值属产品决策，须同步改本规则与设计文档）",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
@@ -340,12 +391,14 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/result-persistence-format.ts",
         pattern: /previewChars\?: number/,
-        reason: "共享信封必须保留 previewChars 覆写入口，否则 WebFetch 无法单独放宽预览长度",
+        reason:
+          "共享信封必须保留 previewChars 覆写入口，否则 WebFetch 无法单独放宽预览长度",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-constants.ts",
         pattern: /FORK\(webfetch-direct-return\)/,
-        reason: "移除标记必须在位（上游整段覆盖该文件时会连同标记一起消失，正好暴露）",
+        reason:
+          "移除标记必须在位（上游整段覆盖该文件时会连同标记一起消失，正好暴露）",
       },
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/webfetch-content.ts",
@@ -380,7 +433,8 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/runtime/helpers/runtime-tools.ts",
         pattern: /includeOffPeak/,
-        reason: "运行时工具装配不得再有闲时开关（有开关就等于留了一扇能被重新打开的门）",
+        reason:
+          "运行时工具装配不得再有闲时开关（有开关就等于留了一扇能被重新打开的门）",
       },
       {
         path: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts",
@@ -398,7 +452,8 @@ export const REGISTRY = [
       {
         path: "apps/zcode-cli/packages/core/src/tool/handlers/index.ts",
         pattern: /FORK\(offpeak-removal\)/,
-        reason: "移除标记必须在位（上游整段覆盖该文件时会连同标记一起消失，正好暴露）",
+        reason:
+          "移除标记必须在位（上游整段覆盖该文件时会连同标记一起消失，正好暴露）",
       },
       {
         path: "apps/zcode-cli/packages/core/src/runtime/helpers/runtime-tools.ts",

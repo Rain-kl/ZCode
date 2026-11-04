@@ -22,7 +22,7 @@ readDirectory 是项目选目录的 Host 路由入口：未指定 path 返回所
 
 ## 2026-10-10 远程单目录合同
 
-本地仍允许 0..n roots；可信 ownerHostId 非 local 的持库宿主只允许恰好一个固定 root。远程创建必须有项目，prepareSession、reserveCreatedTask 与 moveTask 不得产生无归属或附加目录；根路径更新和缺 root 拖动在写事务中拒绝。客户端 hostId 不能改变持库身份。历史迁移数据不被裁剪，失败不得部分写入。
+本地仍允许 0..n roots；可信 ownerHostId 非 local 的持库宿主只允许恰好一个固定 root。远程创建必须有项目，prepareSession、reserveCreatedTask 与 moveTask 不得产生无归属或附加目录；根路径更新和缺 root 拖动在写事务中拒绝。客户端 `local` 仅表示当前 attachment 的持库 Host，路由层必须归一化为真实 ownerHostId 后再持久化；其他客户端 hostId 不能改变持库身份。历史迁移数据不被裁剪，失败不得部分写入。
 
 未归类 Composer 可传 UUID draftId，目录由 Host 在 workspaceDirectory 下确定性派生；并发和重试只准备同一目录。reuseDraft 表示客户端已拿到该目录，缺失时报错，不重新 mkdir。无 draftId 的其他调用保持独立分配，远端仍要求项目；草稿和接纳记录不进入项目数据库。
 

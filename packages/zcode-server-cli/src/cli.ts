@@ -54,8 +54,10 @@ import {
 import { ProxyStdioError, runProxyStdio } from "./server-core/proxyStdio.js";
 // FORK-BEGIN(cloud-web-access): 公开 server 命令组复用既有生命周期，只新增配置和日志边界。
 import {
+  clearRemoteConnectionConfig,
   configureRemoteConnection,
   CLOUD_WEB_ACCESS_REQUIRED_ENV,
+  CLOUD_WEB_ACCESS_UPDATE_FALLBACK_ENV,
   followServerLogs,
   readServerLogSnapshot,
   requireRemoteConnectionConfig,
@@ -164,6 +166,7 @@ export async function runServerCli(
         "update",
         "uninstall",
         "server-connect",
+        "server-logout",
         "server-logs",
       ].includes(command) ||
       proxyStdioRequested ||
@@ -201,6 +204,8 @@ export async function runServerCli(
       // FORK-BEGIN(cloud-web-access): server connect/logs 是独立边界，up/down 仍调用原生命周期 owner。
       case "server-connect":
         return await runServerConnect(parsed.argv.slice(1), io, json, layout, runtimeOptions);
+      case "server-logout":
+        return await runServerLogout(parsed.argv.slice(1), io, json, layout);
       case "server-logs":
         return await runServerLogs(parsed.argv.slice(1), io, layout);
       case "server-help":
@@ -211,6 +216,7 @@ export async function runServerCli(
             "",
             "Commands:",
             "  connect --url <https-origin> --username <name> --password-stdin",
+            "  logout",
             "  up [-d]",
             "  down",
             "  logs [-f]",
@@ -316,6 +322,7 @@ export function normalizeServerCommandGroup(argv: readonly string[]): readonly s
   if (!subcommand) return ["server-help", ...args];
   if (subcommand === "proxy-stdio") return ["proxy-stdio", ...args];
   if (subcommand === "connect") return ["server-connect", ...args];
+  if (subcommand === "logout") return ["server-logout", ...args];
   if (subcommand === "logs") {
     validateServerCommandOptions(args, new Set(["-f", "--follow"]), "logs");
     return ["server-logs", ...args];
@@ -466,7 +473,6 @@ async function runServerConnect(
             ok: true,
             endpoint: config.endpoint,
             username: config.username,
-            expiresAt: config.expiresAt,
           }
         : `ZCode Server connected to ${config.endpoint} as ${config.username}`,
     );
@@ -506,6 +512,51 @@ async function runServerLogs(
     process.off("SIGTERM", stop);
   }
   return 0;
+}
+
+async function runServerLogout(
+  args: readonly string[],
+  io: CliIO,
+  json: boolean,
+  layout: ReturnType<typeof resolveServerLayout>,
+): Promise<number> {
+  const unknown = args.find((value) => value !== "--json");
+  if (unknown) throw new Error(`Unknown server logout option: ${unknown}`);
+  const lock = await acquireLifecycleCommandLock(
+    layout,
+    "Another ZCode Server lifecycle operation is already running",
+  );
+  const serverLock = new DataRootLock(layout.lockFile);
+  let serverLockAcquired = false;
+  try {
+    await stopSupervisorAndWait(layout, "logout");
+    await serverLock.acquire();
+    serverLockAcquired = true;
+    const removed = await clearRemoteConnectionConfig(layout);
+    stdout(
+      io,
+      json
+        ? { ok: true, removed }
+        : removed
+          ? "ZCode Server Relay credentials removed; server is stopped"
+          : "ZCode Server Relay credentials were already absent; server is stopped",
+    );
+    return 0;
+  } catch (error) {
+    if (
+      !serverLockAcquired &&
+      error instanceof Error &&
+      error.message.includes("already running")
+    ) {
+      throw new Error("ZCode Server restarted before Relay credentials could be removed", {
+        cause: error,
+      });
+    }
+    throw error;
+  } finally {
+    if (serverLockAcquired) await serverLock.release().catch(() => undefined);
+    await lock.release();
+  }
 }
 // FORK-END(cloud-web-access)
 
@@ -706,7 +757,7 @@ async function runServe(
   const supervisor = new Supervisor({
     layout,
     launcher: {
-      launch: (generation, release) => {
+      launch: (generation, release, launchOptions) => {
         const runtimeRoot = release?.releaseDir ? join(release.releaseDir, "runtime") : null;
         const corePath = runtimeRoot
           ? join(runtimeRoot, "server-core.js")
@@ -720,6 +771,8 @@ async function runServe(
           ZCODE_SERVER_ROOT: layout.serverRoot,
           // FORK(cloud-web-access): Core 只在 server up 时把 Relay 配置缺失视为失败。
           [CLOUD_WEB_ACCESS_REQUIRED_ENV]: requireCloudWebAccess ? "1" : "0",
+          [CLOUD_WEB_ACCESS_UPDATE_FALLBACK_ENV]:
+            launchOptions?.allowRemoteUnavailable === true ? "1" : "0",
         };
         const releaseWiring = runtimeRoot
           ? createReleaseAgentWiring(runtimeRoot, runtimeNode, inheritedEnv)
