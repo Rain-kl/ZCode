@@ -116,16 +116,41 @@ async function openSocket(ticket: string): Promise<WebSocket> {
   return socket;
 }
 
-function nextMessage(socket: WebSocket) {
-  return new Promise<Record<string, unknown>>((resolveMessage, reject) => {
-    const timer = setTimeout(() => reject(new Error("Relay message deadline")), 5_000);
-    const onMessage = (event: MessageEvent) => {
-      clearTimeout(timer);
-      socket.removeEventListener("message", onMessage);
-      resolveMessage(JSON.parse(String(event.data)) as Record<string, unknown>);
-    };
-    socket.addEventListener("message", onMessage);
+/**
+ * 逐帧读取中继消息：连接建立后常驻监听并排队，返回按到达顺序取帧的读取器。
+ *
+ * 为什么不按需挂监听：中继在 `authenticateSocket` 里先给本端回 `auth_ack`，再给对端
+ * 发 `pair_status_ack`，两个帧走的是不同连接，先后顺序由网络决定，不随发送顺序固定。
+ * 按需挂监听时，先到的帧会被丢掉，后到的帧则会被下一条断言当成自己要等的数据帧
+ * （CI 上就是 `pair_status_ack` 顶掉了 `data`，读出的 `payload` 是 undefined）。
+ * 排队后两种时序都收敛到同一结果。
+ */
+function messageInbox(socket: WebSocket) {
+  const received: Array<Record<string, unknown>> = [];
+  const waiting: Array<(message: Record<string, unknown>) => void> = [];
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+    const wake = waiting.shift();
+    if (wake) wake(message);
+    else received.push(message);
   });
+
+  return function nextMessage(): Promise<Record<string, unknown>> {
+    const queued = received.shift();
+    if (queued) return Promise.resolve(queued);
+    return new Promise<Record<string, unknown>>((resolveMessage, reject) => {
+      const timer = setTimeout(() => {
+        const index = waiting.indexOf(wake);
+        if (index >= 0) waiting.splice(index, 1);
+        reject(new Error("Relay message deadline"));
+      }, 5_000);
+      function wake(message: Record<string, unknown>) {
+        clearTimeout(timer);
+        resolveMessage(message);
+      }
+      waiting.push(wake);
+    });
+  };
 }
 
 async function login() {
@@ -245,44 +270,62 @@ test("real workerd runtime consumes tickets once and fences replaced owners", as
   };
 
   const deviceTicket = await issueTicket("device");
-  const device = await openSocket(deviceTicket);
+  const deviceSocket = await openSocket(deviceTicket);
+  const device = messageInbox(deviceSocket);
   const reused = new WebSocket(
     `${origin.replace("http:", "ws:")}/api/v1/remote/ws2?token=${deviceTicket}`,
   );
   const reusedClose = once(reused, "close");
   await reusedClose;
 
-  let reply = nextMessage(device);
-  device.send(
+  deviceSocket.send(
     JSON.stringify({
       type: "auth_init",
       device_sid: created.data.device_sid,
       meta: { name: "server-a", platform: "linux" },
     }),
   );
-  assert.equal((await reply).pair_status, "waiting");
+  const deviceAuth = await device();
+  assert.equal(deviceAuth.type, "auth_ack");
+  assert.equal(deviceAuth.pair_status, "waiting");
 
-  const firstTerminal = await openSocket(await issueTicket("terminal"));
-  reply = nextMessage(firstTerminal);
-  firstTerminal.send(JSON.stringify({ type: "auth_init", device_sid: created.data.device_sid }));
-  assert.equal((await reply).pair_status, "matched");
-  reply = nextMessage(device);
-  firstTerminal.send(JSON.stringify({ type: "data", payload: { opaque: "do-not-parse" } }));
-  assert.deepEqual((await reply).payload, { opaque: "do-not-parse" });
+  const firstTerminalSocket = await openSocket(await issueTicket("terminal"));
+  const firstTerminal = messageInbox(firstTerminalSocket);
+  firstTerminalSocket.send(
+    JSON.stringify({ type: "auth_init", device_sid: created.data.device_sid }),
+  );
+  assert.equal((await firstTerminal()).pair_status, "matched");
+  // 设备侧在终端接入时收到 matched 通知；这一帧与终端 auth_ack 走不同连接，到达顺序不保证。
+  const matchedNotice = await device();
+  assert.equal(matchedNotice.type, "pair_status_ack");
+  assert.equal(matchedNotice.pair_status, "matched");
 
-  const kicked = nextMessage(firstTerminal);
-  const secondTerminal = await openSocket(await issueTicket("terminal"));
-  reply = nextMessage(secondTerminal);
-  secondTerminal.send(JSON.stringify({ type: "auth_init", device_sid: created.data.device_sid }));
-  assert.equal((await reply).pair_status, "matched");
-  assert.equal((await kicked).code, "KICKED");
-  firstTerminal.close();
+  firstTerminalSocket.send(JSON.stringify({ type: "data", payload: { opaque: "do-not-parse" } }));
+  const forwarded = await device();
+  assert.equal(forwarded.type, "data");
+  assert.deepEqual(forwarded.payload, { opaque: "do-not-parse" });
+
+  const secondTerminalSocket = await openSocket(await issueTicket("terminal"));
+  const secondTerminal = messageInbox(secondTerminalSocket);
+  secondTerminalSocket.send(
+    JSON.stringify({ type: "auth_init", device_sid: created.data.device_sid }),
+  );
+  assert.equal((await secondTerminal()).pair_status, "matched");
+  const kicked = await firstTerminal();
+  assert.equal(kicked.type, "error");
+  assert.equal(kicked.code, "KICKED");
+  firstTerminalSocket.close();
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
-  reply = nextMessage(device);
-  secondTerminal.send(JSON.stringify({ type: "data", payload: { afterReplacement: true } }));
-  assert.deepEqual((await reply).payload, { afterReplacement: true });
-  secondTerminal.close();
-  device.close();
+
+  const replacedNotice = await device();
+  assert.equal(replacedNotice.type, "pair_status_ack");
+  assert.equal(replacedNotice.pair_status, "matched");
+  secondTerminalSocket.send(JSON.stringify({ type: "data", payload: { afterReplacement: true } }));
+  const replaced = await device();
+  assert.equal(replaced.type, "data");
+  assert.deepEqual(replaced.payload, { afterReplacement: true });
+  secondTerminalSocket.close();
+  deviceSocket.close();
   const offline = await waitForDevice({
     sessionToken: session.token,
     deviceSid: created.data.device_sid,
