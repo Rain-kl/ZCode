@@ -1,0 +1,144 @@
+name: Release Source Server
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+    branches:
+      - canary
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "发布通道：dev 为 canary；stable 只能由 vX.Y.Z tag 触发"
+        type: choice
+        options:
+          - dev
+          - stable
+        default: dev
+
+# Server 不与 Desktop 共用 concurrency group；同一 ref 的 Server 发布仍保持串行。
+concurrency:
+  group: source-server-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ZCODE_ENV: production
+  ZCODE_NODE_DIST_MIRROR: https://nodejs.org/dist
+
+jobs:
+  resolve:
+    name: Resolve Source Server version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Resolve Source Server version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            node scripts/ci/release-version.mjs apply --tag "${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "${{ inputs.channel }}" == "stable" ]]; then
+              echo "::error::稳定发布必须由 vX.Y.Z tag 触发，当前 ref=${GITHUB_REF_NAME}"
+              exit 1
+            fi
+            node scripts/ci/release-version.mjs apply --dev-commit "${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "commit=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    name: Build and publish Source Server
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Reuse current Source Server on rerun
+        id: reuse
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/ci/source-server-release.mjs reuse "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.reuse.outputs.reused != 'true'
+        shell: bash
+        run: |
+          set +e
+          for attempt in 1 2 3; do
+            args=(install --frozen-lockfile --ignore-scripts \
+              --fetch-retries=5 \
+              --fetch-retry-mintimeout=10000 \
+              --fetch-retry-maxtimeout=60000)
+            if [ "$attempt" -gt 1 ]; then args+=(--force); fi
+            pnpm "${args[@]}" 2>&1 | tee /tmp/source-server-pnpm-install.log
+            install_status=${PIPESTATUS[0]}
+            if [ "$install_status" -eq 0 ]; then break; fi
+            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/source-server-pnpm-install.log; then break; fi
+            if [ "$attempt" -lt 3 ]; then sleep 5; fi
+          done
+          set -e
+          if [ "$install_status" -ne 0 ]; then
+            detail=$(tail -n 20 /tmp/source-server-pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
+            echo "::error title=pnpm install failed::${detail}"
+            exit "$install_status"
+          fi
+
+      - name: Apply release version
+        if: steps.reuse.outputs.reused != 'true'
+        run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
+
+      - name: Build all four Source Server targets
+        if: steps.reuse.outputs.reused != 'true'
+        run: pnpm prepare:remote-assets
+
+      - name: Verify Source Server descriptor and archives
+        run: node scripts/ci/source-server-release.mjs verify "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}"
+
+      - name: Smoke test packaged Linux Server entrypoint
+        shell: bash
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          root=$(mktemp -d)
+          trap 'rm -rf "$root"' EXIT
+          tar -xzf "packages/desktop/mock-cdn/releases/${VERSION}/zcode-server-linux-x64.tar.gz" -C "$root"
+          actual=$("$root/zcode-server-linux-x64/bin/zcode" --version)
+          test "$actual" = "$VERSION"
+
+      - name: Publish Source Server immediately
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: node scripts/ci/source-server-release.mjs publish "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}"

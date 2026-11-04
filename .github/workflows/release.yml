@@ -5,9 +5,9 @@ name: Release Desktop
 # 触发与产物（规则、验收场景与缺口清单见 docs/specs/desktop-release.md）
 # - 推送 `v*.*.*` tag：稳定发布。打包前用 tag 版本改写根 package.json，使程序内版本
 #   （app.getVersion()、About、遥测）、产物文件名与 Release tag 三者一致。
-# - 推送到 canary 分支：只做集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，只更新固定 tag 的指针发布
+# - 推送到 canary 分支：只做 Desktop 集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，只更新固定 tag 的指针发布
 #   （`Dev channel (latest canary)`）——不建 dev-<sha> 发布，避免 Releases 堆成一串历史构建。
-#   canary 不运行 verify/unit-tests；三类构建全部成功即可更新 dev 指针。
+#   canary 不运行 verify/unit-tests；macOS 与 Windows 构建全部成功即可更新 dev 指针。
 # - 推送 `v*.*.*` tag：正式发布必须同时通过 verify 与 unit-tests。
 # - workflow_dispatch：手动按 dev 通道跑一次；stable 通道必须在 vX.Y.Z tag 上触发。
 #
@@ -29,7 +29,7 @@ name: Release Desktop
 # FORK(github-update) 更新通道（见 docs/features/github-update/design.md）
 # 客户端不再查上游 zcode.z.ai 的服务端 manifest，改为查本仓库的 GitHub Release：
 # - stable 通道：`releases/latest/download`（GitHub 定义的「最新非 prerelease」），读 latest.yml / latest-mac.yml；
-# - preview 通道：固定 tag `canary-build` 的指针 Release（只覆盖资产、不移动 tag），读 dev.yml / dev-mac.yml。
+# - preview 通道：固定 tag `canary-build` 的指针 Release（每次重建 Release、不移动 tag），读 dev.yml / dev-mac.yml。
 # 因此本流水线必须上传更新元数据与差分块；只发安装包会让客户端报「找不到 channel 文件」。
 # 元数据文件名由 packages/desktop/electron-builder.config.js 的 detectUpdateChannel 决定。
 
@@ -49,9 +49,9 @@ on:
           - stable
         default: dev
 
-# 同一 ref 的发布串行执行且不取消进行中的构建，避免 Release 收到半套产物。
+# 同一 ref 的 Desktop 发布串行执行且不取消进行中的构建。Source Server 使用独立 workflow 和队列。
 concurrency:
-  group: release-${{ github.ref }}
+  group: desktop-release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -493,98 +493,11 @@ jobs:
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/latest.yml
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/dev.yml
 
-  build-source-server:
-    name: Build companion Source Server (Linux and macOS)
-    needs: [resolve]
-    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    env:
-      # staging 使用各目标的 Node / node-pty / native tools，不复用宿主编译的二进制。
-      ZCODE_NODE_DIST_MIRROR: https://nodejs.org/dist
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      # tar 包含生成时间；已公开版本重跑时复用已校验的原包，而不是重建后替换不可变依赖。
-      - name: Reuse published Source Server on rerun
-        id: reuse
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: node scripts/ci/source-server-release.mjs reuse "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}" >> "$GITHUB_OUTPUT"
-
-      - name: Install dependencies
-        if: steps.reuse.outputs.reused != 'true'
-        shell: bash
-        run: |
-          set +e
-          for attempt in 1 2 3; do
-            args=(install --frozen-lockfile --ignore-scripts \
-              --fetch-retries=5 \
-              --fetch-retry-mintimeout=10000 \
-              --fetch-retry-maxtimeout=60000)
-            if [ "$attempt" -gt 1 ]; then args+=(--force); fi
-            pnpm "${args[@]}" 2>&1 | tee /tmp/source-server-pnpm-install.log
-            install_status=${PIPESTATUS[0]}
-            if [ "$install_status" -eq 0 ]; then break; fi
-            if ! grep -Eq 'ERR_PNPM_ENOENT|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ERR_PNPM_FETCH' /tmp/source-server-pnpm-install.log; then break; fi
-            if [ "$attempt" -lt 3 ]; then sleep 5; fi
-          done
-          set -e
-          if [ "$install_status" -ne 0 ]; then
-            detail=$(tail -n 20 /tmp/source-server-pnpm-install.log | tr '\n\r' '  ' | sed 's/%/%25/g' | cut -c1-3500)
-            echo "::error title=pnpm install failed::${detail}"
-            exit "$install_status"
-          fi
-
-      - name: Apply release version
-        if: steps.reuse.outputs.reused != 'true'
-        run: node scripts/ci/release-version.mjs apply --version "${{ needs.resolve.outputs.version }}"
-
-      - name: Build all four Source Server targets
-        if: steps.reuse.outputs.reused != 'true'
-        run: pnpm prepare:remote-assets
-
-      - name: Verify Source Server descriptor and archive contents
-        run: node scripts/ci/source-server-release.mjs verify "packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}" "${{ needs.resolve.outputs.version }}"
-
-      - name: Smoke test packaged Linux Server entrypoint
-        shell: bash
-        env:
-          VERSION: ${{ needs.resolve.outputs.version }}
-        run: |
-          set -euo pipefail
-          root=$(mktemp -d)
-          trap 'rm -rf "$root"' EXIT
-          tar -xzf "packages/desktop/mock-cdn/releases/${VERSION}/zcode-server-linux-x64.tar.gz" -C "$root"
-          actual=$("$root/zcode-server-linux-x64/bin/zcode" --version)
-          test "$actual" = "$VERSION"
-
-      - name: Upload Source Server artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: source-server
-          if-no-files-found: error
-          retention-days: ${{ needs.resolve.outputs.prerelease == 'true' && 14 || 90 }}
-          path: |
-            packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}/source-server-release.json
-            packages/desktop/mock-cdn/releases/${{ needs.resolve.outputs.version }}/zcode-server-*.tar.gz
-
   publish:
     name: Publish GitHub Release
-    needs: [resolve, verify, unit-tests, build-macos, build-windows, build-source-server]
-    # canary 只要求三类构建成功；stable tag 还必须通过 verify 与 unit-tests。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-source-server.result == 'success' && (needs.resolve.outputs.prerelease == 'true' || (needs.verify.result == 'success' && needs.unit-tests.result == 'success')) }}
+    needs: [resolve, verify, unit-tests, build-macos, build-windows]
+    # canary 只要求两类 Desktop 构建成功；stable tag 还必须通过 verify 与 unit-tests。
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && (needs.resolve.outputs.prerelease == 'true' || (needs.verify.result == 'success' && needs.unit-tests.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -604,19 +517,6 @@ jobs:
           path: release-assets
           pattern: "{mac-*,win-*}"
           merge-multiple: true
-
-      - name: Download Source Server artifacts separately
-        uses: actions/download-artifact@v8
-        with:
-          name: source-server
-          path: source-server-assets
-
-      - name: Publish version-pinned Source Server before desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          COMMIT: ${{ needs.resolve.outputs.commit }}
-        run: node scripts/ci/source-server-release.mjs publish source-server-assets "${{ needs.resolve.outputs.version }}"
 
       - name: Generate checksums
         working-directory: release-assets
@@ -679,9 +579,9 @@ jobs:
           fi
 
           # FORK-BEGIN(github-update)
-          # dev 通道还需要一份「固定地址」：客户端不知道下一次集成的提交号，无法按 tag 查询。
-          # 这里把同一批资产镜像到固定 tag 的指针 Release，只覆盖资产、不移动 tag，
-          # 因此不需要 force push。客户端读 .../releases/download/canary-build/dev.yml。
+          # dev 通道使用固定地址，客户端读 .../releases/download/canary-build/dev.yml。
+          # GitHub 不支持置顶 prerelease；每次删除旧 Release（保留 tag）后以 draft 重建，
+          # 上传完成再公开，使当前 canary 回到 Releases 列表前部且不会累积旧资产。
           if [[ "${PRERELEASE}" == "true" ]]; then
             pointer_tag="canary-build"
             pointer_title="Dev channel (latest canary)"
@@ -697,37 +597,26 @@ jobs:
               '- 能打开但连不上同一局域网内的主机（SSH 报 EHOSTUNREACH / No route to host）：执行 `codesign --force --deep --sign - /Applications/ZCode.app` 后重启应用。原因是 macOS 把“本地网络”权限记在应用的代码签名身份上，未签名的应用该授权不会生效。')
             pointer_args=(--title "${pointer_title}" --notes "${pointer_notes}" --prerelease --latest=false)
 
-            if ! retry gh release edit "${pointer_tag}" "${pointer_args[@]}"; then
-              # 指针 tag 通常已存在（只有资产在更新），用 --verify-tag 复用；不存在则按本次提交新建。
-              if ! retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag; then
-                retry gh release create "${pointer_tag}" "${pointer_args[@]}" --target "${COMMIT}"
-              fi
+            if gh release view "${pointer_tag}" >/dev/null 2>&1; then
+              retry gh release delete "${pointer_tag}" --yes
+            fi
+            if git rev-parse --verify --quiet "refs/tags/${pointer_tag}" >/dev/null; then
+              retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag --draft
+            else
+              retry gh release create "${pointer_tag}" "${pointer_args[@]}" --target "${COMMIT}" --draft
             fi
             retry gh release upload "${pointer_tag}" release-assets/* --clobber
-
-            # 指针发布只保留本次集成的资产。资产名里带版本号（ZCode-<version>-<platform>-<arch>），
-            # `--clobber` 只覆盖同名文件，因此不显式清理就会把每个历史版本的包一直堆在
-            # 「Dev channel (latest canary)」上（实测堆到 18 个资产 / 3 个版本）。
-            # 顺序是先传后清，避免出现指针没有任何资产的窗口。best-effort，失败不影响发布。
-            keep_assets=$(cd release-assets && printf '%s\n' *)
-            pointer_assets=$(gh release view "${pointer_tag}" --json assets --jq '.assets[].name' 2>/dev/null || true)
-            if [[ -n "${pointer_assets}" ]]; then
-              while IFS= read -r pointer_asset; do
-                if ! printf '%s\n' "${keep_assets}" | grep -qxF "${pointer_asset}"; then
-                  gh release delete-asset "${pointer_tag}" "${pointer_asset}" --yes >/dev/null 2>&1 || true
-                fi
-              done <<< "${pointer_assets}"
-            fi
+            retry gh release edit "${pointer_tag}" "${pointer_args[@]}" --draft=false
 
             # 本流水线不再创建 dev-<sha> 发布；这里作为安全网清掉一切遗留或手工创建的 dev-*
-            # 发布（含 tag）——dev 通道的包只应存在于指针发布上。best-effort，失败不影响发布。
+            # 发布（含 tag）——dev 通道的包只应存在于指针发布上。
             # 只匹配 ^dev-：canary-build 是 preview 更新通道的固定 tag 入口（客户端读它资产里的
             # dev.yml / dev-mac.yml），stable 是正式发布——两者都不在「旧 prerelease」范围内，
             # 把这里放宽成「所有 prerelease」会直接断掉预览通道的更新检查。
             old_dev_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
               | grep -E '^dev-' || true)
             for old_dev_tag in ${old_dev_tags}; do
-              gh release delete "${old_dev_tag}" --yes --cleanup-tag >/dev/null 2>&1 || true
+              retry gh release delete "${old_dev_tag}" --yes --cleanup-tag
             done
           fi
           # FORK-END(github-update)
