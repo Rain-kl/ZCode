@@ -62,6 +62,19 @@ export async function verifySourceServerRelease(dir, version) {
         `Source Server archive manifest mismatch: ${path}; expected ${version}/${archive.target}, received ${manifest.appVersion}/${manifest.target}`,
       );
     }
+    // 安装器和 CLI 均依赖此随包配置；只检查 --version 会漏过实际启动时的资源缺失。
+    const providerPath = `zcode-server-${archive.target}/runtime/provider/zcode-builtin.json`;
+    try {
+      const { stdout: provider } = await exec("tar", ["-xOzf", path, providerPath]);
+      const config = JSON.parse(provider);
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        throw new Error("provider config must be a JSON object");
+      }
+    } catch (cause) {
+      throw new Error(`Invalid Source Server provider resource: ${path}/${providerPath}`, {
+        cause,
+      });
+    }
   }
   return descriptor;
 }

@@ -8,7 +8,7 @@
 | 通道     | 触发条件                              | 版本                                | Release                                               |
 | -------- | ------------------------------------- | ----------------------------------- | ----------------------------------------------------- |
 | `stable` | 推送 `v*.*.*` tag                     | tag 去掉 `v` 前缀（如 `3.14.3`）    | `v3.14.3`，正式 Release                               |
-| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | 固定 tag `canary-build` 的指针发布（不建 dev-<sha8>） |
+| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | 固定 tag `canary-build` 的指针发布（不建 dev-<sha8>）；不运行测试，只要求构建成功 |
 
 手动 dispatch 只能选 `dev`；`stable` 必须由 tag 触发，否则流水线在 `resolve` 阶段直接失败，避免出现「人工填版本 + 无 tag」的稳定版本。
 
@@ -27,15 +27,17 @@
 
 ## 作业门禁与跳过语义
 
-- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / fork 契约）与 `unit-tests`（完整 Vitest 集合的四个分片）**在所有通道运行**。完整门禁范围不缩减。
+- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / fork 契约）与 `unit-tests`（完整 Vitest 集合的四个分片）只在正式 tag 通道运行。canary 是快速集成构建，不运行测试，也不把静态门禁作为发布前置。
+- 正式发布的完整门禁范围不缩减；canary 产物不是稳定版本，不能以构建成功替代 tag 发布的测试放行。
 - **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
 - 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
 
-| 渠道                   | `verify` / `unit-tests` | 桌面与 Server 构建     | `publish`                        |
-| ---------------------- | ----------------------- | ---------------------- | -------------------------------- |
-| dev（推送 canary）     | 必须全部成功            | resolve 成功后并行运行 | 所有门禁与构建成功才运行         |
-| tag 且门禁通过         | 必须全部成功            | resolve 成功后并行运行 | 所有门禁与构建成功才运行         |
-| 任一门禁失败/跳过/取消 | 非 success              | 可已完成或仍在运行     | 不创建 Server 或 Desktop Release |
+| 渠道                   | `verify` / `unit-tests` | 桌面与 Server 构建     | `publish`                                      |
+| ---------------------- | ----------------------- | ---------------------- | ---------------------------------------------- |
+| dev（推送 canary）     | `if` 条件跳过           | resolve 成功后并行运行 | 三类构建成功即运行，忽略跳过的测试             |
+| tag 且门禁通过         | 必须全部成功            | resolve 成功后并行运行 | 两类门禁与三类构建全部成功才运行               |
+| 任一正式门禁失败/跳过  | 非 success              | 可已完成或仍在运行     | 不创建 Server 或 Desktop Release               |
+| canary 任一构建失败    | skipped                 | 可为 success/failure   | 不更新 `canary-build` 指针                     |
 
 - 新增作业时照抄这条规则：**只要它 `needs` 的链上可能有 skipped 作业，就必须写显式条件**（用 `!cancelled()` 而非 `always()`，后者在被取消时也会继续跑）。
 - `verify` 里在单测前会按依赖链构建 CLI 包（`pnpm -r --filter "@zcode/core..."`）：`apps/zcode-cli/packages/core/test` 的测试 import 上游 tool 入口，而这些包的 `exports` 指向 `dist`，verify 只 install 不 build 会 `ERR_MODULE_NOT_FOUND` 让整组失败。
@@ -52,7 +54,7 @@
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
 2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
-3. **半套产物不发布**：`publish` 直接依赖 `resolve`、`verify`、`unit-tests` 和所有构建，显式要求全部 `success`。任一门禁/分片/构建失败、跳过或取消时，即使已上传 Actions artifact，也不得创建 Server 或 Desktop Release。
+3. **半套产物不发布**：`publish` 直接依赖 `resolve`、`verify`、`unit-tests` 和所有构建。canary 只要求三类构建成功；正式 tag 还必须 `verify` 与 `unit-tests` 全部 `success`。任一门禁/分片/构建失败、跳过或取消时，即使已上传 Actions artifact，也不得创建 Release。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
 5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，包只更新到 `canary-build`；指针上的资产每次只保留本次集成的一套（先上传本次资产、再删掉不属于本次的文件），因此 Releases 里始终只有一份 dev 包。
    - **指针发布 `canary-build` 只保留本次集成的资产**：资产名带版本号（`ZCode-<version>-<platform>-<arch>`），`gh release upload --clobber` 只覆盖同名文件，所以 publish 在「先上传本次资产、再删掉不属于本次的文件」。不清理时实测堆到 18 个资产 / 3 个版本（`dev.yml` / `dev-mac.yml` / `SHA256SUMS.txt` 名字固定，靠 `--clobber` 覆盖）。
@@ -68,7 +70,7 @@
 
 ## 2026-10-24 同步验证
 
-上游同步推送到 main/canary 时，canary 的完整门禁必须执行，覆盖类型、lint、架构、移除守卫及两种单测入口；发布依赖所有门禁成功。不得以 skipped 的 verify 或 unit-tests 作为本次同步验证成功的依据。稳定 tag 触发与历史发布 tag 保持原有规则。
+2026-11-03 用户调整通道策略：canary 集成只要求构建成功，允许跳过 verify 与 unit-tests；正式 tag 仍必须执行完整静态门禁和两种测试入口，跳过不能作为正式发布验证。此前“canary 也必须执行完整门禁”的规则已被本节取代。
 
 ## 2026-11-03 发布关键路径优化（二开基础设施）
 
@@ -77,10 +79,10 @@
 
 - **版本唯一所有者仍是 resolve**。所有作业使用同一 workflow SHA 的独立 checkout，消费同一版本/提交输出。
 - **发布唯一写入者仍是 publish**。构建允许推测执行，仅上传 Actions artifact，不创建 Release。
-  publish 直接汇合完整门禁和三类构建，全部成功后仍先发布不可变 Server，再发布桌面。
+  正式 tag 汇合完整门禁和三类构建；canary 只汇合三类构建。发布仍先发布不可变 Server，再发布桌面。
 - `unit-tests` 使用 Vitest 官方 `--shard=<index>/4`，四个独立 Ubuntu runner 完整覆盖根配置的所有项目，
   不另维护测试文件列表，不改变 include/exclude、worker 数、超时或测试断言。
-  `fork-isolated` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
+  `engineering` / `fork-contracts` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
   matrix `fail-fast: false` 保留其余分片的诊断结果，每片先构建所需 CLI 包并补装 Electron。
 - 本地 `pnpm test:unit` 保持原入口。fork 的 node:test 契约仍完整执行一次，不被 Vitest 分片替代。
 - `bundle.mjs` 独占 bundle 路径的 runtime prepare 调度，随后调用 `build:no-runtime-assets`。
@@ -101,6 +103,8 @@ flowchart LR
     G --> D[Desktop Release]
 ```
 
+上图为正式 tag 路径；canary 路径跳过 `V` 与 `T`，只要求 `M/W/S` 成功。
+
 验收：依赖图契约遍历每个直接门禁的 failure/skipped/cancelled，均阻止 publish；所有成功才允许发布；
 四个 Vitest 分片发现集合不重不漏且与未分片集合相等；隔离项目原并发限制不变；
 bundle 默认/两个 skip 标志的四种组合均无重复 prepare；实际 manifest 保证 no-runtime-assets 只构建 metadata 与 app。
@@ -119,6 +123,17 @@ E2E reporting 单测时无法解析 `@zcode/e2e-report`。该包公开入口指�
   并执行 lifecycle、error classification、skipped summary 三个实际 reporting 回归。
 - 同一 run 还发现 App/分享只读渲染一致性测试仍使用已移除的 `Agent` 输入。
   测试必须改用现有 `spawn_agent` 参数，继续断言两端摘要一致；不恢复旧工具或展示兼容。
+
+## 2026-11-03 CI run 41575790953 修复
+
+本次 canary 发布在四个独立点失败，已分别修复：
+
+- Vitest 分片契约跟随当前显式项目 `engineering` / `fork-contracts` / `cua-placeholder`，继续断言官方四片覆盖全部 209 个项目/文件且无重复，不恢复已退役的 App 业务测试发现。
+- Windows 工程契约与产品策略对齐：关闭 Inspector 参数、保留 RunAsNode，并明确禁止签名验证形成更新门槛。
+- 预编译 tgz 解压先以调用方 cwd 解析归档和目标，再从归档父目录执行 tar，`-f` 只收到 `./<basename>`。Windows 跨盘归档不再把 `D:` 传给 GNU tar 识别为远程主机；不增加 GNU 专属参数。
+- Source Server 安装复用其他 job 的三次有界重试，只重试 ENOENT/网络类临时错误；锁文件配置错误立即失败，最终状态和诊断仍保留。
+
+验证边界：release/sharding/Source Server 契约 23 通过，Electron builder 安全 15 通过，相关 bundled npm/feed 17 通过，预编译解压 8 通过；node:test 7 组通过，包含 unsigned Windows/feed 依赖合同。真实 Windows 跨盘打包与新的 Linux hosted install 需要在后续 CI run 验证；本次本地为 macOS。
 
 ## 2026-11-02 配套 Source Server 发布
 

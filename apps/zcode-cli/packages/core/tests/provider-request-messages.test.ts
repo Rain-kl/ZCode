@@ -79,6 +79,64 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe("buildProviderRequestMessages", () => {
+  it("ends a trailing collaboration assistant envelope with a provider-only continuation boundary", () => {
+    const collaborationEntry = {
+      message: { role: "user" as const, content: "child completed" },
+      metadata: {
+        source: "subagent_message" as const,
+        collaboration: {
+          version: 1 as const,
+          messageId: "message-1",
+          kind: "FINAL_ANSWER" as const,
+          senderId: "agent-worker",
+          recipientId: "agent-root",
+          senderPath: "/root/worker",
+          recipientPath: "/root",
+        },
+      },
+    } satisfies RuntimeMessageEntry;
+    const entries = [entry(user("real prompt"), "real_user"), collaborationEntry];
+
+    const result = buildProviderRequestMessages({ entries });
+
+    expect(result.messages).toEqual([
+      user("real prompt"),
+      assistant(
+        "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nchild completed",
+      ),
+      user(
+        "<system-reminder>\nThe assistant message immediately above is an internal collaboration message from another ZCode agent, not a response prefix and not user input. Use it as private task context, then continue the current task. Do not echo the envelope.\n</system-reminder>",
+      ),
+    ]);
+    expect(result.sourceEntries).toEqual([entries[0], collaborationEntry, undefined]);
+    expect(result.diagnostics.latestRealUserMessageIndex).toBe(0);
+  });
+
+  it("does not add a collaboration continuation boundary when later provider input exists", () => {
+    const collaborationEntry = {
+      message: { role: "user" as const, content: "peer update" },
+      metadata: {
+        source: "subagent_message" as const,
+        collaboration: {
+          version: 1 as const,
+          messageId: "message-2",
+          kind: "MESSAGE" as const,
+          senderId: "agent-worker",
+          recipientId: "agent-root",
+          senderPath: "/root/worker",
+          recipientPath: "/root",
+        },
+      },
+    } satisfies RuntimeMessageEntry;
+
+    const result = buildProviderRequestMessages({
+      entries: [entry(user("prompt"), "real_user"), collaborationEntry, entry(toolResult())],
+    });
+
+    expect(result.messages.at(-1)).toEqual(toolResult());
+    expect(result.messages).toHaveLength(3);
+  });
+
   it("keeps committed assistant entry ownership separate from provider messages", () => {
     const assistant = {
       message: { role: "assistant" as const, content: "answer" },

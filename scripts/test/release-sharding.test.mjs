@@ -14,6 +14,7 @@ test(
   async (t) => {
     const indices = workflow.jobs["unit-tests"].strategy.matrix.shard;
     assert.deepEqual(indices, [1, 2, 3, 4]);
+    const projectNames = ["engineering", "fork-contracts", "cua-placeholder"];
     async function discover(shard) {
       const context = await createVitest("test", {
         root,
@@ -22,11 +23,17 @@ test(
         exclude: ["packages/desktop/test/e2e/**/*.test.ts"],
       });
       try {
-        const isolated = context.projects.find((project) => project.name === "fork-isolated");
-        assert.ok(isolated);
-        assert.equal(isolated.config.pool, "forks");
-        assert.equal(isolated.config.fileParallelism, false);
-        assert.equal(isolated.config.maxWorkers, 1);
+        assert.deepEqual(
+          context.projects.map((project) => project.name).sort(),
+          [...projectNames].sort(),
+        );
+        for (const name of ["engineering", "fork-contracts"]) {
+          const isolated = context.projects.find((project) => project.name === name);
+          assert.ok(isolated, name);
+          assert.equal(isolated.config.pool, "forks", name);
+          assert.equal(isolated.config.fileParallelism, false, name);
+          assert.equal(isolated.config.maxWorkers, 1, name);
+        }
         let specs = await context.getRelevantTestSpecifications();
         if (shard) {
           // filesOnly 的 list 只做发现，不应用 --shard；使用执行池相同的真实 sequencer 验证分片契约。
@@ -40,7 +47,7 @@ test(
     }
     const all = await discover();
     assert.ok(all.length > 0);
-    for (const project of ["unit", "fork-isolated", "cua-placeholder"]) {
+    for (const project of projectNames) {
       assert.ok(
         all.some((key) => key.startsWith(`${project}:`)),
         project,

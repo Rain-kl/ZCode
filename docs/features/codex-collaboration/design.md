@@ -26,16 +26,16 @@ MultiAgent V2 为移植基准，重试次数和间隔以用户明确要求为准
 
 ## 已确认的代码事实
 
-| 位置 | 当前行为 | 影响 |
-| --- | --- | --- |
-| adapters/src/model/retry-policy.ts | 默认 10 次重试，最长 60 秒；配置可放大 | 不满足 20 次、30 秒的边界 |
-| adapters/src/model/runner-retry.ts | 合理 Retry-After 可以越过 maxDelayMs | 单改默认间隔仍可能等待数分钟 |
-| core/src/runtime/methods/streaming-recovery.ts | 输出后的恢复另外计算 10 次 | 与 adapter 预算分离，不能保证统一上限 |
-| core/src/runtime/methods/model-request-session-type.ts | workflow child 使用无上限预算 | 需要一并收敛 |
-| core/src/subagent/runner.ts | 前台 run 将调用者 signal 传入 child AbortController | 父工具取消会取消已开始的子任务 |
-| core/src/subagent/runner.ts | SendMessage 可以恢复 registry 中的终态子任务 | 并非完全没有恢复机制；必须保留和改善现有历史恢复 |
-| core/src/runtime/methods/subagent.ts | 子 runtime 配置 subagents.enabled=false | 与 Codex 的可嵌套协作工具面不一致 |
-| core/src/subagent/runner.ts | 创建及消息投递存在会话 ready、消息 sink 注册等异步边界 | 必须覆盖 steer、失败和续跑竞争 |
+| 位置                                                   | 当前行为                                               | 影响                                             |
+| ------------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
+| adapters/src/model/retry-policy.ts                     | 默认 10 次重试，最长 60 秒；配置可放大                 | 不满足 20 次、30 秒的边界                        |
+| adapters/src/model/runner-retry.ts                     | 合理 Retry-After 可以越过 maxDelayMs                   | 单改默认间隔仍可能等待数分钟                     |
+| core/src/runtime/methods/streaming-recovery.ts         | 输出后的恢复另外计算 10 次                             | 与 adapter 预算分离，不能保证统一上限            |
+| core/src/runtime/methods/model-request-session-type.ts | workflow child 使用无上限预算                          | 需要一并收敛                                     |
+| core/src/subagent/runner.ts                            | 前台 run 将调用者 signal 传入 child AbortController    | 父工具取消会取消已开始的子任务                   |
+| core/src/subagent/runner.ts                            | SendMessage 可以恢复 registry 中的终态子任务           | 并非完全没有恢复机制；必须保留和改善现有历史恢复 |
+| core/src/runtime/methods/subagent.ts                   | 子 runtime 配置 subagents.enabled=false                | 与 Codex 的可嵌套协作工具面不一致                |
+| core/src/subagent/runner.ts                            | 创建及消息投递存在会话 ready、消息 sink 注册等异步边界 | 必须覆盖 steer、失败和续跑竞争                   |
 
 上述 CLI 路径相对于 `apps/zcode-cli/packages/`。用户描述的具体 steer 操作尚未通过
 真实 UI 场景复现；signal 耦合是确认存在的缺陷机制，不把它表述为所有现场的唯一根因。
@@ -51,11 +51,11 @@ CLI 的未处理异常边界会关闭协议进程；尚未证明现场 API 错�
 
 ## 方案选择
 
-| 方案 | 适用性 | 决策 |
-| --- | --- | --- |
-| 移植 Codex V2 协作契约至 TypeScript，由 ZCode runtime 执行 | 保留现有提供商、权限、工具执行、存储和客户端；可逐条对照源码 | 推荐 |
-| 嵌入 Codex Rust app-server，另起执行进程 | 还要迁移模型协议、工具执行和会话桥接，改动远超调度 | 不采用 |
-| 继续修补旧 Agent/SendMessage 前后台分支 | 无法完成用户要求的完整 Codex 工具、提示词和生命周期替换 | 不采用 |
+| 方案                                                       | 适用性                                                       | 决策   |
+| ---------------------------------------------------------- | ------------------------------------------------------------ | ------ |
+| 移植 Codex V2 协作契约至 TypeScript，由 ZCode runtime 执行 | 保留现有提供商、权限、工具执行、存储和客户端；可逐条对照源码 | 推荐   |
+| 嵌入 Codex Rust app-server，另起执行进程                   | 还要迁移模型协议、工具执行和会话桥接，改动远超调度           | 不采用 |
+| 继续修补旧 Agent/SendMessage 前后台分支                    | 无法完成用户要求的完整 Codex 工具、提示词和生命周期替换      | 不采用 |
 
 ## 1. 模型请求统一重试
 
@@ -119,14 +119,14 @@ CLI 的未处理异常边界会关闭协议进程；尚未证明现场 API 错�
 
 新会话只向模型曝光一套协作工具，不同时宣传旧 Agent 与新调度方案。
 
-| 工具 | 输入 | 行为 |
-| --- | --- | --- |
-| spawn_agent | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后返回 `{task_name}`，不等待最终答案；身份和有效设置保留在内部事件 |
-| send_message | target, message | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次 |
-| followup_task | target, message | 运行中递送任务；空闲、报错或被中断的子代理恢复同一会话并启动新轮次 |
-| interrupt_agent | target | 只中断目标当前轮次，返回此前状态；身份、历史和邮箱继续存在 |
-| list_agents | path_prefix? | 返回 `{agents:[{agent_name,agent_status}]}`，仅列当前树中已加载代理 |
-| wait_agent | timeout_ms? | 等待邮箱活动、终态通知、用户 steer 或超时，返回 `{message,timed_out}` |
+| 工具            | 输入                                                                    | 行为                                                                       |
+| --------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| spawn_agent     | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后返回 `{task_name}`，不等待最终答案；身份和有效设置保留在内部事件 |
+| send_message    | target, message                                                         | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次                         |
+| followup_task   | target, message                                                         | 运行中递送任务；空闲、报错或被中断的子代理恢复同一会话并启动新轮次         |
+| interrupt_agent | target                                                                  | 只中断目标当前轮次，返回此前状态；身份、历史和邮箱继续存在                 |
+| list_agents     | path_prefix?                                                            | 返回 `{agents:[{agent_name,agent_status}]}`，仅列当前树中已加载代理        |
+| wait_agent      | timeout_ms?                                                             | 等待邮箱活动、终态通知、用户 steer 或超时，返回 `{message,timed_out}`      |
 
 具体 JSON schema、工具描述及状态输出对照 Codex 的
 `codex-rs/core/src/tools/handlers/multi_agents_spec.rs` 和 `multi_agents_v2/`。
@@ -155,6 +155,11 @@ send_message / followup_task 成功时返回空文本；interrupt_agent 返回 `
 - 子代理完成时自动向直接父代理投递最终答案和状态通知，保留任务发起者关联。
   父代理忙时在安全边界消费；父代理已结束时通知留待下次轮次消费，不自行生成无限空轮次。
   中断只产生状态变化，不伪造 FINAL_ANSWER。
+- 协作信封在 canonical 历史和 provider 投影中继续使用 assistant 身份，避免伪装成真实用户。
+  但 ZCode 的跨提供商合同只有 system/user/assistant/tool，没有 Codex Responses 的 analysis
+  通道；当协作信封位于请求末尾时，必须追加一条宿主拥有、明确声明“不是用户输入”的继续边界，
+  防止 Chat Completions 兼容模型把末尾 assistant 当作待续写前缀。边界只影响本次 provider
+  投影，不写回 canonical 历史、不改变消息来源，也不得包含用户或子代理正文。
 
 ### 2.2 提示词与上下文
 
@@ -272,6 +277,11 @@ deliver 必须确认消息所有权转移后才出箱；旧 runner 终态清理�
     确认存在实际重试请求，预算内不提前终态，CLI 进程存活且后续输入可处理。
 12. 区分模型流无终态 EOF、实际用户取消、SDK 内部 AbortError、未知供应商错误；
     分别检查恢复、取消与原始原因，不能把断网当主动停止，也不能把半截答案当成功。
+13. 子代理协作信封成为请求最后一条消息：provider 请求仍保留 assistant 信封，随后出现不含
+    载荷的宿主继续边界；模型能够继续调用协作工具，边界不进入会话正文。普通 assistant 历史、
+    后面已有 user/tool 输入的协作信封均不追加该边界。
+14. 配对 spawn 卡片同时保留两个独立动作：点击主摘要打开准确 child session；点击详情箭头只展开
+    原始 task message 等参数，不打开 child。键盘 Enter/Space 与鼠标行为一致。
 
 ## 评审与实施
 

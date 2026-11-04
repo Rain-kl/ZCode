@@ -24,6 +24,7 @@
   "packages/services/test/nodeApiClient.test.ts",
   "packages/services/test/providerBuiltinRefreshFailure.test.ts",
   "packages/services/test/providerRuntime.test.ts",
+  "packages/services/test/projectDirectoryLocalHost.test.ts",
   "packages/services/test/skillsService.test.ts",
   "packages/services/test/subagentRuntimeConfig.test.ts",
   "packages/services/test/usageStatsService.test.ts",
@@ -31,6 +32,7 @@
   "packages/shared/src/fork/upstream-network/contract.test.ts",
   "packages/shared/test/forkUpstreamNetworkTransport.test.ts",
   "packages/shared/test/remoteAppConfig.test.ts",
+  "packages/shared/test/sourceServerCompatibility.test.ts",
   "packages/shared/test/zcodeProtocolV4Wire.test.ts",
   "packages/ui/src/fork/codex-collaboration/contract.test.ts",
   "packages/ui/test/codexCollaborationTools.test.ts",
@@ -38,6 +40,7 @@
   "packages/ui/test/modelProviderCodingPlan.test.ts",
   "packages/ui/test/providerFamilyConnectionVisibility.test.ts",
   "packages/ui/test/rootOAuthReauthentication.test.ts",
+  "packages/ui/test/rootWebRemoteStartup.test.ts",
   "packages/ui/test/settingsPageConfig.test.ts",
   "packages/ui/test/storeOAuthRestoreState.test.ts",
   "packages/ui/test/toolCallBlocks.test.ts",
@@ -49,5 +52,6 @@
   "packages/ui/test/v4SessionDataLayer.test.ts",
   "packages/ui/test/v4ToolCallRowAdapter.test.ts",
   "packages/ui/test/zcodeSessionProjection.test.ts",
-  "packages/web/test/webRemoteControlTransportV2.test.ts"
+  "packages/web/test/webRemoteControlTransportV2.test.ts",
+  "packages/web/test/selfHostedRemoteAuth.test.ts"
 ]

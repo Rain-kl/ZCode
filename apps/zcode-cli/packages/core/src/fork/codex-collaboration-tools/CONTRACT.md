@@ -10,6 +10,11 @@ Role rendering uses actual tool availability, depth and the shared normalized co
 Default depth excludes spawning by children. No unavailable host tool syntax is copied.
 Provider envelopes are rendered separately; provenance must be durable before Task3b
 projects them. Tests live in test/fork-codex-collaboration-tools.
+Canonical collaboration envelopes keep assistant identity. When the final provider
+message is such an envelope, provider projection must append a payload-free,
+host-owned continuation boundary so message-based providers do not interpret the
+envelope as an assistant prefill. The boundary is transient, is explicitly not user
+input, and must not alter latest-real-user accounting or canonical history.
 
 Task3b host adapters validate agent profiles against their available list and model
 selections against their model catalog. Factories cannot validate host availability.

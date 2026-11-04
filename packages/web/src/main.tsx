@@ -70,9 +70,9 @@ import type {
 
 import {
   WebRemoteControlEntry,
-  isWebRemoteControlOAuthCallback,
   type WebRemoteControlEntryConnection,
   createWebRemoteControlV2TokenClient,
+  createSelfHostedRemoteAuth,
   readKnownDevices,
   createWebRemoteControlDeviceClient,
   createWebRemoteControlBridgeRecoveryRunner,
@@ -223,6 +223,8 @@ function resolveWebThemePreference(defaultTheme: Theme = WEB_REMOTE_CONTROL_DEFA
 installDocumentHiddenMotionPause();
 const root = createRoot(document.getElementById("root")!);
 const webAuthService = createWebAuthService();
+// FORK(cloud-web-access): /remote/v4 使用部署者的 Relay 账号，分享页继续保持官方 OAuth。
+const selfHostedRemoteAuth = createSelfHostedRemoteAuth({ origin: window.location.origin });
 let isPageUnloading = false;
 
 // 初始化 Web 端流式 clientId，确保所有 hook 在首次渲染前就使用稳定 ID
@@ -278,12 +280,12 @@ function renderWebRemoteControlFailure(failure: WebRemoteControlFailure): void {
 }
 
 function isWebOAuthCallback(params: URLSearchParams): boolean {
+  // FORK(cloud-web-access): 官方 OAuth 只服务分享页，/remote/v4 不再进入官方回调处理。
   return (
-    isWebRemoteControlOAuthCallback(new URL(window.location.href)) ||
-    (["/cn/share/callback", "/share/callback"].includes(window.location.pathname) &&
-      params.has("state") &&
-      // BigModel 的 authCode 要先进入回调页，才能由 provider 归一化为 code。
-      (params.has("code") || params.has("authCode") || params.has("error")))
+    ["/cn/share/callback", "/share/callback"].includes(window.location.pathname) &&
+    params.has("state") &&
+    // BigModel 的 authCode 要先进入回调页，才能由 provider 归一化为 code。
+    (params.has("code") || params.has("authCode") || params.has("error"))
   );
 }
 
@@ -381,7 +383,8 @@ async function renderConversationSharePage(): Promise<void> {
 
 function renderWebLoginPage(): void {
   document.title = "ZCode - Web Remote Control Sign In";
-  root.render(<WebLoginPage onLogin={(provider) => remoteEntry.startLogin(provider)} />);
+  // FORK(cloud-web-access): 登录表单直接提交同源 Relay，不跳转官方 OAuth。
+  root.render(<WebLoginPage onLogin={(credentials) => remoteEntry.startLogin(credentials)} />);
 }
 
 // 访问 window.localStorage 本身在部分浏览器会抛错，统一包在方法里交给调用方兜底。
@@ -391,7 +394,8 @@ const webRemoteControlStorage: Pick<Storage, "getItem" | "setItem"> = {
 };
 
 const remoteEntry = new WebRemoteControlEntry({
-  auth: webAuthService,
+  // FORK(cloud-web-access): 远控身份与模型/分享 OAuth 分离，避免伪造官方 provider。
+  auth: selfHostedRemoteAuth,
   getHref: () => window.location.href,
   replaceHref: (href) => window.history.replaceState(window.history.state, "", href),
   storage: webRemoteControlStorage,
@@ -404,14 +408,13 @@ const remoteEntry = new WebRemoteControlEntry({
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   },
-  loginOptions: { devReturnTo: resolveWebAuthDevReturnTo(WEB_ZAI_OAUTH_CONFIG) },
   token: createWebRemoteControlV2TokenClient(window.location.origin),
   connect: (connection) => {
     void bootstrapExternalRelayWebRemoteControl(connection);
   },
   onView: (view) => {
-    if (view.kind === "callback") renderWebAuthCallbackPage();
-    else if (view.kind === "login") renderWebLoginPage();
+    // FORK(cloud-web-access): 自建远控没有 OAuth callback view，登录失败留在同源账号密码页。
+    if (view.kind === "login") renderWebLoginPage();
     else if (view.kind === "devices") {
       document.title = "ZCode - Web Remote Control";
       root.render(
@@ -1493,6 +1496,8 @@ async function bootstrapExternalRelayWebRemoteControl(
       windowProjectDirectory:
         response.bridge.kind === "remote" &&
         response.bridge.capabilities?.windowProjectDirectory === true,
+      // FORK(cloud-web-access): Source Server local bridge 不提供桌面专用 window-controller。
+      windowControllerService: response.bridge.kind === "remote",
       activateTransport: () => {
         // 能力 RPC 必须先有收帧目标；服务与 Root 仍等就绪后才切换。
         pendingRelayProtocol = relayProtocol;
@@ -1793,7 +1798,8 @@ async function bootstrapExternalRelayWebRemoteControl(
 
 async function bootstrapWebApp() {
   const params = new URLSearchParams(window.location.search);
-  if (isWebRemoteControlRoute() || isWebRemoteControlOAuthCallback(new URL(window.location.href))) {
+  // FORK(cloud-web-access): 远控 locale 只按真实路由设置，不再为旧 OAuth callback 形状开入口。
+  if (isWebRemoteControlRoute()) {
     document.documentElement.lang = resolveWebRemoteControlScreenLocale(navigator.language);
   }
   if (isWebOAuthCallback(params)) {

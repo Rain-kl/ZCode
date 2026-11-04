@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "yaml";
 
@@ -26,30 +29,61 @@ test("builds and complete test gates start after resolve without waiting for eac
       }
     }
   }
+  assert.match(jobs.verify.if, /needs\.resolve\.outputs\.prerelease != 'true'/);
+  assert.match(jobs["unit-tests"].if, /needs\.resolve\.outputs\.prerelease != 'true'/);
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
 });
 
-test("publication explicitly waits for every gate and rejects failure, skip and cancellation", () => {
+test("publication requires builds and stable-only test gates", () => {
   assert.deepEqual(jobs.publish.needs, gates);
   const condition = jobs.publish.if;
   assert.match(condition, /!cancelled\(\)/);
-  for (const gate of gates) {
-    assert.ok(condition.includes(`needs.${gate}.result == 'success'`), gate);
-  }
   function permits(results, cancelled = false) {
     const expression = condition
       .replace(/^\$\{\{\s*|\s*\}\}$/g, "")
       .replace(/cancelled\(\)/g, JSON.stringify(cancelled))
+      .replace(/needs\.resolve\.outputs\.prerelease/g, JSON.stringify(results.prerelease))
       .replace(/needs\.([\w-]+)\.result/g, (_, gate) => JSON.stringify(results[gate]));
     return Function(`"use strict"; return (${expression});`)();
   }
-  const success = Object.fromEntries(gates.map((gate) => [gate, "success"]));
+  const success = {
+    ...Object.fromEntries(gates.map((gate) => [gate, "success"])),
+    prerelease: "false",
+  };
   assert.equal(permits(success), true);
   assert.equal(permits(success, true), false);
-  for (const gate of gates) {
+  assert.equal(
+    permits({
+      ...success,
+      verify: "skipped",
+      "unit-tests": "skipped",
+      prerelease: "true",
+    }),
+    true,
+  );
+  for (const gate of [
+    "verify",
+    "unit-tests",
+    "build-macos",
+    "build-windows",
+    "build-source-server",
+  ]) {
     for (const result of ["failure", "skipped", "cancelled"]) {
       assert.equal(permits({ ...success, [gate]: result }), false, `${gate}: ${result}`);
     }
+  }
+  for (const gate of ["build-macos", "build-windows", "build-source-server"]) {
+    assert.equal(
+      permits({
+        ...success,
+        verify: "skipped",
+        "unit-tests": "skipped",
+        prerelease: "true",
+        [gate]: "failure",
+      }),
+      false,
+      `canary ${gate}: failure`,
+    );
   }
 });
 
@@ -76,7 +110,7 @@ test("four full-suite shards retain CLI, report and Electron prerequisites and r
   assert.ok(verify.includes("pnpm test:unit:fork"));
   assert.ok(
     verify.includes(
-      "node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs",
+      "node --test scripts/test/release-workflow.test.mjs scripts/test/release-sharding.test.mjs scripts/test/source-server-release.test.mjs scripts/test/server-installer.test.mjs",
     ),
   );
   assert.ok(!verify.includes("pnpm test:unit"));
@@ -101,5 +135,121 @@ test("only publish may write Releases; builders use identical version and SHA ou
       /gh release (create|edit|upload)|source-server-release\.mjs publish/,
     );
     assert.equal(job.steps.find((step) => step.name === "Checkout repository").with, undefined);
+  }
+});
+
+test("Source Server installation retries only transient failures and preserves final diagnostics", async (t) => {
+  const step = jobs["build-source-server"].steps.find(
+    (step) => step.name === "Install dependencies",
+  );
+  assert.equal(step.if, "steps.reuse.outputs.reused != 'true'");
+  const root = await mkdtemp(join(tmpdir(), "source-server-install-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pnpm = join(root, "pnpm");
+  const sleep = join(root, "sleep");
+  await writeFile(
+    pnpm,
+    `#!/usr/bin/env bash
+set -eu
+count=$(cat "$TEST_INSTALL_COUNTER")
+count=$((count + 1))
+echo "$count" > "$TEST_INSTALL_COUNTER"
+case "$TEST_INSTALL_MODE" in
+  transient) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
+  network) if [ "$count" -gt 1 ]; then exit 0; fi; echo 'EAI_AGAIN registry lookup'; exit 34 ;;
+  exhausted) echo 'ERR_PNPM_ENOENT temporary esbuild rename'; exit 33 ;;
+  config) echo 'ERR_PNPM_OUTDATED_LOCKFILE immutable lock mismatch'; exit 42 ;;
+esac
+exit 99
+`,
+  );
+  await writeFile(sleep, "#!/usr/bin/env bash\nexit 0\n");
+  await chmod(pnpm, 0o755);
+  await chmod(sleep, 0o755);
+  for (const [mode, status, attempts] of [
+    ["transient", 0, 2],
+    ["network", 0, 2],
+    ["exhausted", 33, 3],
+    ["config", 42, 1],
+  ]) {
+    await t.test(mode, async () => {
+      const counter = join(root, "attempts");
+      await writeFile(counter, "0\n");
+      const result = spawnSync("bash", ["-c", step.run], {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${root}:${process.env.PATH}`,
+          TEST_INSTALL_COUNTER: counter,
+          TEST_INSTALL_MODE: mode,
+        },
+      });
+      assert.ifError(result.error);
+      assert.equal(result.status, status, `${mode}: ${result.stdout}\n${result.stderr}`);
+      assert.equal(Number(await readFile(counter, "utf8")), attempts);
+      if (status !== 0) {
+        assert.match(result.stdout, /::error title=pnpm install failed::/);
+        assert.match(result.stdout, mode === "config" ? /OUTDATED_LOCKFILE/ : /esbuild rename/);
+      }
+    });
+  }
+});
+
+test("unit test install retries with --force after a transient linker failure", async (t) => {
+  const step = jobs["unit-tests"].steps.find((step) => step.name === "Install dependencies");
+  const root = await mkdtemp(join(tmpdir(), "unit-test-install-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pnpm = join(root, "pnpm");
+  const sleep = join(root, "sleep");
+  await writeFile(
+    pnpm,
+    `#!/usr/bin/env bash
+set -eu
+count=$(cat "$TEST_INSTALL_COUNTER")
+count=$((count + 1))
+echo "$count" > "$TEST_INSTALL_COUNTER"
+echo "$*" >> "$TEST_INSTALL_ARGS"
+if [ "$count" -eq 1 ]; then
+  echo 'ERR_PNPM_ENOENT temporary esbuild rename'
+  exit 33
+fi
+`,
+  );
+  await writeFile(sleep, "#!/usr/bin/env bash\nexit 0\n");
+  await chmod(pnpm, 0o755);
+  await chmod(sleep, 0o755);
+  const counter = join(root, "attempts");
+  const args = join(root, "args");
+  await writeFile(counter, "0\n");
+  await writeFile(args, "");
+  const result = spawnSync("bash", ["-c", step.run], {
+    cwd: root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${root}:${process.env.PATH}`,
+      TEST_INSTALL_COUNTER: counter,
+      TEST_INSTALL_ARGS: args,
+    },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const invocations = (await readFile(args, "utf8")).trim().split("\n");
+  assert.equal(invocations.length, 2);
+  assert.doesNotMatch(invocations[0], /--force/);
+  assert.match(invocations[1], /--force/);
+});
+
+test("all dependency install retries force a clean relink after the first attempt", () => {
+  for (const name of [
+    "verify",
+    "unit-tests",
+    "build-macos",
+    "build-windows",
+    "build-source-server",
+  ]) {
+    const step = jobs[name].steps.find((step) => step.name === "Install dependencies");
+    assert.ok(step?.run?.includes("args+=(--force)"), name);
   }
 });

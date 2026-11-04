@@ -52,11 +52,22 @@ import {
   unregisterLegacyServiceForRoot,
 } from "./runtime/serviceInstallation.js";
 import { ProxyStdioError, runProxyStdio } from "./server-core/proxyStdio.js";
+// FORK-BEGIN(cloud-web-access): 公开 server 命令组复用既有生命周期，只新增配置和日志边界。
+import {
+  configureRemoteConnection,
+  CLOUD_WEB_ACCESS_REQUIRED_ENV,
+  followServerLogs,
+  readServerLogSnapshot,
+  requireRemoteConnectionConfig,
+} from "./fork/cloud-web-access/module.js";
+// FORK-END(cloud-web-access)
 
 export interface CliIO {
   stdout?: { write(value: string): void };
   stderr?: { write(value: string): void };
   confirm?: (prompt: string) => Promise<string>;
+  // FORK(cloud-web-access): connect 的密码输入不经过普通回显 stdin。
+  promptSecret?: (prompt: string) => Promise<string>;
   legacyDelegate?: (argv: readonly string[]) => Promise<number>;
 }
 
@@ -66,6 +77,10 @@ export interface ServerCliRuntimeOptions {
   workspaceAliasRepo?: Pick<SourceServerWorkspaceAliasRepo, "retryFailedWorkspace">;
   /** process/service manager 是更新协调器的外部边界；测试可注入受控实现。 */
   updateDaemonHandoff?: UpdateDaemonHandoff;
+  // FORK(cloud-web-access): 非交互连接与测试只注入受控输入/认证端口。
+  /** connect 的密码输入只从 stdin 注入，禁止命令行明文参数。 */
+  passwordInput?: Readable;
+  remoteAuthFetch?: typeof fetch;
 }
 
 const stdout = (io: CliIO, value: unknown): void =>
@@ -115,9 +130,15 @@ export async function runServerCli(
   io: CliIO = {},
   runtimeOptions: ServerCliRuntimeOptions = {},
 ): Promise<number> {
-  const json = argv.includes("--json");
+  // FORK-BEGIN(cloud-web-access): server 命令组与全局参数复用原解析器及生命周期。
+  let json = argv.includes("--json");
   try {
-    const parsed = parseServerCliArguments(argv);
+    // 原因：包装器附加的全局 root 会被 `server` 当作子命令；先移除全局参数再分发。
+    const scopedArguments = parseServerCliArguments(argv);
+    const normalizedArgv = normalizeServerCommandGroup(scopedArguments.argv);
+    json = normalizedArgv.includes("--json");
+    const parsed = { argv: normalizedArgv, layout: scopedArguments.layout };
+    // FORK-END(cloud-web-access)
     const command = parsed.argv[0];
     if (command === "version" || command === "--version") {
       // Bug 原因：Server --version 过去落入 legacy delegate，实际输出取决于旁边的 Agent
@@ -134,7 +155,17 @@ export async function runServerCli(
     // 同一物理 data-root 的符号链接别名会派生不同 control endpoint 和 OS service
     // identity。生命周期命令统一在 IO 前收敛 root，避免第二个 Supervisor 绕过探测重复注册。
     const layout =
-      ["serve", "status", "stop", "restart", "update", "uninstall"].includes(command) ||
+      // FORK(cloud-web-access): server 命令也必须在同一 canonical root 上解析生命周期。
+      [
+        "serve",
+        "status",
+        "stop",
+        "restart",
+        "update",
+        "uninstall",
+        "server-connect",
+        "server-logs",
+      ].includes(command) ||
       proxyStdioRequested ||
       migrateRetryRequested
         ? await resolveCanonicalServerLayout(parsed.layout.serverRoot)
@@ -167,7 +198,29 @@ export async function runServerCli(
       return 0;
     }
     switch (command) {
+      // FORK-BEGIN(cloud-web-access): server connect/logs 是独立边界，up/down 仍调用原生命周期 owner。
+      case "server-connect":
+        return await runServerConnect(parsed.argv.slice(1), io, json, layout, runtimeOptions);
+      case "server-logs":
+        return await runServerLogs(parsed.argv.slice(1), io, layout);
+      case "server-help":
+        stdout(
+          io,
+          [
+            "Usage: zcode server <command>",
+            "",
+            "Commands:",
+            "  connect --url <https-origin> --username <name> --password-stdin",
+            "  up [-d]",
+            "  down",
+            "  logs [-f]",
+          ].join("\n"),
+        );
+        return 0;
       case "serve":
+        if (parsed.argv.includes("--require-remote-config")) {
+          await requireRemoteConnectionConfig(layout);
+        }
         return await runServe(parsed.argv.slice(1), io, json, layout, runtimeOptions);
       case "stop":
         // Bug 原因：runControl 不接收 argv，`stop --wait` 曾被当成 ack 型 stop 立即返回，
@@ -233,6 +286,7 @@ export async function runServerCli(
       }
       default:
         return await (io.legacyDelegate?.(parsed.argv) ?? delegateLegacyCli(parsed.argv, io));
+      // FORK-END(cloud-web-access)
     }
   } catch (error: unknown) {
     if (json) {
@@ -253,6 +307,207 @@ export async function runServerCli(
     return 1;
   }
 }
+
+// FORK-BEGIN(cloud-web-access): 用户可见 server 命令只做语义归一，不复制 Supervisor 状态机。
+export function normalizeServerCommandGroup(argv: readonly string[]): readonly string[] {
+  if (argv[0] !== "server") return argv;
+  const subcommand = argv[1];
+  const args = argv.slice(2);
+  if (!subcommand) return ["server-help", ...args];
+  if (subcommand === "proxy-stdio") return ["proxy-stdio", ...args];
+  if (subcommand === "connect") return ["server-connect", ...args];
+  if (subcommand === "logs") {
+    validateServerCommandOptions(args, new Set(["-f", "--follow"]), "logs");
+    return ["server-logs", ...args];
+  }
+  if (subcommand === "down") {
+    validateServerCommandOptions(args, new Set(["--json"]), "down");
+    return ["stop", "--wait", ...args];
+  }
+  if (subcommand === "up") {
+    const normalized: string[] = ["serve", "--require-remote-config"];
+    for (let index = 0; index < args.length; index += 1) {
+      const option = args[index];
+      if (option === "-d") normalized.push("--daemon");
+      else if (option === "--json") normalized.push(option);
+      else if (option === "--server-root") {
+        const root = args[index + 1];
+        if (!root) throw new Error("--server-root requires a value");
+        normalized.push(option, root);
+        index += 1;
+      } else throw new Error(`Unknown server up option: ${option}`);
+    }
+    return normalized;
+  }
+  throw new Error(`Unknown server command: ${subcommand}`);
+}
+
+function validateServerCommandOptions(
+  args: readonly string[],
+  flags: ReadonlySet<string>,
+  command: string,
+): void {
+  for (let index = 0; index < args.length; index += 1) {
+    const option = args.at(index);
+    if (typeof option !== "string") continue;
+    if (flags.has(option)) continue;
+    if (option === "--server-root") {
+      if (!args[index + 1]) throw new Error("--server-root requires a value");
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown server ${command} option: ${option}`);
+  }
+}
+
+async function readPassword(input: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of input) {
+    const buffer = Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > 4_098) throw new Error("Relay password input is too long");
+    chunks.push(buffer);
+  }
+  let value: string;
+  try {
+    value = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+  } catch (error) {
+    throw new Error("Relay password stdin must be valid UTF-8", { cause: error });
+  }
+  if (value.endsWith("\r\n")) value = value.slice(0, -2);
+  else if (value.endsWith("\n")) value = value.slice(0, -1);
+  if (value.includes("\n") || value.includes("\r")) {
+    throw new Error("Relay password stdin must contain exactly one line");
+  }
+  return value;
+}
+
+function optionValue(args: readonly string[], name: string): string | undefined {
+  const indexes = args.flatMap((value, index) => (value === name ? [index] : []));
+  if (indexes.length > 1) throw new Error(`${name} may only be specified once`);
+  const index = indexes[0];
+  if (index === undefined) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
+  return value;
+}
+
+async function runServerConnect(
+  args: readonly string[],
+  io: CliIO,
+  json: boolean,
+  layout: ReturnType<typeof resolveServerLayout>,
+  runtimeOptions: ServerCliRuntimeOptions,
+): Promise<number> {
+  const configuredEndpoint = optionValue(args, "--url");
+  const configuredUsername = optionValue(args, "--username");
+  const passwordStdin = args.includes("--password-stdin");
+  if (args.filter((value) => value === "--password-stdin").length > 1) {
+    throw new Error("--password-stdin may only be specified once");
+  }
+  const consumed = new Set([
+    "--url",
+    configuredEndpoint,
+    "--username",
+    configuredUsername,
+    "--password-stdin",
+    "--json",
+  ]);
+  const unknown = args.find((value) => !consumed.has(value));
+  if (unknown) throw new Error(`Unknown server connect option: ${unknown}`);
+  const hasAnyNonInteractiveOption = Boolean(
+    configuredEndpoint || configuredUsername || passwordStdin,
+  );
+  if (
+    hasAnyNonInteractiveOption &&
+    (!configuredEndpoint || !configuredUsername || !passwordStdin)
+  ) {
+    throw new Error(
+      "Non-interactive connect requires --url, --username and --password-stdin together",
+    );
+  }
+  if (!hasAnyNonInteractiveOption && (!io.confirm || !io.promptSecret)) {
+    throw new Error(
+      "Interactive connect requires a terminal; otherwise provide --url, --username and --password-stdin",
+    );
+  }
+  // FORK(cloud-web-access): 交互输入只通过端口获取，密码不进入 argv、日志或普通回显。
+  const endpoint = configuredEndpoint ?? (await io.confirm?.("Relay URL: "))?.trim() ?? "";
+  const username = configuredUsername ?? (await io.confirm?.("Username: "))?.trim() ?? "";
+  const password = passwordStdin
+    ? await readPassword(runtimeOptions.passwordInput ?? process.stdin)
+    : ((await io.promptSecret?.("Password: ")) ?? "");
+  if (!endpoint) throw new Error("Relay URL is required");
+  if (!username) throw new Error("Relay username is required");
+  if (!password) throw new Error("Relay password is required");
+  const lock = await acquireLifecycleCommandLock(
+    layout,
+    "Another ZCode Server lifecycle operation is already running",
+  );
+  const serverLock = new DataRootLock(layout.lockFile);
+  try {
+    try {
+      await serverLock.acquire();
+    } catch (error) {
+      throw new Error("Stop ZCode Server before changing its relay connection", { cause: error });
+    }
+    const config = await configureRemoteConnection({
+      layout,
+      endpoint,
+      username,
+      password,
+      fetcher: runtimeOptions.remoteAuthFetch,
+    });
+    stdout(
+      io,
+      json
+        ? {
+            ok: true,
+            endpoint: config.endpoint,
+            username: config.username,
+            expiresAt: config.expiresAt,
+          }
+        : `ZCode Server connected to ${config.endpoint} as ${config.username}`,
+    );
+    return 0;
+  } finally {
+    await serverLock.release().catch(() => undefined);
+    await lock.release();
+  }
+}
+
+async function runServerLogs(
+  args: readonly string[],
+  io: CliIO,
+  layout: ReturnType<typeof resolveServerLayout>,
+): Promise<number> {
+  const follow = args.includes("-f") || args.includes("--follow");
+  const snapshot = await readServerLogSnapshot(layout);
+  if (snapshot.lines.length === 0 && !follow) {
+    stdout(io, "No ZCode Server logs found");
+    return 0;
+  }
+  for (const line of snapshot.lines) io.stdout?.write(`${line}\n`);
+  if (!follow) return 0;
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    await followServerLogs({
+      layout,
+      signal: controller.signal,
+      writeLine: (line) => io.stdout?.write(`${line}\n`),
+      offsets: snapshot.offsets,
+    });
+  } finally {
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+  }
+  return 0;
+}
+// FORK-END(cloud-web-access)
 
 function parseServerCliArguments(argv: readonly string[]): {
   argv: readonly string[];
@@ -284,6 +539,8 @@ async function runServe(
 ): Promise<number> {
   const daemonRequested = args.includes("--daemon");
   const supervisorProcess = args.includes("--supervisor");
+  // FORK(cloud-web-access): server up 强制配置；普通 serve 保持无配置可用。
+  const requireCloudWebAccess = args.includes("--require-remote-config");
   if (shouldRegisterService(daemonRequested, supervisorProcess)) {
     let startupMode = daemonStartupMode();
     const platform =
@@ -342,7 +599,12 @@ async function runServe(
         command: process.execPath,
         entry: process.argv[1] ?? fileURLToPath(import.meta.url),
       });
-      const descriptor = createDaemonServiceDescriptor({ platform, layout });
+      // FORK(cloud-web-access): OS service 重拉时需要保留同一 Relay 启动模式。
+      const descriptor = createDaemonServiceDescriptor({
+        platform,
+        layout,
+        requireCloudWebAccess,
+      });
       await mkdir(layout.serviceDir, { recursive: true, mode: 0o700 });
       const descriptorPath = serviceDescriptorPath(layout, descriptor);
       await writeFile(descriptorPath, descriptor.content, "utf8");
@@ -366,19 +628,23 @@ async function runServe(
       // Bug 原因：archive bootstrap 协调更新时 import.meta.url 指向临时解压目录；handoff
       // 后该目录会被清理。fallback 必须复用本次目标 release 的真实 argv 入口。
       const supervisorEntry = process.argv[1] ?? fileURLToPath(import.meta.url);
-      const child = fork(
-        supervisorEntry,
-        [...SERVER_SERVICE_ARGS, "--server-root", layout.serverRoot],
-        {
-          detached: true,
-          stdio: "ignore",
-          env: {
-            ...process.env,
-            ZCODE_DATA_BASE_DIR: layout.dataBaseDir,
-            ZCODE_SERVER_ROOT: layout.serverRoot,
-          },
+      const supervisorArgs = [
+        ...SERVER_SERVICE_ARGS,
+        "--server-root",
+        layout.serverRoot,
+        ...(requireCloudWebAccess ? ["--require-remote-config"] : []),
+      ];
+      const child = fork(supervisorEntry, supervisorArgs, {
+        detached: true,
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          ZCODE_DATA_BASE_DIR: layout.dataBaseDir,
+          ZCODE_SERVER_ROOT: layout.serverRoot,
+          // FORK(cloud-web-access): 将 server up 的强制模式传给 Supervisor/Core。
+          [CLOUD_WEB_ACCESS_REQUIRED_ENV]: requireCloudWebAccess ? "1" : "0",
         },
-      );
+      });
       child.unref();
       // Supervisor 是独立 daemon，不需要保留 CLI↔Supervisor 的 IPC 通道；关闭该通道
       // 才能让一次性的 `serve --daemon` CLI 在返回 ready 后真正退出。
@@ -452,6 +718,8 @@ async function runServe(
           ...process.env,
           ZCODE_DATA_BASE_DIR: layout.dataBaseDir,
           ZCODE_SERVER_ROOT: layout.serverRoot,
+          // FORK(cloud-web-access): Core 只在 server up 时把 Relay 配置缺失视为失败。
+          [CLOUD_WEB_ACCESS_REQUIRED_ENV]: requireCloudWebAccess ? "1" : "0",
         };
         const releaseWiring = runtimeRoot
           ? createReleaseAgentWiring(runtimeRoot, runtimeNode, inheritedEnv)
@@ -464,7 +732,10 @@ async function runServe(
             ...(runtimeRoot ? { ZCODE_SERVER_RUNTIME_ROOT: runtimeRoot } : {}),
             ...(release?.releaseId ? { ZCODE_SERVER_RELEASE_ID: release.releaseId } : {}),
           },
-          stdio: ["ignore", "ignore", "ignore", "ipc"],
+          // FORK(cloud-web-access): 前台 up 直接展示 Core 日志；daemon 仍只写持久日志。
+          stdio: daemon
+            ? ["ignore", "ignore", "ignore", "ipc"]
+            : ["ignore", "inherit", "inherit", "ipc"],
         });
       },
     },

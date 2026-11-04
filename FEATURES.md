@@ -14,8 +14,36 @@
 
 标记自查：`rg -n "FORK\(|FORK-BEGIN\(" --glob '!AGENTS.md' --glob '!FEATURES.md'`
 
-## Codex 协作迁移与有界模型恢复 (codex-collaboration)
+## 自建云端网页远控 (cloud-web-access)
 
+- **状态**：开发中（2026-11-03）。设计与验收合同已冻结；Relay、Server 主动连接层、`zcode server` 命令和网页闭环均须以实际验证结果逐项转正。
+- **需求背景**：在云主机运行 ZCode Server，不开放入站端口、不依赖 Cloudflare Tunnel；Server 主动连接用户自建的 Cloudflare Worker/DO，手机或电脑浏览器以同一套单租户账号密码登录并远程操作现有项目、任务和 Agent。
+- **本期范围**：保持官方 Relay V2 与单 owner 语义；同 SID 新手机替换旧手机，旧端收到 `KICKED`。Relay 只负责认证、设备、一次性票据、配对、心跳和透明转发，不保存任务、快照、队列或业务正文。Server 复用既有 Core/Supervisor/锁/control endpoint，提供 `connect`、`up [-d]`、`down`、`logs [-f]`；网页沿用现有手机远控 UI、缓存和离线行为。
+- **明确不做**：本期不增加多手机同时控制同一实例、不增加离线只读、不移除 WebDAV、不把账号密码当模型平台令牌、不恢复上游云账号依赖。
+- **修改文件**：新增 `packages/fork-remote-relay/**`、`packages/fork-remote-connector/**`、`packages/zcode-server-cli/src/fork/cloud-web-access/**` 和 Web/UI 自建认证入口；在 `packages/zcode-server-cli`、`packages/web`、`packages/ui`、根 typecheck/架构/测试清单保留最小接线。
+- **上游改动标记**：触及上游既有产品代码时使用 `FORK(cloud-web-access)`；独立 fork 包和新增文件无需逐行标记。
+- **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
+- **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。当前已通过本地 workerd、Connector、CLI/Web 定向测试和浏览器进入工作区；真实 Cloudflare、发行包、公网手机及模型回复未验证。
+
+### Server loopback RPC 首帧有序交付（2026-11-03）
+
+- **背景与行为**：Headless Server 的 Core `/ws` 可以在 router 注册 bridge listener 前立即发出 RPC `Initialize`。连接层从 socket 建立起暂存这段窗口内的 Core 帧，listener 注册后按到达顺序仅交付一次，保证浏览器 RPC 完成初始化并进入工作区。
+- **文件与标记**：`packages/fork-remote-connector/src/connector.ts` 与就近回归测试；独立 fork 包无需上游逐行标记。
+- **设计与落地**：[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
+### Headless 项目目录与能力边界（2026-11-03）
+
+- **背景与行为**：手机新建项目时，“此电脑”指当前 Server；`local` 由 Server 解析为自身 owner host，目录浏览直接读取云主机文件系统。local bridge 不提供桌面 `window-controller`，客户端也不再向不存在的可选通道发请求。
+- **文件与标记**：`packages/services/src/project/index.ts`、`packages/client/src/remoteServiceAccess.ts`、Web remote bridge 接线与回归测试；上游文件使用 `FORK(cloud-web-access)`。
+- **设计与落地**：[设计](docs/features/cloud-web-access/design.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
+
+### Server 安装路径与资源统一（2026-11-03）
+
+- **背景与行为**：一键安装与 SSH 自动安装共用 `~/.zcode/server`、`current.json`、稳定启动入口和既有生命周期/任务/降级保护，避免双版本树。迁移旧脚本拥有的 PATH 命令，保留旧文件与业务数据。补齐独立 Agent 所需的同次构建 provider 配置，整包与 agent-runtime 组件共用资源身份。
+- **文件与标记**：`scripts/install-server.sh`、Server `packaging/stage.ts`、发布校验与回归、README；上游产品接线使用 `FORK(cloud-web-access)`。
+- **设计与落地**：[安装合同](docs/specs/server-installer.md)、[实现记录](docs/features/cloud-web-access/implementation.md)、[部署](docs/features/cloud-web-access/deployment.md)。
+
+## Codex 协作迁移与有界模型恢复 (codex-collaboration)
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留六工具与共享控制器唯一所有者；接入上游单 session closeOwnedWork/close 清理，旧 runner/四工具继续缺席，删除已无消费者的 `core/src/subagent/completion-notification.ts` 并登记移除守卫；运行中输入保持安全边界 guide，不采用上游 stop-then-start；用户确认 Retry-After 按上游接受最长 5 分钟的提示并增加最多 5 秒正向 jitter，普通退避仍最多 30 秒、共享预算仍最多 21 次物理请求；吸收 session features 与上下文投影修复。处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：2026-11-03，模型恢复、steer 安全边界、协作控制器、六工具/角色/真实 runtime/mailbox、客户端冷投影与旧展示入口清理均已实施，通过独立规格与质量审查。六工具真实桌面会话 CSC01 已验收；完整验证及未覆盖边界见实现文档。
@@ -51,6 +79,12 @@
 - **文档与验证**：[desktop-client-acceptance](docs/features/codex-collaboration/desktop-client-acceptance.md)。最终客户端 bundle 正式steer5/5、48.2秒；CSC01按真实交互展开历史后1/1、19秒。不同构建的结果分别保留，不合并计数。独立规格与质量审查通过；用例未人工转正，手机 GUI 与 cold seed 由各自证据边界约束。
 - **客户端接线**：[client-implementation](docs/features/codex-collaboration/client-implementation.md)。shared六工具身份、UI/TUI详情、canonical冷身份查询、同会话续跑、代际防回退与双交付重放已验证；删除旧专属renderer及ACK/output_file解析。配对卡片派生child具体失败原因，保持原成功spawn结果不变，先红后绿56项回归及最终双审通过。
 
+### 协作消息可见性与跨模型继续边界（2026-11-03）
+
+- **现场与根因**：配对 spawn 卡片把整行作为 child 下钻动作后禁用了详情，导致已持久化的任务 `message` 无法查看；另有 Chat Completions 兼容模型把请求末尾的 assistant 协作信封当作续写前缀，输出内部计划且不调用 `followup_task`。日志与 model-io 证明异常请求为 reasoning=0、tool=0、全部进入 text，并非 UI 折叠组件把 reasoning 展开。
+- **修改内容**：spawn 主摘要继续打开 child，新增独立详情 disclosure 展示实际发送内容；协作信封仍保持 Codex assistant 身份，provider-only 请求末尾追加不含载荷、明确非用户输入的继续边界。禁止按长度或英文特征猜测思维链，正确 provider reasoning 仍走原折叠链路。
+- **修改文件与标记**：`packages/ui/src/ToolCallBlocks/{ToolLayout,ToolSummaryRow}.tsx` 及协作 UI/桌面验收；Core `provider-request-messages.ts` 仅保留 `FORK(codex-collaboration)` 接线，规则与文案归入 managed `codex-collaboration-tools` 模块；设计与验证见 [design](docs/features/codex-collaboration/design.md)、[client-implementation](docs/features/codex-collaboration/client-implementation.md) 和实现记录。
+
 ### steer 安全边界更正（2026-11-02）
 
 - **现场与规则**：实测手动提升队列项触发父轮取消，并连带停止全部 5 个子代理。steer 应在当前请求和工具结果完整返回后的安全边界插入，禁止 stop-then-start。
@@ -66,8 +100,8 @@
 
 ## 本地模式：去云账号 + WebDAV 配置同步 (local-mode)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留上游请求策略与 ARMS 禁用；合入新版初始化过滤和远程服务接线。上游设备配置推送与本 fork WebDAV 备份用途不同，保持各自所有者。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
+
 ### 禁用 ARMS 时保持启动可用（2026-11-02）
 
 - **背景与修改**：local-mode 不初始化 ARMS，但 Main 身份同步仍调用未初始化 SDK，导致首窗创建前抛出 `Config not initialized`。身份同步现在使用同一个 fork 开关，禁用时不写 SDK，且只在成功写入后记录去重状态。
@@ -137,7 +171,6 @@
 
 ## 移除闲时任务入口 (offpeak-removal)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：继续移除闲时任务用户入口；合入生命周期内部清理而不恢复已删除入口，移除守卫验证。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已实现（2026-09-29）：工具面与创建路径两处入口撤掉，其余实现保留为死代码。
 - **需求背景**：闲时任务（off-peak）要云端取号服务 + 账号上的 Coding Plan 连接才能用。本 fork 正在去云账号与 Coding Plan 体系（见 `local-mode`），用户只用自定义服务提供商，于是这个功能**永远无法创建**，却仍留在模型上下文里：宿主下发的灰度开关一旦为真，两个工具（描述 + 每个 8 条模型指令 + JSON Schema）就会进入**每一次**模型请求（实测本机会话的工具面里就有它们），token 买来的是一个必然失败的工具，模型也可能去调它并拿到「没有可用连接」这类无用失败。
@@ -154,7 +187,6 @@
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/bootstrap/src/zcode-protocol/server-operations.ts`。上游为闲时任务重新注入 `OffPeakPort`；本 fork 继续移除该入口，因为它依赖云端取号与 Coding Plan。保留上游新增的 `topicResourcePort`。
 
 ## 功能组：工具模式与工具注入 (tool-modes)
-
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：适配上游动态公告结构，工具/动态提示词/skills 注入开关仍在各自创建入口生效，不能由新公告绕过。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：保留配置服务、设置入口及 reload 档位刷新，并与上游 ToolSearch 可见性条件共同生效。
@@ -182,7 +214,6 @@
 
 ## 系统指令：用户自定义提示词 (identity-preset)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留预设提示词与动态注入边界；上游个性化编辑用户级 AGENTS.md，语义不同，不取代预设。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：node.ts 合入 storage migration barrier 与 standalone server 服务工厂，保留配置存储根目录导出和设置入口。
 
@@ -207,7 +238,6 @@
 
 ## 覆盖设置热重载：/refresh 命令 (reload-command)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：用户明确选择原设置重载改名 `/refresh`，保留既有维护轮、排队与历史 reload completion 事件；上游 `/reload` 由 App lifecycle 执行单任务重启，两条路由隔离。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **命令改名（2026-11-03）**：用户确认将 fork 设置热重载入口改为 `/refresh`，保留上游 `/reload` 的单任务重启语义；新信封与队列 kind 使用 `refresh`，持久化完成事件/marker 不改名，避免破坏历史。设计与实现见本条原文档。
 - **公告迁移兼容（2026-11-03）**：上游把 skills/动态公告迁入会话附件后，维护入口复用现有公告协调器撤回已关闭设置的旧附件；只调整模型内存投影，不改写普通对话、AGENTS 或原始持久记录，防止 `/refresh` 成功但下轮仍沿用旧设置。真实多轮回归及子代理隔离边界见本条与 identity-preset 实现文档。
@@ -231,8 +261,8 @@
 
 ## GitHub 更新通道 (github-update)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：继续使用 GitHub feed 与精确 source-server release 版本，不恢复 ManifestUpdateProvider/强更端点；合入启动参数边界加固。用户确认 Windows 自动更新继续允许未签名安装包，不采用上游强制 Authenticode 策略，运行时与打包配置保持一致。处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
+
 ### 远程 Server 从 GitHub 配套发布（2026-11-02）
 
 - **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
@@ -243,6 +273,12 @@
   上游接线使用 `FORK(github-update)`，下载失败携带 URL 与具体错误。
 - **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
   [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+
+### 开发渠道 Source Server 版本门（2026-11-03）
+
+- **背景与行为**：dev Desktop 使用提交哈希作为版本后缀，哈希大小不代表构建先后，旧的字符串比较会把较新的 Server 误判为过旧。开发渠道连接 Source Server 时跳过最低版本比较与升级提示；正式版继续严格校验，缺失 compatibility manifest 的旧 Server 仍拒绝。
+- **文件与标记**：`packages/shared/src/source-server/compatibility.ts`、`packages/desktop/src/host/sourceServerConnectionManager.ts` 与回归测试；上游接线使用 `FORK(github-update)`。
+- **设计与落地**：[设计](docs/features/github-update/design.md#2026-11-03-开发渠道-source-server-版本门)、[实现](docs/features/github-update/implementation.md#8-开发渠道-source-server-版本门2026-11-03)。
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：autoUpdater 保留 GitHub feed 和无强更语义；吸收上游下载缓存提交、安装锁与失败恢复逻辑。将缓存 ready 时序回归改用普通下载/安装路径；继续删除 manifestUpdateProvider 与强更专属测试。
 
@@ -264,7 +300,6 @@
 
 ## 编辑 stale 判据改为内容哈希 (edit-stale-guard)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留内容哈希 stale 判据，吸收上游 Read 范围冷恢复与 snapshotIndex 顺序，不能退回仅时间戳判断。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已完成（2026-09-29）
 - **需求背景**：`Edit` / `Write` 写入前要判「文件自模型读取后是否被改过」，上游用 mtime + size 代理，两个方向都会出错。**误报**：唯一的豁免只对「严格整读」生效，range Read（offset/limit）拿不到它，于是格式化器空保存、IDE 保存、git 触碰、同一 workspace 的另一个会话只要推进了 mtime，就被判 stale，哪怕字节没变。**漏报**：判「变了」要求 mtime 严格变大，mtime 不前进且 size 相同时直接放行且不比对内容（write.ts 的最终内容比对只覆盖整读），于是 `cp -p`、`tar -x`、`rsync -t` 这类保留时间戳的写入会静默覆盖别的进程刚写下的内容。
@@ -282,7 +317,6 @@
 - **上游同步记录**：暂无。
 
 ## 非流式走流式通道 (nonstream-via-stream)
-
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留非流式经流式通道的 fork 入口与错误语义，合入上游独立模型计数/能力字段。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：runtime-model.ts 以上游 invocation/off-peak binding 结构为基线，在最外层保留流式转非流式适配。
@@ -307,7 +341,6 @@
 
 ## WebFetch 直返正文（取消摘要）(webfetch-direct-return)
 
-
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保持 WebFetch 直返正文与共享结果预算，不恢复模型摘要阶段。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **状态**：已实现（2026-09-29）。单测 11 例、全量单测、类型检查、lint、架构检查与移除守卫均通过；端到端复验（改动后的 bundle 里抓一次页面、确认日志无**新增** `web_fetch_processing`）待新进程验证。
 - **需求背景**：上游 WebFetch 固定两段式——抓页面抽正文后**再调一次模型**把正文压成摘要，用摘要回答调用方传入的 `prompt`。实测这次往返的代价（14 条 `querySource=web_fetch_processing` 记录）：中位 **16.2 秒**、均值 14.1 秒，其中**一个 510 字符的页面也要 3,970 ms**——耗时来自「一次完整模型往返（含 reasoning）」，与正文长度几乎无关。因此速度问题无法靠调阈值解决，只有取消这次调用；而上下文之所以受控，是摘要输出被 4096 token 封顶换来的，取消摘要后必须由别的机制接管封顶，否则 64,850 字符的页面会整段进上下文。
@@ -331,7 +364,6 @@
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `apps/zcode-cli/packages/core/src/tool/handlers/webfetch.ts` 与上游修改的 `webfetch-processing.ts`。上游保留加工模型摘要；本 fork 直返抽取正文并以 `resultBudget` 封顶。保留直返语义及 `webfetch-processing.ts` 删除，避免恢复额外模型往返。
 
 ## 网络搜索渠道 (search-providers)
-
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：保留自定义搜索渠道，按最新工具注册合同适配。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：config.ts 合入 ToolSearch/DeferredToolCall 可见性规则，WebSearch 继续调用 fork 的普通形参判据；设置页保留渠道管理入口。
@@ -368,7 +400,6 @@
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：冲突文件 `packages/client/src/remoteServiceAccess.ts`。保留 WebDAV、identity preset、tool mode、search-provider 的清单门控服务，同时合入上游 `IGenUiService` 与 output-style 通道。
 
 ## 通道清单驱动的服务可用性 (rpc-channel-manifest)
-
 
 - **上游同步记录（2026-11-03，`3c5b2276..a60ba6a7`）**：合并新远程服务/数据同步能力，并保留通道清单驱动的服务可用性判断。 处理与验证见 [同步记录](docs/specs/upstream-sync-20261103.md)。
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：remoteServiceAccess.ts 合入窗口目录及 source server management 能力选项；保留清单门控与 fork 服务，兼容旧 Host。

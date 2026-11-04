@@ -86,7 +86,9 @@ function SummaryLeadingContent({
           {kindLabel}
         </span>
       ) : null}
-      {kindDetail ? <span className="min-w-0 shrink-0">{kindDetail}</span> : null}
+      {kindDetail ? (
+        <span className="min-w-0 shrink-0">{kindDetail}</span>
+      ) : null}
       {sourceLabel ? (
         <span
           className={cn(
@@ -127,9 +129,12 @@ function SummaryContent({
   | "separator"
   | "statusNode"
 >) {
-  const hasSummaryContent = [primaryText, secondaryText, diffCount, statusNode].some(
-    (node) => node != null && node !== false && node !== "",
-  );
+  const hasSummaryContent = [
+    primaryText,
+    secondaryText,
+    diffCount,
+    statusNode,
+  ].some((node) => node != null && node !== false && node !== "");
 
   // 展开态可能主动清空摘要，但渲染空 flex 容器的话，标题行的 gap
   // 会在“类别—空容器—箭头”之间计算两次，视觉上形成一块异常大的空白。
@@ -162,7 +167,15 @@ function SummaryContent({
 }
 
 export function ToolSummaryRow(props: ToolSummaryRowProps) {
-  const { action, canToggle, forceOpen, isExpanded, title, toggleAriaLabel, toolId } = props;
+  const {
+    action,
+    canToggle,
+    forceOpen,
+    isExpanded,
+    title,
+    toggleAriaLabel,
+    toolId,
+  } = props;
   const sharedContent = (
     <>
       <SummaryLeadingContent {...props} />
@@ -170,22 +183,52 @@ export function ToolSummaryRow(props: ToolSummaryRowProps) {
     </>
   );
 
+  // FORK-BEGIN(codex-collaboration)
+  // 子代理摘要同时承担“打开子会话”和“查看本次工具输入”两个语义，必须用两个独立控件，
+  // 否则主动作会吞掉 disclosure，用户无法核对主代理实际发出的任务正文。
   if (action) {
     return (
-      <div
-        data-testid={action.testId ?? testId(TID_TOOL_SUMMARY_TRIGGER, toolId)}
-        role="button"
-        tabIndex={0}
-        aria-label={action.ariaLabel}
-        onClick={action.onActivate}
-        onKeyDown={(event) => handleToolSummaryActionKeyDown(event, action.onActivate)}
-        className="group/tool-summary inline-flex max-w-full cursor-pointer items-center gap-2 self-start text-left text-ui-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
-        title={title}
-      >
-        {sharedContent}
+      <div className="inline-flex max-w-full items-center gap-1 self-start">
+        <div
+          data-testid={
+            action.testId ?? testId(TID_TOOL_SUMMARY_TRIGGER, toolId)
+          }
+          role="button"
+          tabIndex={0}
+          aria-label={action.ariaLabel}
+          onClick={action.onActivate}
+          onKeyDown={(event) =>
+            handleToolSummaryActionKeyDown(event, action.onActivate)
+          }
+          className="group/tool-summary inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 text-left text-ui-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+          title={title}
+        >
+          {sharedContent}
+        </div>
+        {canToggle ? (
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              data-testid={testId(TID_TOOL_SUMMARY_TRIGGER, toolId)}
+              aria-expanded={isExpanded}
+              aria-label={toggleAriaLabel}
+              className="group/tool-details inline-flex shrink-0 cursor-pointer items-center rounded-sm text-foreground-subtlest transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+            >
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  "size-4 opacity-60 transition-transform transition-opacity duration-200 ease-out will-change-transform group-hover/tool-details:opacity-100",
+                  isExpanded ? "rotate-90 opacity-100" : "rotate-0",
+                  forceOpen && "opacity-100",
+                )}
+              />
+            </button>
+          </CollapsibleTrigger>
+        ) : null}
       </div>
     );
   }
+  // FORK-END(codex-collaboration)
 
   if (canToggle) {
     return (

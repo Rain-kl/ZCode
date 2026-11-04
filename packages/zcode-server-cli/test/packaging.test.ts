@@ -229,6 +229,8 @@ describe("stageRelease", () => {
     }
     const agentBundlePath = join(root, "zcode.cjs");
     await writeFile(agentBundlePath, "// fake agent bundle\n", "utf8");
+    await mkdir(join(root, "provider"));
+    await writeFile(join(root, "provider/zcode-builtin.json"), '{"fixture":"same-build"}\n');
     const nodeBinaryPath = join(root, "node-binary");
     await writeFile(nodeBinaryPath, "#!/bin/sh\nexit 0\n", "utf8");
 
@@ -265,6 +267,14 @@ describe("stageRelease", () => {
     }
   }
 
+  it("fails staging when the Agent's same-build provider resource is absent", async () => {
+    const fixture = await makeStageFixture();
+    await rm(join(fixture.agentBundlePath, "../provider/zcode-builtin.json"));
+    await expect(
+      stageRelease({ target: "linux-x64", appVersion: "9.9.9-test", archive: false, ...fixture }),
+    ).rejects.toThrow(/provider.*zcode-builtin\.json/);
+  });
+
   it("assembles the release layout for a linux target", async () => {
     const fixture = await makeStageFixture();
     const staged = await stageRelease({
@@ -276,6 +286,9 @@ describe("stageRelease", () => {
 
     const releaseDir = staged.releaseDir;
     expect(releaseDir.endsWith("zcode-server-linux-x64")).toBe(true);
+    expect(await readFile(join(releaseDir, "runtime/provider/zcode-builtin.json"), "utf8")).toBe(
+      await readFile(join(fixture.agentBundlePath, "../provider/zcode-builtin.json"), "utf8"),
+    );
 
     const launcher = await readFile(join(releaseDir, "bin", "zcode"), "utf8");
     expect(launcher).toContain('"$DIR/runtime/node"');
@@ -467,7 +480,10 @@ describe("stageRelease", () => {
     const expected: Record<string, string[]> = {
       "node-runtime": ["runtime/LICENSE.node.txt", "runtime/NODE-SOURCES.json"],
       "server-runtime": ["runtime/THIRD-PARTY-NOTICES.md", "runtime/node_modules/node-pty/LICENSE"],
-      "agent-runtime": ["runtime/licenses/agent/THIRD-PARTY-NOTICES.md"],
+      "agent-runtime": [
+        "runtime/licenses/agent/THIRD-PARTY-NOTICES.md",
+        "runtime/provider/zcode-builtin.json",
+      ],
       "native-search-tools": [
         "runtime/tools/ripgrep/THIRD-PARTY-NOTICES.txt",
         "runtime/tools/ugrep/SOURCES.json",
@@ -532,6 +548,29 @@ describe("stageRelease", () => {
 
     expect(tarText).not.toContain("LIBARCHIVE.xattr");
     expect(tarText).not.toContain("SCHILY.xattr");
+  });
+
+  it("same-build provider config participates in the agent component content identity", async () => {
+    const fixture = await makeStageFixture();
+    const options = {
+      ...fixture,
+      target: "linux-x64" as const,
+      appVersion: "test",
+      archive: false,
+    };
+    const staged = await stageRelease(options);
+    const before = JSON.parse(await readFile(join(staged.releaseDir, "manifest.json"), "utf8"));
+    await writeFile(
+      join(fixture.agentBundlePath, "../provider/zcode-builtin.json"),
+      '{"fixture":"updated"}\n',
+    );
+    await stageRelease(options);
+    const after = JSON.parse(await readFile(join(staged.releaseDir, "manifest.json"), "utf8"));
+    const agent = (manifest: {
+      components: Array<{ id: string; sha256: string; paths: string[] }>;
+    }) => manifest.components.find((entry) => entry.id === "agent-runtime");
+    expect(agent(before)?.paths).toContain("runtime/provider");
+    expect(agent(after)?.sha256).not.toBe(agent(before)?.sha256);
   });
 
   it("bundled workflow skills ship in the agent component and affect its hash", async () => {

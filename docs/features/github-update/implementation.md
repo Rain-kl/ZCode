@@ -207,3 +207,10 @@ applyForkGithubUpdateFeed(updater, { channel })  // 同时写 allowPrerelease / 
 - 验证：updater scoped Vitest 72/72、GitHub feed/第三方依赖/未签名策略 node 契约 15/15 通过；
   `pnpm typecheck` 全部通过（含 desktop main/host/E2E、remote-main、CUA）；4 个修改文件 lint
   0 warning / 0 error，移除守卫全部通过。真实 Windows 未签名下载、安装和 SmartScreen 未验证。
+
+## 8. 开发渠道 Source Server 版本门（2026-11-03）
+
+- dev Desktop 连接 Source Server 时跳过最低兼容版本比较；正式版仍按 compatibility manifest 执行完整门禁。
+- 连接前安装检查与握手后的双端比较共享同一渠道判定，避免只修一处后另一处继续拦截。
+- 开发渠道不再因两个提交哈希的字典序显示升级要求；缺少 compatibility manifest 的旧 Server 仍 fail closed。
+- 回归覆盖 `3.17.162-dev.c1ea55a4` 连接更旧/更高哈希 dev Server 均放行，以及正式版旧 Server 仍被拒绝。

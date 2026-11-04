@@ -1,0 +1,114 @@
+# 自建云端网页远控实现记录
+
+状态：2026-11-03，分支内最小实现和本地闭环已完成；尚未部署到真实 Cloudflare，真实模型回复、发行安装包、正式手机/公网验收未执行。本文记录实际落地位置、关键边界和证据，不把本地通过写成生产完成。
+
+## 1. 交付结构
+
+| 能力             | 实现位置                                                 | 状态                                                        |
+| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| Worker/DO Relay  | `packages/fork-remote-relay/**`                          | 已完成认证、设备/票据、V2 转发、静态页面和 workerd 测试     |
+| Server connector | `packages/fork-remote-connector/**`                      | 已完成 Core loopback、AppPayload bridge、代际和启动失败清理 |
+| Server 命令/配置 | `packages/zcode-server-cli/src/fork/cloud-web-access/**` | 已完成 connect、配置保存、持久日志、up/down/logs 接线       |
+| Web 登录入口     | `packages/web/src/web-remote-control/**` + `packages/ui` | 已完成 `/remote/v4` 同源账号密码登录和 Root 启动门控        |
+| 根工作流         | `package.json`、`architecture-policy.yaml`、测试清单     | 已接入 typecheck、架构边界和 fork 合同测试                  |
+
+Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只保留组合根和入口适配，并用 `FORK(cloud-web-access)` 标出产品接线。配置和日志路径属于 Server 实例的 canonical root，不建立第二套 daemon 或数据目录。
+
+## 2. Relay
+
+`packages/fork-remote-relay/src/worker.ts` 提供：
+
+- `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，有效期 12 小时，响应字段是 `token`、`expiresAt`、`userInfo`。
+- 复用 shared 的 V2 register/list/delete/token 和 `/api/v1/remote/ws2`；浏览器和 Server 不进入官方 OAuth。
+- 静态资源直接来自 `packages/web/dist`；`/remote/v4` 使用 SPA fallback，未知 `/api/*` 返回 JSON 404。
+- 有 `Origin` 时要求同源；Node/CLI 请求可以省略 Origin，WS 仍必须使用一次性票据。
+
+`packages/fork-remote-relay/src/relayRoom.ts` 是单租户设备、一次性票据和 `(device_sid, role)` owner 的唯一协调者：
+
+- 角色在消费票据时确定，`auth_init` 不能自述升级；
+- 新 terminal 替换旧 terminal，旧连接收到 `KICKED`；旧 close 不能释放新 owner；
+- 设备上线时保存 `auth_init.meta`，设备断开后清空 `meta`，离线列表仍保留设备记录；
+- 票据单次消费在 DO transaction 中完成；过期票据由 DO alarm 清理，签发下一张票不承担唯一清理职责；
+- 转发 `data.payload` 原样透明，不解析或持久化任务、快照和业务正文。
+
+## 3. Headless connector
+
+`packages/fork-remote-connector/src/connector.ts` 只拥有 Relay socket 和当前 App router：
+
+1. Core 先创建普通 loopback HTTP/WS 和既有 services；
+2. connector 使用持久 `device_sid` 申请 device ticket，主动连接 Relay；
+3. 收到合法 `auth_ack` 后，Supervisor 才看到 Core ready；`waiting` 不等手机在线；
+4. 手机发送 bootstrap/workspace-list 时，connector 从注入的现有 `IProjectService` 快照回答；
+5. `workspace-bridge-open` 才打开同一 Core `/ws` 的 `web-remote-replayable` attachment；loopback bridge 从 socket 建立起按序保留 Core 帧，router 订阅后先交付早到的 RPC `Initialize`，ready 前排队 raw frame 不发送；
+6. 旧 bridge、旧 ACK、迟到的异步 open 和旧 RPC 代次不能推进新代；被替换 terminal 只释放自己的 bridge，不停止已接纳的任务；
+7. 启动失败按 connector stop → HTTP close → services dispose 顺序清理，每个清理步骤不掩盖原启动错误。
+
+平台层只返回 headless 可用的安全结果；需要 Electron handler 的操作明确返回 unsupported，不挂起手机页面。
+
+项目创建沿用现有 `IProjectService`：浏览器发送 `hostId=local` 时，Server 将它解析为自身 owner host，
+目录浏览读取当前机器的 home 与目录，不依赖浏览器本地文件或桌面专用 Host attachment。local bridge 不向
+客户端暴露桌面 `window-controller`；web remote 连接在清单到达前不创建该可选代理，因此不会产生未知 channel
+请求。公网 local bridge 已实测从“新项目”→“选择文件夹”读取 `/home/ubuntu` 目录树。
+
+## 4. Server CLI 和日志
+
+公开命令组映射到既有 Server 生命周期：
+
+```text
+zcode server connect
+zcode server up
+zcode server up -d
+zcode server down
+zcode server logs
+zcode server logs -f
+```
+
+- `connect` 支持 TUI 或 `--url`、`--username`、`--password-stdin`；密码只从 masked TTY 或 stdin 读取，不进入 argv。先登录并注册设备，再以临时文件 + rename 原子写入 `config/remote-connection.json`，POSIX 权限为 `0600`。
+- 配置保存 endpoint、会话令牌、过期时间、`deviceMid`、`deviceSid` 和用户显示信息；不保存密码。运行中的 Server 会被生命周期锁阻止换配置。
+- `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失或过期会让启动失败并保留具体原因。普通 `serve` 没有配置时保持原有启动路径，只有配置有效时才启用 Relay。
+- `down` 调用既有 stop-and-wait 生命周期，不停留成只关 Relay 的伪停止。
+- `logs`/`-f` 读取 canonical root 的 `logs/server-YYYY-MM-DD.log`，默认最近 200 行；日志写入前脱敏，按日文件轮转，保留 7 天，单文件日上限 10 MiB；`-f` 只跟踪日志，不启动或停止 Server，并会从快照之后新出现的文件开头跟踪。
+
+## 5. Web
+
+`/remote/v4` 的登录表单使用同源 `/api/fork-remote/auth/login`。浏览器只在 `localStorage` 保存临时 Relay 会话，不保存密码；会话校验失败、过期或 logout 会清理本地会话。登录后继续使用现有设备列表、V2 transport、KICKED 和已知设备行为，不新增离线只读或多手机同控。
+
+Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OAuth 恢复不能阻塞 initial workspace 注入；普通非远控 Root 仍保持官方 OAuth 行为。此修复解决选择设备后出现空 `h-dvh` 白屏的真实浏览器问题。
+
+## 6. 本地闭环证据
+
+2026-11-03 在临时隔离 `HOME`、临时 server-root 和本地 workerd 上完成：
+
+- Web 构建成功；`/remote/v4` 返回 SPA，真实静态资源可读，未知 `/api` 返回 JSON 404；
+- `zcode server connect` 登录并注册设备，配置不含密码，`zcode server up` 启动真实 Supervisor/Core；
+- 设备从离线变为在线，bootstrap 返回真实项目快照；浏览器在 390×844 登录、选择设备并进入工作区；
+- `zcode server down` 停止同一实例。
+
+该闭环未提供模型 provider，因此没有真实模型回复；没有公网 Cloudflare 部署、正式发行包安装或真实手机网络验收。部署步骤见 [deployment.md](deployment.md)。
+
+## 7. 已执行验证
+
+- Relay：6/6（真实 workerd、认证/V2、票据单次消费、owner 替换、离线 meta、alarm 清理、Workers-safe KDF 预算）；
+- Connector：11/11，包含真实 WebSocket 在 router 订阅前发送 RPC `Initialize` 并完成 setting channel roundtrip；Server CLI 定向 13/13；tsup 工程测试 4/4；
+- Web 认证/transport 定向 19/19；self-hosted auth 错误语义回归 7/7；UI Root startup 回归纳入 fork 合同清单；
+- `pnpm test:unit:fork` 10 组通过；补齐 CLI 构建产物后 `pnpm test:unit:contracts` 53 文件/1165 测试通过；
+- 根 `pnpm typecheck` 通过；根 `pnpm lint` 为 85 warnings/0 errors（既有警告）；架构变更检查 0 违规；`pnpm fork:check-removals` 通过；CLI build、Web lint/build、Relay/Connector lint 通过。
+
+提交前已重新执行根 typecheck/lint/architecture/removal；root lint 的 85 warnings 保留为既有结果，不把 0 errors 写成全量无告警。
+
+## 8. 未验证和已知边界
+
+- 未验证线上 Cloudflare Worker/DO、强制 eviction、并发竞态、大消息慢接收和平台配额；
+- 未验证正式稳定 launcher/发行包中的 `zcode server` 分发，只验证了当前源码入口；
+- 未验证 `up -d` 在真实后台服务组合、重复启动和日志轮转下的完整进程矩阵；
+- 未验证真实模型、权限交互、断网恢复、手机后台和公网手机；
+- Worker 目前是单部署单租户，没有多租户、注册、账号管理、通知、离线数据库或 WebDAV 替换；
+- 生产部署必须先构建 Web，再设置认证 secrets；单独执行 `wrangler deploy` 不会生成可用账号。
+
+## 9. Server 安装路径与资源统一（2026-11-03）
+
+旧一键安装脚本在 `.local/share/zcode-server` 自行维护第二套运行包，而 SSH 用 `.zcode/server/current.json`；同一 CLI 可能与实际运行版本不同。脚本现只下载、校验和临时解压，再调用包内 `update --from-archive --server-root`，由既有 ReleaseInstaller/ReleaseManager 持有生命周期锁并维护不可变目录、完整性、pending/current 和稳定入口。PATH 包装器始终执行统一入口，绑定相同 root，SSH 切换版本后自动跟随。旧脚本入口迁移后保留原始文件，不复制或删除会话与凭据。
+
+用户反馈的 `无法定位 CLI ZCode Built-in Provider Config` 根因为 staging 只复制 `zcode.cjs` 而没有复制它旁边的 `provider/zcode-builtin.json`；`--version` 无需 provider，之前的版本检查未覆盖这一缺件。`packaging/stage.ts` 现在把 Agent dist 同次构建的配置复制到 `runtime/provider` 并纳入 agent-runtime 的 paths、哈希与组件归档。缺件在 staging、发布校验和安装前置检查时都明确失败；不靠用户下载零散配置修补。
+
+规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。不增加通用 Web server 的 `--web` 模式，远控仍使用 `zcode server connect/up` 与 Relay 网页。

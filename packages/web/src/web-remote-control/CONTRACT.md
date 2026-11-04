@@ -17,3 +17,16 @@ bootstrap 请求只读取响应。version guard 校验当前请求代际与版�
 未提交草稿由既有 Composer 失败处理恢复，已登记命令继续由 query/snapshot 对账。
 
 完整语义见 [Relay V2 spec](../../../../docs/web-remote-control/relay-v2-pairing.md)。
+
+## Fork: self-hosted relay authentication
+
+`cloud-web-access` 部署的 `/remote/v4` 不使用官方 OAuth。登录页向同源
+`POST /api/fork-remote/auth/login` 提交 `{ username, password }`，成功响应中的
+`token`、`expiresAt` 和 `userInfo` 是浏览器远控登录事实。token 是 Relay 自有的
+签名会话，不假设 JWT 三段格式；浏览器以 `expiresAt` 判断本地恢复是否仍有效。
+
+会话只保存在当前 origin 的 localStorage，用于刷新恢复和后续同源设备列表、
+terminal token 的 Bearer 请求。401 显示固定的凭据错误，不保存失败输入；过期、
+损坏和 logout 都原子清除整套会话。它不替代模型账号，也不写官方 OAuth key。
+旧的 `/remote/v4?state=...&code=...` 形状不再进入官方 OAuth callback；官方 OAuth
+只保留给 `/share/callback` 与 `/cn/share/callback`。

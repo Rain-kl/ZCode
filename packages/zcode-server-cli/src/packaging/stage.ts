@@ -19,7 +19,7 @@ export interface StageOptions {
   appVersion: string;
   /** tsup 产物目录（server-cli.js / server-core.js） */
   distDir: string;
-  /** 既有 CLI/Agent bundle（zcode.cjs，自包含 CJS） */
+  /** 既有 CLI/Agent bundle；旁边的 provider/zcode-builtin.json 必须为同次构建资源。 */
   agentBundlePath: string;
   /** CLI 内置技能包；不依赖官方插件缓存。 */
   bundledSkillsDir: string;
@@ -236,6 +236,18 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
   await cp(options.agentBundlePath, join(runtimeDir, "zcode.cjs"), {
     dereference: true,
   });
+  // FORK-BEGIN(cloud-web-access)
+  // 原因：独立 Server 委派 Agent CLI 时不继承 Core 的内嵌配置，必须携带同次构建的 provider 资源。
+  const providerConfigPath = join(dirname(options.agentBundlePath), "provider/zcode-builtin.json");
+  try {
+    await mkdir(join(runtimeDir, "provider"), { recursive: true });
+    await cp(providerConfigPath, join(runtimeDir, "provider/zcode-builtin.json"));
+  } catch (cause) {
+    throw new Error(`Missing or unreadable Agent provider config: ${providerConfigPath}`, {
+      cause,
+    });
+  }
+  // FORK-END(cloud-web-access)
   // 修复原因：dynamic-workflows 已迁出插件，按 -plugin 复制会漏带工作流的必需技能。
   // 随 Agent 组件独立交付并参与内容哈希，不能依赖服务器旧版本的插件缓存。
   for (const file of ["SKILL.md", "patterns.md", "examples.md"]) {
@@ -344,7 +356,13 @@ export async function stageRelease(options: StageOptions): Promise<StagedRelease
     },
     {
       id: "agent-runtime",
-      paths: ["runtime/zcode.cjs", "runtime/packages/bundled-skills", "runtime/licenses/agent"],
+      // FORK(cloud-web-access): 独立 Agent 组件必须连同配置参与内容身份和安装，避免整包与组件缺件。
+      paths: [
+        "runtime/zcode.cjs",
+        "runtime/provider",
+        "runtime/packages/bundled-skills",
+        "runtime/licenses/agent",
+      ],
     },
     ...(plugins.length > 0
       ? [
