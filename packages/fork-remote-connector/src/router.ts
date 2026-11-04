@@ -2,9 +2,12 @@ import { createAcknowledgedWebRemoteControlRelayProtocol } from "@zcode/client";
 import { VSBuffer } from "@zcode/rpc";
 import {
   measureWebRemoteControlRpcRelayEnvelopeBytes,
-  resolveWebRemoteControlWorkspaceKey,
   type WebRemoteControlAppPayload,
+  type WebRemoteControlExternalWorkspaceBridge,
+  type WebRemoteControlWorkspaceBridgeOpenPayload,
+  type WebRemoteControlMobileViewState,
   type WebRemoteControlPlatformRequestPayload,
+  type WebRemoteControlFailureReason,
 } from "@zcode/shared";
 import type {
   ForkRemoteAppRouter,
@@ -19,7 +22,25 @@ interface ActiveBridge {
   recoveryId?: string;
   ready: boolean;
   disposeListener: () => void;
+  disposeCloseListener?: () => void;
   relay: ReturnType<typeof createAcknowledgedWebRemoteControlRelayProtocol>;
+}
+
+function navigationFailureReason(error: unknown): WebRemoteControlFailureReason {
+  const visited = new Set<unknown>();
+  // 宿主逐层补充上下文时保留 cause；分类必须读取原始业务原因，不能按包装文案猜测。
+  while (error instanceof Error && !visited.has(error)) {
+    visited.add(error);
+    if (
+      /^project\.(not-found|task-not-found|workspace-not-found|host-mismatch|task-directory-mismatch)\b/.test(
+        error.message,
+      )
+    )
+      return "workspace-closed";
+    if (error.message.startsWith("project.host-offline")) return "desktop-disconnected";
+    error = error.cause;
+  }
+  return "unexpected-error";
 }
 
 function headlessPlatformResult(request: WebRemoteControlPlatformRequestPayload): unknown {
@@ -45,7 +66,20 @@ export function createForkRemoteAppRouter(
   options: ForkRemoteAppRouterOptions,
 ): ForkRemoteAppRouter {
   let active: ActiveBridge | undefined;
-  let bridgeOpenGeneration = 0;
+  let pageSessionId: string | undefined;
+  let mobileViewState: WebRemoteControlMobileViewState | undefined;
+  let pendingInvalidation:
+    | Extract<WebRemoteControlAppPayload, { zcode_type: "bridge-degraded" }>
+    | undefined;
+  let opening:
+    | {
+        id: string;
+        generation?: number;
+        intent: string;
+        controller: AbortController;
+        promise: Promise<WebRemoteControlExternalWorkspaceBridge>;
+      }
+    | undefined;
 
   function disposeBridge(reason: string): void {
     const current = active;
@@ -53,6 +87,7 @@ export function createForkRemoteAppRouter(
     if (!current) return;
     current.relay.markDegraded(reason);
     current.disposeListener();
+    current.disposeCloseListener?.();
     current.bridge.close();
     current.relay.dispose();
   }
@@ -77,16 +112,62 @@ export function createForkRemoteAppRouter(
     } as WebRemoteControlAppPayload);
   }
 
-  async function openBridge(
-    request: Extract<WebRemoteControlAppPayload, { zcode_type: "workspace-bridge-open" }>,
-  ): Promise<void> {
-    const generation = ++bridgeOpenGeneration;
-    const snapshot = await options.listWorkspaces();
-    if (generation !== bridgeOpenGeneration) return;
-    const target = snapshot.workspaces.find(
-      (workspace) => resolveWebRemoteControlWorkspaceKey(workspace) === request.workspaceKey,
-    );
-    if (!target || target.kind !== "local") {
+  async function openBridge(request: WebRemoteControlWorkspaceBridgeOpenPayload): Promise<void> {
+    let flight: typeof opening;
+    try {
+      if (request.terminalClientSessionId && request.terminalClientSessionId !== pageSessionId)
+        throw new Error("Terminal page session has ended; bootstrap is required.");
+      const intent = JSON.stringify([
+        request.terminalClientSessionId,
+        request.workspaceKey,
+        request.taskId,
+        request.taskHostId,
+        request.fileTreeTaskId,
+        request.project,
+      ]);
+      if (
+        opening?.id === request.bridgeSessionId &&
+        opening.generation === request.bridgeGeneration
+      ) {
+        if (opening.intent !== intent)
+          throw new Error("Workspace bridge identity cannot change intent.");
+        if (active?.relay.isDegraded() || pendingInvalidation)
+          throw new Error("Degraded workspace bridge requires a new identity.");
+        flight = opening;
+      } else {
+        opening?.controller.abort();
+        flight = {
+          id: request.bridgeSessionId,
+          generation: request.bridgeGeneration,
+          intent,
+          controller: new AbortController(),
+          promise: undefined as never,
+        };
+        opening = flight;
+        // 原实现只按路径选 tab，丢弃 project/task 归属；由持有真实服务的宿主准备导航。
+        flight.promise = Promise.resolve().then(() =>
+          buildBridge(request, flight!.controller.signal),
+        );
+      }
+      const bridge = await flight.promise;
+      if (opening !== flight || flight.controller.signal.aborted) return;
+      options.sendPayload({
+        zcode_type: "workspace-bridge-ready",
+        requestId: request.requestId,
+        bridgeSessionId: request.bridgeSessionId,
+        ...(request.bridgeGeneration === undefined
+          ? {}
+          : { bridgeGeneration: request.bridgeGeneration }),
+        ...(request.recoveryId ? { recoveryId: request.recoveryId } : {}),
+        bridge,
+      });
+      if (active?.bridgeSessionId === request.bridgeSessionId) {
+        active.ready = true;
+        active.relay.flushPendingFrames();
+      }
+    } catch (error) {
+      if (flight && (opening !== flight || flight.controller.signal.aborted)) return;
+      const message = error instanceof Error ? error.message : String(error);
       options.sendPayload({
         zcode_type: "workspace-bridge-error",
         requestId: request.requestId,
@@ -95,23 +176,28 @@ export function createForkRemoteAppRouter(
           ? {}
           : { bridgeGeneration: request.bridgeGeneration }),
         ...(request.recoveryId ? { recoveryId: request.recoveryId } : {}),
-        reason: target ? "unsupported-action" : "workspace-closed",
-        error: target
-          ? "Headless ZCode Server supports only local workspaces"
-          : `Workspace is not available: ${request.workspaceKey}`,
+        reason: navigationFailureReason(error),
+        error: `Headless workspace navigation failed (bridge=${request.bridgeSessionId}, workspace=${request.workspaceKey}): ${message}`,
       });
-      return;
     }
+  }
 
+  async function buildBridge(
+    request: WebRemoteControlWorkspaceBridgeOpenPayload,
+    signal: AbortSignal,
+  ): Promise<WebRemoteControlExternalWorkspaceBridge> {
+    const target = await options.prepareWorkspace(request, signal);
+    signal.throwIfAborted();
     const bridge = await options.openCoreBridge({
-      workspaceKey: request.workspaceKey,
-      ...(request.taskId ? { taskId: request.taskId } : {}),
+      workspaceKey: target.workspaceKey,
+      ...(target.initialTaskId ? { taskId: target.initialTaskId } : {}),
     });
-    if (generation !== bridgeOpenGeneration) {
+    if (signal.aborted) {
       bridge.close();
-      return;
+      signal.throwIfAborted();
     }
     disposeBridge("remote.rpcFrame.bridgeSuperseded");
+    pendingInvalidation = undefined;
 
     const relay = createAcknowledgedWebRemoteControlRelayProtocol({
       bridgeSessionId: request.bridgeSessionId,
@@ -147,7 +233,7 @@ export function createForkRemoteAppRouter(
     relay.onDegraded((fault) => {
       if (active !== current) return;
       options.logger.warn("[fork-remote] workspace bridge degraded", fault);
-      options.sendPayload({
+      pendingInvalidation = {
         zcode_type: "bridge-degraded",
         bridgeSessionId: current.bridgeSessionId,
         ...(current.bridgeGeneration === undefined
@@ -155,95 +241,129 @@ export function createForkRemoteAppRouter(
           : { bridgeGeneration: current.bridgeGeneration }),
         ...(current.recoveryId ? { recoveryId: current.recoveryId } : {}),
         reason: "rpc-transport-fault",
-      });
+      };
+      options.sendPayload(pendingInvalidation);
       disposeBridge("remote.rpcFrame.degraded");
     });
-    options.sendPayload({
-      zcode_type: "workspace-bridge-ready",
-      requestId: request.requestId,
+    current.disposeCloseListener = bridge.onClose?.(() => {
+      if (active === current) relay.markDegraded("remote.rpcFrame.coreDisconnected");
+    });
+    return {
       bridgeSessionId: request.bridgeSessionId,
       ...(request.bridgeGeneration === undefined
         ? {}
         : { bridgeGeneration: request.bridgeGeneration }),
       ...(request.recoveryId ? { recoveryId: request.recoveryId } : {}),
-      bridge: {
-        bridgeSessionId: request.bridgeSessionId,
-        ...(request.bridgeGeneration === undefined
-          ? {}
-          : { bridgeGeneration: request.bridgeGeneration }),
-        ...(request.recoveryId ? { recoveryId: request.recoveryId } : {}),
-        kind: "local",
-        workspaceKey: request.workspaceKey,
-        workspacePath: target.workspacePath,
-        ...(request.taskId ? { initialTaskId: request.taskId } : {}),
-      },
-    });
-    if (active === current) {
-      current.ready = true;
-      current.relay.flushPendingFrames();
-    }
+      kind: "remote",
+      workspaceKey: target.workspaceKey,
+      workspacePath: target.workspacePath,
+      workspaceIdentity: target.workspaceIdentity,
+      remoteSessionId: target.remoteSessionId,
+      capabilities: { windowController: false },
+      ...(target.initialTaskId ? { initialTaskId: target.initialTaskId } : {}),
+    };
   }
 
+  async function handle(payload: WebRemoteControlAppPayload): Promise<boolean> {
+    switch (payload.zcode_type) {
+      case "bootstrap-request": {
+        if (pageSessionId !== payload.terminalClientSessionId) {
+          opening?.controller.abort();
+          opening = undefined;
+          disposeBridge("remote.rpcFrame.pageReplaced");
+        }
+        pageSessionId = payload.terminalClientSessionId;
+        const result = await options.listWorkspaces();
+        options.sendPayload({
+          zcode_type: "bootstrap-response",
+          requestId: payload.requestId,
+          success: true,
+          result: {
+            windowControlSessionId: options.deviceSid,
+            desktopAppVersion: options.appVersion,
+            workspaces: result.workspaces,
+            ...(mobileViewState ? { mobileViewState } : {}),
+            ...(result.activeWorkspaceKey
+              ? {
+                  initialViewState: {
+                    activeWorkspaceKey: result.activeWorkspaceKey,
+                    ...(result.activeTaskId ? { activeTaskId: result.activeTaskId } : {}),
+                    updatedAt: 0,
+                  },
+                }
+              : {}),
+          },
+        });
+        return true;
+      }
+      case "workspace-list-request":
+        options.sendPayload({
+          zcode_type: "workspace-list-response",
+          requestId: payload.requestId,
+          success: true,
+          result: await options.listWorkspaces(),
+        });
+        return true;
+      case "workspace-bridge-open":
+        await openBridge(payload);
+        return true;
+      case "platform-request":
+        await replyPlatform(payload);
+        return true;
+      case "rpc-frame":
+      case "rpc-frame-ack":
+        return active?.relay.acceptPayload(payload) ?? false;
+      case "mobile-view-state-update":
+        mobileViewState = payload.viewState;
+        return true;
+      case "mobile-task-view-update":
+      case "mobile-task-view-request":
+      case "mobile-diagnostic":
+      case "telemetry-report":
+      case "mobile-log":
+      case "mobile-log-pull-response":
+        return true;
+      default:
+        if ("requestId" in payload && typeof payload.requestId === "string") {
+          options.sendPayload({
+            zcode_type: "app-error",
+            requestId: payload.requestId,
+            reason: "unsupported-action",
+            error: `Headless ZCode Server does not support ${payload.zcode_type}`,
+          });
+        }
+        return false;
+    }
+  }
   return {
     async handle(payload) {
-      switch (payload.zcode_type) {
-        case "bootstrap-request": {
-          const result = await options.listWorkspaces();
+      try {
+        return await handle(payload);
+      } catch (error) {
+        // bootstrap/list 的真实 IO 错误必须沿请求返回，否则客户端只能等超时且丢失原因。
+        if ("requestId" in payload && typeof payload.requestId === "string") {
           options.sendPayload({
-            zcode_type: "bootstrap-response",
+            zcode_type: "app-error",
             requestId: payload.requestId,
-            success: true,
-            result: {
-              windowControlSessionId: options.deviceSid,
-              desktopAppVersion: options.appVersion,
-              workspaces: result.workspaces,
-              ...(result.activeWorkspaceKey
-                ? {
-                    initialViewState: {
-                      activeWorkspaceKey: result.activeWorkspaceKey,
-                      ...(result.activeTaskId ? { activeTaskId: result.activeTaskId } : {}),
-                      updatedAt: 0,
-                    },
-                  }
-                : {}),
-            },
+            reason: "unexpected-error",
+            error: `${payload.zcode_type} failed: ${error instanceof Error ? error.message : String(error)}`,
           });
-          return true;
+        } else {
+          options.logger.error(`[fork-remote] ${payload.zcode_type} failed`, error);
         }
-        case "workspace-list-request":
-          options.sendPayload({
-            zcode_type: "workspace-list-response",
-            requestId: payload.requestId,
-            success: true,
-            result: await options.listWorkspaces(),
-          });
-          return true;
-        case "workspace-bridge-open":
-          await openBridge(payload);
-          return true;
-        case "platform-request":
-          await replyPlatform(payload);
-          return true;
-        case "rpc-frame":
-        case "rpc-frame-ack":
-          return active?.relay.acceptPayload(payload) ?? false;
-        case "mobile-view-state-update":
-        case "mobile-task-view-update":
-        case "mobile-task-view-request":
-        case "mobile-diagnostic":
-        case "telemetry-report":
-        case "mobile-log":
-        case "mobile-log-pull-response":
-          return true;
-        default:
-          return false;
+        return false;
       }
     },
     replayUnacknowledged() {
+      if (pendingInvalidation) options.sendPayload(pendingInvalidation);
       return active?.relay.replayUnacknowledged() ?? false;
     },
     dispose(reason = "remote.rpcFrame.connectorStopped") {
-      bridgeOpenGeneration += 1;
+      opening?.controller.abort();
+      opening = undefined;
+      pageSessionId = undefined;
+      mobileViewState = undefined;
+      pendingInvalidation = undefined;
       disposeBridge(reason);
     },
   };

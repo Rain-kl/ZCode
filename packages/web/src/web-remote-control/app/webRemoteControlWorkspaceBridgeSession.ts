@@ -98,6 +98,11 @@ export function registerWebRemoteControlWorkspaceBridgeServices(params: {
   // 这会让 hooks 按 workspaceIdentity 解析不到 session，转而走断连代理并报 ZCODE_REMOTE_WORKSPACE_DISCONNECTED。
   registerRemoteWorkspaceSession({
     sessionId: bridge.remoteSessionId,
+    // FORK-BEGIN(cloud-web-access)
+    // 完整登记可信 attachment 元数据，pane/目录不能把同一 Source 当成本机 endpoint。
+    workspacePath: bridge.workspacePath,
+    workspaceIdentity: bridge.workspaceIdentity,
+    // FORK-END(cloud-web-access)
     services,
   });
   bindRemoteWorkspaceIdentity(bridge.workspaceIdentity, bridge.remoteSessionId);

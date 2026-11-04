@@ -39,6 +39,8 @@ import { useRemoteBoundaryAcknowledgement } from "@/RemoteConnectionDialogConten
 import { useProjectDirectoryServices } from "@/project-sidebar/useProjectDirectoryServices.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
+// FORK(cloud-web-access): 项目编辑使用当前 attachment 的目录宿主身份。
+import { useOptionalBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { RemoteProjectList } from "@/project-sidebar/RemoteProjectList.js";
@@ -139,7 +141,11 @@ export function ProjectEditor({
   const [selectedDeviceId, setSelectedDeviceId] = useState(defaultDeviceId ?? "local");
   const hostId =
     project?.hostId ?? fixedFolder?.hostId ?? host?.id ?? (devices ? selectedDeviceId : undefined);
-  const remote = Boolean(hostId && hostId !== "local");
+  // FORK(cloud-web-access): 在独立 Server 上选择“此电脑”也遵循该 Server 的单目录项目规则。
+  const currentHostId = useOptionalBaseWorkspaceServices()?.projectHostId ?? "local";
+  const remote = Boolean((hostId && hostId !== "local") || currentHostId !== "local");
+  // FORK(cloud-web-access): 当前 Server 的单目录约束与跨设备连接是两个不同条件。
+  const crossHost = Boolean(hostId && hostId !== "local" && hostId !== currentHostId);
   const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
   const [name, setName] = useState(
     project?.name ?? (fixedFolder ? getPathLeaf(fixedFolder.path) : ""),
@@ -216,7 +222,8 @@ export function ProjectEditor({
   };
   const browse = async () => {
     const request = ++epoch.current;
-    if (remote && devices && selectedDevice?.status !== "online") {
+    // FORK(cloud-web-access): 当前 attachment 已连接，不向自身发起设备连接。
+    if (crossHost && devices && selectedDevice?.status !== "online") {
       if (!selectedDevice || !onConnectDevice) {
         setError(msg("connectionUnavailable"));
         return;
@@ -234,7 +241,8 @@ export function ProjectEditor({
     }
     // 本地曾统一走 Host 文件列表，绕过系统多选；按项目 Host 与平台能力选入口，不能借当前 tab 判定。
     if ((hostId && hostId !== "local") || !platform?.selectDirectories) {
-      if (remote) {
+      // FORK(cloud-web-access): 首次跨设备说明只用于真正离开当前目录宿主的操作。
+      if (crossHost) {
         setBusy(true);
         try {
           // 已连接设备可直接浏览目录，仍须经过与主动连接相同的首次介绍；失效表单不记已读。
@@ -280,7 +288,8 @@ export function ProjectEditor({
       if (!project) {
         // 设备全集不等于本机项目入口全集；远端恢复候选必须读取所属 Host，不能只看 open set。
         const tree =
-          remote && (devices || fixedFolder)
+          // FORK(cloud-web-access): 当前目录宿主无需跨设备成员目录。
+          crossHost && (devices || fixedFolder)
             ? await service.readTree({ hostId, includeDeleted: true })
             : undefined;
         if (tree?.legacySingleRoot) {
@@ -395,7 +404,8 @@ export function ProjectEditor({
     }
   };
   const browserEpoch = epoch.current;
-  const needsConnection = remote && Boolean(devices) && selectedDevice?.status !== "online";
+  // FORK(cloud-web-access): 当前 Server 直接浏览自己的目录。
+  const needsConnection = crossHost && Boolean(devices) && selectedDevice?.status !== "online";
   return (
     <Dialog
       open={!suspended}
@@ -540,7 +550,8 @@ export function ProjectEditor({
                       </SelectContent>
                     </Select>
                     {/* 旧入口是一行 ghost 文字，用户看不出可点也不知用途；改为挨着设备的问句 + 下划线链接。 */}
-                    {remote && selectedDevice && onBrowseExisting ? (
+                    {/* FORK(cloud-web-access): 当前宿主已有项目直接来自侧栏。 */}
+                    {crossHost && selectedDevice && onBrowseExisting ? (
                       <p className="flex flex-wrap items-center gap-x-1 text-ui-sm text-foreground-subtle">
                         {msg("existingOnDeviceHint")}
                         <button

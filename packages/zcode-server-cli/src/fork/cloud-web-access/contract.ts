@@ -1,3 +1,26 @@
+import type {
+  ForkRemotePreparedWorkspace,
+  ForkRemoteWorkspaceSnapshot,
+} from "@zcode/fork-remote-connector";
+import type { IProjectService, ISourceServerWorkspaceService } from "@zcode/services";
+import type { WebRemoteControlWorkspaceBridgeOpenPayload } from "@zcode/shared";
+
+export interface HeadlessRemoteWorkspaceHostOptions {
+  sourceServerId: string;
+  projectService: IProjectService;
+  workspaceService: ISourceServerWorkspaceService;
+  fallbackWorkspacePath: string;
+}
+
+export interface HeadlessRemoteWorkspaceHost {
+  readonly projectServiceForAttachment: IProjectService;
+  listWorkspaces(): Promise<ForkRemoteWorkspaceSnapshot>;
+  prepareWorkspace(
+    request: WebRemoteControlWorkspaceBridgeOpenPayload,
+    signal: AbortSignal,
+  ): Promise<ForkRemotePreparedWorkspace>;
+}
+
 export interface ServerCloudWebAccessLayout {
   readonly remoteConnectionFile: string;
   readonly logsDir: string;

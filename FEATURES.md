@@ -16,14 +16,21 @@
 
 ## 自建云端网页远控 (cloud-web-access)
 
-- **状态**：开发中（2026-11-03）。设计与验收合同已冻结；Relay、Server 主动连接层、`zcode server` 命令和网页闭环均须以实际验证结果逐项转正。
+- **状态**：2026-11-04，Relay、Server 主动连接、Desktop 入口与网页项目会话闭环已实现；验收证据见功能文档。
 - **需求背景**：在云主机运行 ZCode Server 或让 ZCode Desktop 连接用户自建的 Cloudflare Worker/DO；两类设备都主动出站，手机或电脑浏览器以同一套单租户账号密码登录并远程操作现有项目、任务和 Agent。
 - **本期范围**：保持官方 Relay V2 与单 owner 语义；同 SID 新手机替换旧手机，旧端收到 `KICKED`。Relay 只负责认证、设备、一次性票据、配对、心跳和透明转发，不保存任务、快照、队列或业务正文。Server 复用既有 Core/Supervisor；Desktop 复用 Main 现有远控连接与 shared-host attachment；网页沿用现有手机远控 UI、缓存和离线行为。
-- **明确不做**：本期不增加多手机同时控制同一实例、不增加离线只读、不移除 WebDAV、不把账号密码当模型平台令牌、不恢复上游云账号依赖。
 - **修改文件**：新增 `packages/fork-remote-relay/**`、`packages/fork-remote-connector/**`、`packages/zcode-server-cli/src/fork/cloud-web-access/**`、Desktop/UI fork 配置模块和 Web 自建认证入口；在 Desktop Main/Preload/Renderer、shared Platform、`packages/zcode-server-cli`、`packages/web`、`packages/ui` 保留最小接线。
 - **上游改动标记**：触及上游既有产品代码时使用 `FORK(cloud-web-access)`；独立 fork 包和新增文件无需逐行标记。
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
-- **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。当前已通过本地 workerd、Connector、CLI/Web 定向测试和浏览器进入工作区；真实 Cloudflare、发行包、公网手机及模型回复未验证。
+- **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。
+
+### Server 项目、任务与网页版本对齐（2026-11-04）
+
+- **背景与行为**：网页的“此电脑”指当前 Server；项目创建、项目内新任务和历史任务分别沿用宿主现有服务。导航携带完整项目、任务和主机身份，历史会话保持原目录；刷新、重连恢复同一任务，过期导航不能覆盖当前连接。
+- **目录与能力**：当前 attachment 声明目录宿主及窗口能力。项目界面和文件浏览使用该宿主，订阅使用真实连接端点；跨主机操作继续遵守设备连接与归属校验。
+- **页面版本**：网页按宿主完整版本加载，已发布资源在 R2 保留；缺失版本明确反馈。Cloudflare Git 构建完成资源归档后部署。
+- **文件与标记**：Server 的 `fork/cloud-web-access`、独立 Connector/Relay 包、Web 入口与共享项目界面；上游接线标记 `FORK(cloud-web-access)`。
+- **设计与验收**：[宿主合同](docs/features/cloud-web-access/host-contract.md)、[执行计划](docs/features/cloud-web-access/host-plan.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 
 ### Server loopback RPC 首帧有序交付（2026-11-03）
 

@@ -1,6 +1,6 @@
 # 自建云端网页远控实现记录
 
-状态：2026-11-03，分支内最小实现和本地闭环已完成；尚未部署到真实 Cloudflare，真实模型回复、发行安装包、正式手机/公网验收未执行。本文记录实际落地位置、关键边界和证据，不把本地通过写成生产完成。
+状态：2026-11-04，Server 通过现有 Relay V2 提供项目导航、会话与文件访问；网页按宿主版本加载。
 
 ## 1. 交付结构
 
@@ -21,7 +21,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 - `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，不设时间过期，响应字段是 `token`、`userInfo`。会话声明只保留账号与 `AUTH_EPOCH` 版本，轮换 epoch 即撤销全部旧会话。
 - 复用 shared 的 V2 register/list/delete/token 和 `/api/v1/remote/ws2`；浏览器和 Server 不进入官方 OAuth。
-- 静态资源直接来自 `packages/web/dist`；`/remote/v4` 使用 SPA fallback，未知 `/api/*` 返回 JSON 404。
+- `/remote/v4` 按宿主完整版本选择页面；当前资源来自构建产物，历史版本来自 R2，未知 `/api/*` 返回 JSON 404。
 - 有 `Origin` 时要求同源；Node/CLI 请求可以省略 Origin，WS 仍必须使用一次性票据。
 
 `packages/fork-remote-relay/src/relayRoom.ts` 是单租户设备、一次性票据和 `(device_sid, role)` owner 的唯一协调者：
@@ -46,10 +46,9 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 平台层只返回 headless 可用的安全结果；需要 Electron handler 的操作明确返回 unsupported，不挂起手机页面。
 
-项目创建沿用现有 `IProjectService`：浏览器发送 `hostId=local` 时，Server 将它解析为自身 owner host，
-目录浏览读取当前机器的 home 与目录，不依赖浏览器本地文件或桌面专用 Host attachment。local bridge 不向
-客户端暴露桌面 `window-controller`；web remote 连接在清单到达前不创建该可选代理，因此不会产生未知 channel
-请求。公网 local bridge 已实测从“新项目”→“选择文件夹”读取 `/home/ubuntu` 目录树。
+项目创建沿用现有项目服务：浏览器的“此电脑”由 Server 解释为自身 owner。宿主适配层复用项目、会话目录与工作区身份服务，提供项目列表和导航。当前主机提供 remote attachment，并声明实际窗口能力；网页依据可信目录宿主身份显示、保存项目和读取文件。
+
+打开项目准备该项目的执行目录；打开历史任务核实主机、任务与工作区，并使用原目录。普通项目树读取也完成新建项目和历史任务的身份登记。Connector 负责页面与 bridge 代际、取消和失效通知，宿主服务继续保存项目和会话事实。
 
 ## 4. Server CLI 和日志
 
@@ -88,7 +87,7 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 - 设备从离线变为在线，bootstrap 返回真实项目快照；浏览器在 390×844 登录、选择设备并进入工作区；
 - `zcode server down` 停止同一实例。
 
-该闭环未提供模型 provider，因此没有真实模型回复；没有公网 Cloudflare 部署、正式发行包安装或真实手机网络验收。部署步骤见 [deployment.md](deployment.md)。
+部署步骤见 [deployment.md](deployment.md)，当前项目会话验收见第 10 节。
 
 ## 7. 已执行验证
 
@@ -101,19 +100,21 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 
 提交前已重新执行根 typecheck/lint/architecture/removal；root lint 的 85 warnings 保留为既有结果，不把 0 errors 写成全量无告警。
 
-## 8. 未验证和已知边界
-
-- 未验证线上 Cloudflare Worker/DO、强制 eviction、并发竞态、大消息慢接收和平台配额；
-- 未验证正式稳定 launcher/发行包中的 `zcode server` 分发，只验证了当前源码入口；
-- 未验证 `up -d` 在真实后台服务组合、重复启动和日志轮转下的完整进程矩阵；
-- 未验证真实模型、权限交互、断网恢复、手机后台和公网手机；
-- Worker 目前是单部署单租户，没有多租户、注册、账号管理、通知、离线数据库或 WebDAV 替换；
-- 生产部署必须先构建 Web，再设置认证 secrets；单独执行 `wrangler deploy` 不会生成可用账号。
-
 ## 9. Server 安装路径与资源统一（2026-11-03）
 
 旧一键安装脚本在 `.local/share/zcode-server` 自行维护第二套运行包，而 SSH 用 `.zcode/server/current.json`；同一 CLI 可能与实际运行版本不同。脚本现只下载、校验和临时解压，再调用包内 `update --from-archive --server-root`，由既有 ReleaseInstaller/ReleaseManager 持有生命周期锁并维护不可变目录、完整性、pending/current 和稳定入口。PATH 包装器始终执行统一入口，绑定相同 root，SSH 切换版本后自动跟随。旧脚本入口迁移后保留原始文件，不复制或删除会话与凭据。
 
 用户反馈的 `无法定位 CLI ZCode Built-in Provider Config` 根因为 staging 只复制 `zcode.cjs` 而没有复制它旁边的 `provider/zcode-builtin.json`；`--version` 无需 provider，之前的版本检查未覆盖这一缺件。`packaging/stage.ts` 现在把 Agent dist 同次构建的配置复制到 `runtime/provider` 并纳入 agent-runtime 的 paths、哈希与组件归档。缺件在 staging、发布校验和安装前置检查时都明确失败；不靠用户下载零散配置修补。
 
-规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。不增加通用 Web server 的 `--web` 模式，远控仍使用 `zcode server connect/logout/up` 与 Relay 网页。
+规格和验收边界见 [server-installer.md](../../specs/server-installer.md)，本次验证记录见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-03-unified-server-install.md)。远控使用 `zcode server connect/logout/up` 与 Relay 网页。
+
+## 10. 宿主对齐验收（2026-11-04）
+
+规格见[宿主合同](host-contract.md)，版本部署配置见[部署说明](deployment.md)。
+
+- **CWA29**：在隔离数据目录运行真实 Core、CLI、SQLite 和 390×844 浏览器，以受控模型验证空主机创建项目、项目内首次发送、收到回复、刷新恢复、Relay 断线后继续发送、项目文件浏览；任务 ID、归属与执行目录保持一致。已有项目入口执行同样闭环；宽屏同目录多项目验证草稿刷新后仍归属用户选择的项目。
+- **宿主与连接合同**：真实项目与身份映射服务的 10 个场景、Core 清理的 2 个场景通过；Connector 的导航、代际、取消、错误上下文和 Core 断连通知 17 个场景通过。
+- **CWA30**：本地 workerd 验证完整版本入口、旧资源、HEAD、缺失与损坏反馈；发布器验证资源去重、不可变版本与清单最后发布。按 Cloudflare 构建环境完成实际 Web 构建及受控归档，生成 3898 个文件条目。
+- **应用检查**：fork 依赖合同 58 文件、1181 测试通过；根类型检查、Lint、架构与移除守卫通过，Lint 保留 85 条既有警告。
+
+可重放入口：`packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs`，空主机场景传入 `--empty`，同目录多项目场景传入 `--same-root`。证据及环境范围见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-04-host-alignment.md)。

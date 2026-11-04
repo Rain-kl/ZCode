@@ -28,8 +28,8 @@ const temporaryRoots: string[] = [];
 test("server cloud web access exposes one managed public module", () => {
   assert.deepEqual(serverCloudWebAccessModule, {
     id: "server-cloud-web-access",
-    provides: ["server-remote-config", "server-persistent-logs"],
-    requires: [],
+    provides: ["server-remote-config", "server-persistent-logs", "server-remote-workspace-host"],
+    requires: ["fork-remote-connector", "services", "shared"],
   });
 });
 

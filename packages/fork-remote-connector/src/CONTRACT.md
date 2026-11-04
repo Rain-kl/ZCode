@@ -17,6 +17,12 @@ the Relay's device catalog.
   a fresh acknowledgement before queued bridge frames can replay.
 - Bridge generation is checked before and after asynchronous open. A late open or frame from an old
   generation is closed or ignored.
+- The workspace host receives the complete project/task navigation intent and verifies ownership
+  before opening Core. Initial host navigation does not allocate a task. The connector retains
+  page/bridge generations and cancellation; the existing host services retain project/session facts.
+- Retries with the same bridge identity share one preparation and cannot change intent. Page
+  replacement cancels old preparations. Core disconnects terminate the bridge and retain its
+  invalidation for replay until a new bridge replaces it. Mobile selection survives page refresh.
 - The loopback bridge retains Core frames emitted between socket open and router subscription, then
   delivers them once in arrival order. The RPC `Initialize` frame cannot be lost at this boundary.
 - Raw RPC frames enter the existing acknowledged replay adapter only after `workspace-bridge-ready`;
@@ -27,4 +33,4 @@ the Relay's device catalog.
   for an Electron handler.
 
 `module.ts` is the public entrypoint. `openLoopbackCoreBridge` uses the Core's existing loopback
-`/ws`; `buildHeadlessWorkspaceSnapshot` only projects the injected project service's primary roots.
+`/ws`. The injected workspace host supplies workspace listings and prepared navigation targets.

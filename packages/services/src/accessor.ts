@@ -58,6 +58,8 @@ import type { IConversationShareService } from "./conversation-share/conversatio
 
 /** UI 层消费的统一服务接口 */
 export interface IServiceAccessor {
+  // FORK(cloud-web-access): 目录宿主身份由可信 attachment 注入；用于区分当前主机项目与跨设备成员。
+  readonly projectHostId?: string;
   readonly taskGroupService?: ITaskGroupService;
   readonly projectService?: IProjectService;
   readonly remoteProjectService?: IRemoteProjectService;

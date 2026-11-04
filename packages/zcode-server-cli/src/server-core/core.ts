@@ -3,7 +3,6 @@ import { homedir, hostname } from "node:os";
 // FORK-END(cloud-web-access)
 // FORK-BEGIN(cloud-web-access): 独立连接器复用既有 Core bridge 与项目快照，不复制服务容器。
 import {
-  buildHeadlessWorkspaceSnapshot,
   createForkRemoteConnector,
   openLoopbackCoreBridge,
 } from "@zcode/fork-remote-connector/module";
@@ -16,8 +15,12 @@ import {
   ZCODE_BUILTIN_PROVIDER_CONFIG_FILE_ENV,
   createTopicResourcePeers,
 } from "@zcode/services/node";
-// FORK(cloud-web-access): connector 读取现有项目服务的 primary root，不建立第二份项目事实。
-import { IProjectService, IZCodeAgentService } from "@zcode/services";
+// FORK(cloud-web-access): 宿主适配层复用既有项目与身份登记服务，不建立第二份事实。
+import {
+  IProjectService,
+  ISourceServerWorkspaceService,
+  IZCodeAgentService,
+} from "@zcode/services";
 import { ZCODE_APP_VERSION_ENV, ZCODE_VERSION } from "@zcode/shared";
 import { createCoreHttpServer } from "./http.js";
 import { createIngressToken } from "./ingressToken.js";
@@ -27,6 +30,7 @@ import { createTaskActivityTracker } from "./taskActivityTracker.js";
 import { CORE_HEARTBEAT_INTERVAL_MS } from "../contracts.js";
 // FORK(cloud-web-access): Relay 配置由独立 managed 模块读取；Core 不解析或写入凭据文件。
 import {
+  createHeadlessRemoteWorkspaceHost,
   hasActiveServerUpdate,
   isCloudWebAccessRequired,
   isCloudWebAccessUpdateFallback,
@@ -135,7 +139,14 @@ export async function runServerCore(
   // FORK-BEGIN(cloud-web-access): 只有有效配置存在时才挂接 Relay owner。
   let connector: ReturnType<typeof createForkRemoteConnector> | undefined;
   if (remoteConnection) {
-    const projectService = services.get(IProjectService);
+    const { projectServiceForAttachment, ...workspaceHost } = createHeadlessRemoteWorkspaceHost({
+      sourceServerId,
+      projectService: services.get(IProjectService),
+      workspaceService: services.get(ISourceServerWorkspaceService),
+      fallbackWorkspacePath: homedir(),
+    });
+    // 新项目可能在首屏之后创建；普通项目树 RPC 也必须在订阅前登记身份。运行时闭包仍用原服务。
+    services.register(IProjectService, projectServiceForAttachment);
     connector = createForkRemoteConnector({
       endpoint: remoteConnection.endpoint,
       sessionToken: remoteConnection.sessionToken,
@@ -149,13 +160,7 @@ export async function runServerCore(
         warn: (message, details) => console.warn(message, details ?? ""),
         error: (message, details) => console.error(message, details ?? ""),
       },
-      async listWorkspaces() {
-        return buildHeadlessWorkspaceSnapshot({
-          sourceServerId,
-          fallbackWorkspacePath: homedir(),
-          projects: await projectService.readProjects(),
-        });
-      },
+      ...workspaceHost,
       openCoreBridge: async () =>
         await openLoopbackCoreBridge({ host: http.host, port: http.port, ingressToken }),
     });

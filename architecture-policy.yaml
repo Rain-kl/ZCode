@@ -32,12 +32,13 @@ modules:
     layers: { contract: contract.ts, adapters: . }
     owner: fork
   - id: fork-remote-relay
-    roots: [packages/fork-remote-relay/src]
+    roots: [packages/fork-remote-relay/src, scripts/fork-remote-web, packages/web/vite/remoteFrontendVersion.mjs]
     managed: true
     requires: [shared, web-remote-relay]
     publicEntrypoints:
       - packages/fork-remote-relay/src/contract.ts
       - packages/fork-remote-relay/src/module.ts
+      - packages/web/vite/remoteFrontendVersion.mjs
     layers: { contract: contract.ts, adapters: . }
     owner: fork
   - id: codex-collaboration-ui
@@ -197,7 +198,7 @@ modules:
   - id: server-cloud-web-access
     roots: [packages/zcode-server-cli/src/fork/cloud-web-access]
     managed: true
-    requires: []
+    requires: [fork-remote-connector, services, shared]
     publicEntrypoints:
       - packages/zcode-server-cli/src/fork/cloud-web-access/contract.ts
       - packages/zcode-server-cli/src/fork/cloud-web-access/module.ts

@@ -1,4 +1,8 @@
-import type { WebRemoteControlAppPayload, WebRemoteControlWorkspaceTarget } from "@zcode/shared";
+import type {
+  WebRemoteControlAppPayload,
+  WebRemoteControlWorkspaceBridgeOpenPayload,
+  WebRemoteControlWorkspaceTarget,
+} from "@zcode/shared";
 
 export interface ForkRemoteConnectorLogger {
   info: (message: string, details?: unknown) => void;
@@ -8,6 +12,7 @@ export interface ForkRemoteConnectorLogger {
 
 export interface ForkRemoteCoreBridge {
   onMessage: (listener: (bytes: Uint8Array) => void) => () => void;
+  onClose?: (listener: () => void) => () => void;
   send: (bytes: Uint8Array) => void;
   setFlowState: (state: "saturated" | "drained") => void;
   close: () => void;
@@ -19,10 +24,22 @@ export interface ForkRemoteWorkspaceSnapshot {
   activeTaskId?: string;
 }
 
+export interface ForkRemotePreparedWorkspace {
+  workspaceKey: string;
+  workspacePath: string;
+  workspaceIdentity: string;
+  remoteSessionId: string;
+  initialTaskId?: string;
+}
+
 export interface ForkRemoteAppRouterOptions {
   deviceSid: string;
   appVersion: string;
   listWorkspaces: () => Promise<ForkRemoteWorkspaceSnapshot>;
+  prepareWorkspace: (
+    request: WebRemoteControlWorkspaceBridgeOpenPayload,
+    signal: AbortSignal,
+  ) => Promise<ForkRemotePreparedWorkspace>;
   openCoreBridge: (input: {
     workspaceKey: string;
     taskId?: string;

@@ -13,10 +13,7 @@ import {
 } from "@zcode/rpc";
 import { createFakeRelayV2 } from "@zcode/shared/testing/fake-relay-v2";
 import { WebSocket, WebSocketServer } from "ws";
-import {
-  createForkRemoteConnector,
-  openLoopbackCoreBridge,
-} from "../src/connector.js";
+import { createForkRemoteConnector, openLoopbackCoreBridge } from "../src/connector.js";
 import type { ForkRemoteConnectorOptions } from "../src/contract.js";
 
 const logger = { info() {}, warn() {}, error() {} };
@@ -24,9 +21,7 @@ const logger = { info() {}, warn() {}, error() {} };
 function wrapCoreTestSocket(socket: WebSocket): ISocket {
   const data = new Emitter<VSBuffer>();
   const close = new Emitter<void>();
-  socket.on("message", (raw) =>
-    data.fire(VSBuffer.wrap(new Uint8Array(raw as Buffer))),
-  );
+  socket.on("message", (raw) => data.fire(VSBuffer.wrap(new Uint8Array(raw as Buffer))));
   socket.on("close", () => close.fire());
   return {
     onData: data.event,
@@ -73,9 +68,7 @@ test("loopback bridge retains Core frames emitted before router subscription", a
       onMessage: inbound.event,
       send: (message) => bridge.send(message.buffer),
     });
-    const disposeBridge = bridge.onMessage((bytes) =>
-      inbound.fire(VSBuffer.wrap(bytes)),
-    );
+    const disposeBridge = bridge.onMessage((bytes) => inbound.fire(VSBuffer.wrap(bytes)));
     assert.equal(channelClient.isInitialized(), true);
     assert.deepEqual(await channelClient.getChannel("settings").call("get"), {
       theme: "dark",
@@ -137,6 +130,12 @@ function connectorOptions(
     listWorkspaces: async () => ({
       workspaces: [{ workspacePath: "/srv/a", label: "A", kind: "local" }],
       activeWorkspaceKey: "/srv/a",
+    }),
+    prepareWorkspace: async (request) => ({
+      workspaceKey: request.workspaceKey,
+      workspacePath: "/srv/a",
+      workspaceIdentity: "remote:server:test:/srv/a",
+      remoteSessionId: "core-session",
     }),
     openCoreBridge: async () => ({
       onMessage: () => () => {},

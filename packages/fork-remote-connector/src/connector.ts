@@ -118,11 +118,13 @@ export function openLoopbackCoreBridge(options: {
     socket.once("open", () => {
       settled = true;
       resolve({
+        onClose(listener) {
+          const subscription = onClose.event(listener);
+          return () => subscription.dispose();
+        },
         onMessage(listener) {
           if (bridgeListenerRegistered) {
-            throw new Error(
-              "Core loopback bridge message listener is already registered",
-            );
+            throw new Error("Core loopback bridge message listener is already registered");
           }
           bridgeListenerRegistered = true;
           bridgeListener = listener;

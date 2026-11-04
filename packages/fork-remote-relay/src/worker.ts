@@ -3,6 +3,7 @@ import {
   WEB_REMOTE_CONTROL_RELAY_V2_WS_PATH,
 } from "@zcode/shared/web-remote-relay";
 import { issueSession, verifyPassword, verifySession } from "./auth.js";
+import { serveRemoteWebAssets } from "./webAssets.js";
 import {
   FORK_REMOTE_AUTH_LOGIN_PATH,
   FORK_REMOTE_TENANT_KEY,
@@ -98,7 +99,7 @@ const worker: ExportedHandler<ForkRemoteRelayEnv> = {
     if (url.pathname === "/api" || url.pathname.startsWith("/api/"))
       return json(404, { error: "api route not found" });
 
-    if (env.ASSETS) return env.ASSETS.fetch(request);
+    if (env.ASSETS) return serveRemoteWebAssets(request, env);
     return new Response("ZCode self-hosted relay", {
       status: 200,
       headers: { "content-type": "text/plain; charset=utf-8" },

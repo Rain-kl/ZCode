@@ -214,6 +214,8 @@ function RootInner({
   initialWorkspacePurpose,
   initialTaskId,
   initialTaskDraft,
+  // FORK(cloud-web-access): 默认启动项目与用户显式导航分开，草稿恢复仍由 Root 决定。
+  defaultInitialTaskDraft,
   isDesktop,
   isMacDesktop,
   isWindowsDesktop,
@@ -1027,6 +1029,8 @@ function RootInner({
     initialWorkspacePurpose,
     initialTaskId,
     initialTaskDraft,
+    // FORK(cloud-web-access): 将首屏默认值交给既有草稿恢复流程。
+    defaultInitialTaskDraft,
     // Bugfix: 系统右键/Service 冷启动传入 initialWorkspacePath 时，必须先恢复历史 tabs，
     // 再把目标 workspace 合并并激活。否则先 addTab 会被 restoreTabs 整体替换掉；
     // 直接禁用 restoreSession 又会让其他 workspace 全部消失。

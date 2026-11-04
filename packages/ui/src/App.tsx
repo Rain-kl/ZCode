@@ -194,12 +194,16 @@ export function App({
   // Settings tab 覆盖 workspace 时 active tab 不是 workspace tab。
   // 这里必须使用 Root 传入的 workspaceIdentity 兜底，否则远程断连态会把 /home/... 当成本地 base workspace 预热。
   const workspaceIdentity = workspaceRpcTarget.workspaceIdentity;
-  const { rpcReady: workspaceRpcReady } = useWorkspaceServicesResolution(
-    workspaceAbsPath,
-    workspaceRpcTarget.remoteSessionId,
-    workspaceIdentity,
-    workspaceRpcTarget.remoteTarget,
-  );
+  // FORK-BEGIN(cloud-web-access)
+  // 初始 Web tab 只有稳定身份；订阅 endpoint 必须取服务解析后的连接，避免重复订阅替换。
+  const { rpcReady: workspaceRpcReady, remoteSessionId: resolvedWorkspaceRemoteSessionId } =
+    useWorkspaceServicesResolution(
+      workspaceAbsPath,
+      workspaceRpcTarget.remoteSessionId,
+      workspaceIdentity,
+      workspaceRpcTarget.remoteTarget,
+    );
+  // FORK-END(cloud-web-access)
   const workspaceReadOnly = useTabStore((state) =>
     isWorkspaceReadOnly(state, workspaceAbsPath, workspaceIdentity),
   );
@@ -284,13 +288,15 @@ export function App({
   useMarketingTaskCompletionRefresh({
     workspacePath: workspaceAbsPath,
     ...(workspaceIdentity ? { workspaceIdentity } : {}),
-    ...(workspaceRemoteSessionId ? { endpointKey: workspaceRemoteSessionId } : {}),
+    // FORK(cloud-web-access): 与当前 RPC 服务保持同一 endpoint。
+    ...(resolvedWorkspaceRemoteSessionId ? { endpointKey: resolvedWorkspaceRemoteSessionId } : {}),
     rpcReady: workspaceRpcReady,
   });
   useWorkspaceTerminalTaskNotifications({
     workspacePath: workspaceAbsPath,
     ...(workspaceIdentity ? { workspaceIdentity } : {}),
-    ...(workspaceRemoteSessionId ? { endpointKey: workspaceRemoteSessionId } : {}),
+    // FORK(cloud-web-access): 与当前 RPC 服务保持同一 endpoint。
+    ...(resolvedWorkspaceRemoteSessionId ? { endpointKey: resolvedWorkspaceRemoteSessionId } : {}),
     enabled: notificationEnabled,
     rpcReady: workspaceRpcReady,
     platform,

@@ -425,7 +425,8 @@ export interface WebRemoteControlExternalRemoteWorkspaceBridge {
   remoteSessionId: string;
   initialTaskId?: string;
   /** 旧桌面不声明；客户端不能根据惰性 RPC proxy 是否存在猜测能力。 */
-  capabilities?: { windowProjectDirectory?: true };
+  // FORK(cloud-web-access): 独立 Server 复用 remote 身份接线，按实际宿主声明窗口能力；见 FEATURES.md。
+  capabilities?: { windowProjectDirectory?: true; windowController?: boolean };
 }
 
 export type WebRemoteControlExternalWorkspaceBridge =
@@ -660,6 +661,8 @@ export type WebRemoteControlAppPayload =
   | WebRemoteControlMobileLogAppPayload;
 
 export interface WebRemoteControlWorkspaceTarget {
+  // FORK(cloud-web-access): 启动草稿保留精确项目归属，同目录不同项目不可按路径猜测。
+  projectId?: string;
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
