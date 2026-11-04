@@ -8,10 +8,6 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { hashPassword } from "../src/auth.js";
-import { createHash } from "node:crypto";
-import { getPlatformProxy } from "wrangler";
-import type { R2Bucket } from "@cloudflare/workers-types";
-import { parseRemoteWebManifest } from "../src/contract.js";
 
 const packageRoot = resolve(fileURLToPath(import.meta.url), "../..");
 const wranglerCli = resolve(packageRoot, "../../node_modules/wrangler/bin/wrangler.js");
@@ -22,20 +18,6 @@ const authSecret = "test-secret-at-least-thirty-two-bytes-for-hmac-signing";
 let worker: ChildProcess | undefined;
 let runtimeDirectory = "";
 let origin = "";
-const currentWebVersion = "3.17.162-dev.12345678";
-const archivedWebVersion = "3.17.162-dev.abcdef01";
-const archivedHtml = "<!doctype html><title>archived-spa-marker</title>";
-const archivedScript = "console.info('archived-js-marker')";
-
-function webAsset(body: string, contentType: string) {
-  return {
-    size: Buffer.byteLength(body),
-    contentType,
-    sha256: createHash("sha256").update(body).digest("hex"),
-    md5: createHash("md5").update(body).digest("hex"),
-  };
-}
-
 async function availablePort(): Promise<number> {
   const server = createServer();
   server.listen(0, "127.0.0.1");
@@ -72,66 +54,6 @@ before(async () => {
     "<!doctype html><title>relay-test-spa</title><main>isolated-spa-marker</main>";
   await writeFile(resolve(assetDirectory, "index.html"), currentHtml);
   await writeFile(resolve(assetDirectory, "assets/probe.txt"), "isolated-asset-marker\n");
-  await writeFile(
-    resolve(assetDirectory, "fork-remote-web-manifest.json"),
-    JSON.stringify(
-      parseRemoteWebManifest({
-        schemaVersion: 1,
-        version: currentWebVersion,
-        files: {
-          "index.html": webAsset(currentHtml, "text/html; charset=utf-8"),
-          "assets/probe.txt": webAsset("isolated-asset-marker\n", "text/plain; charset=utf-8"),
-        },
-      }),
-    ),
-  );
-  const archiveConfig = resolve(runtimeDirectory, "archive-fixture.json");
-  await writeFile(
-    archiveConfig,
-    JSON.stringify({
-      name: "zcode-web-archive-fixture",
-      compatibility_date: "2026-06-11",
-      r2_buckets: [{ binding: "REMOTE_WEB_ARCHIVE", bucket_name: "zcode-remote-web-assets" }],
-    }),
-  );
-  const archive = await getPlatformProxy<{ REMOTE_WEB_ARCHIVE: R2Bucket }>({
-    configPath: archiveConfig,
-    persist: { path: resolve(runtimeDirectory, "state/v3") },
-    remoteBindings: false,
-  });
-  try {
-    const manifest = parseRemoteWebManifest({
-      schemaVersion: 1,
-      version: archivedWebVersion,
-      files: {
-        "index.html": webAsset(archivedHtml, "text/html; charset=utf-8"),
-        "assets/main.js": webAsset(archivedScript, "text/javascript; charset=utf-8"),
-      },
-    });
-    for (const [path, body] of [
-      ["index.html", archivedHtml],
-      ["assets/main.js", archivedScript],
-    ])
-      await archive.env.REMOTE_WEB_ARCHIVE.put(`blobs/${manifest.files[path].sha256}`, body);
-    await archive.env.REMOTE_WEB_ARCHIVE.put(
-      `versions/${archivedWebVersion}/manifest.json`,
-      JSON.stringify(manifest),
-    );
-    const corrupt = {
-      ...manifest,
-      version: "3.17.162-dev.deadbeef",
-      files: {
-        ...manifest.files,
-        "index.html": { ...manifest.files["index.html"], md5: "0".repeat(32) },
-      },
-    };
-    await archive.env.REMOTE_WEB_ARCHIVE.put(
-      `versions/${corrupt.version}/manifest.json`,
-      JSON.stringify(corrupt),
-    );
-  } finally {
-    await archive.dispose();
-  }
   origin = `http://127.0.0.1:${port}`;
   worker = spawn(
     process.execPath,
@@ -255,35 +177,24 @@ test("isolated assets serve the SPA and never swallow API routes", async () => {
   assert.doesNotMatch(await missingApi.text(), /isolated-spa-marker/);
 });
 
-test("workerd selects archived versions, version resources and HEAD without latest fallback", async () => {
-  const current = await fetch(`${origin}/remote/v4?app_version=${currentWebVersion}`);
-  assert.match(await current.text(), /isolated-spa-marker/);
-  const old = await fetch(`${origin}/remote/v4?app_version=${archivedWebVersion}`);
-  assert.equal(old.status, 200);
-  assert.equal(await old.text(), archivedHtml);
-  const script = await fetch(`${origin}/remote/v4/${archivedWebVersion}/assets/main.js`);
-  assert.equal(script.status, 200);
-  assert.equal(await script.text(), archivedScript);
-  assert.match(script.headers.get("content-type") ?? "", /^text\/javascript/);
-  assert.match(script.headers.get("cache-control") ?? "", /immutable/);
-  const head = await fetch(`${origin}/remote/v4/${currentWebVersion}/assets/probe.txt`, {
-    method: "HEAD",
-  });
+test("workerd always serves the current page regardless of host version metadata", async () => {
+  for (const version of ["3.17.162", "3.17.162-dev.abcdef01", "3.0.0"]) {
+    const response = await fetch(`${origin}/remote/v4?app_version=${version}`);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /isolated-spa-marker/);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  const entry = await fetch(`${origin}/remote/v4`, { method: "HEAD" });
+  assert.equal(entry.status, 200);
+  assert.match(entry.headers.get("content-type") ?? "", /^text\/html/);
+  assert.equal(await entry.text(), "");
+  const head = await fetch(`${origin}/assets/probe.txt`, { method: "HEAD" });
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
-  assert.equal(
-    head.headers.get("content-length"),
-    String(Buffer.byteLength("isolated-asset-marker\n")),
-  );
-  const missing = await fetch(`${origin}/remote/v4?app_version=3.0.0`);
-  assert.equal(missing.status, 404);
-  assert.match(await missing.text(), /version unavailable/i);
-  const absent = await fetch(`${origin}/remote/v4/${archivedWebVersion}/assets/absent.js`);
+  assert.match(head.headers.get("content-type") ?? "", /^text\/plain/);
+  const absent = await fetch(`${origin}/assets/absent.js`);
   assert.equal(absent.status, 404);
   assert.doesNotMatch(await absent.text(), /isolated-spa-marker/);
-  const corrupt = await fetch(`${origin}/remote/v4?app_version=3.17.162-dev.deadbeef`);
-  assert.equal(corrupt.status, 503);
-  assert.match(await corrupt.text(), /integrity mismatch/i);
 });
 
 test("real workerd runtime enforces authentication and V2 request contracts", async () => {

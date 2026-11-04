@@ -19,7 +19,6 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260611.1",
     "@types/node": "^25.5.0",
-    "aws4fetch": "1.0.20",
     "tsx": "^4.19.4",
     "typescript": "^6.0.2",
     "wrangler": "4.100.0"

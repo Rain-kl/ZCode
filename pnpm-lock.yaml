@@ -1283,9 +1283,6 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.6.0
-      aws4fetch:
-        specifier: 1.0.20
-        version: 1.0.20
       tsx:
         specifier: ^4.19.4
         version: 4.21.0
@@ -7650,9 +7647,6 @@ packages:
 
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
-
-  aws4fetch@1.0.20:
-    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   axios@1.13.6:
     resolution: {integrity: sha512-ChTCHMouEe2kn713WHbQGcuYrr6fXTBiu460OTwWrWob16g1bXn4vtz07Ope7ewMozJAnEquLk5lWQWtBig9DQ==}
@@ -19365,8 +19359,6 @@ snapshots:
   await-to-js@3.0.0: {}
 
   aws4@1.13.2: {}
-
-  aws4fetch@1.0.20: {}
 
   axios@1.13.6:
     dependencies:

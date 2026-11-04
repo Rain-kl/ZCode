@@ -24,11 +24,11 @@
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
 - **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。
 
-### Server 项目、任务与网页版本对齐（2026-11-04）
+### Server 项目、任务与网页接入对齐（2026-11-04）
 
 - **背景与行为**：网页的“此电脑”指当前 Server；项目创建、项目内新任务和历史任务分别沿用宿主现有服务。导航携带完整项目、任务和主机身份，历史会话保持原目录；刷新、重连恢复同一任务，过期导航不能覆盖当前连接。
 - **目录与能力**：当前 attachment 声明目录宿主及窗口能力。项目界面和文件浏览使用该宿主，订阅使用真实连接端点；跨主机操作继续遵守设备连接与归属校验。
-- **页面版本**：网页按宿主完整版本加载，已发布资源在 R2 保留；缺失版本明确反馈。Cloudflare Git 构建完成资源归档后部署。
+- **网页部署**：Worker 提供当前构建的网页与静态资源，Cloudflare Git 构建监听 canary 并自动部署。
 - **文件与标记**：Server 的 `fork/cloud-web-access`、独立 Connector/Relay 包、Web 入口与共享项目界面；上游接线标记 `FORK(cloud-web-access)`。
 - **设计与验收**：[宿主合同](docs/features/cloud-web-access/host-contract.md)、[执行计划](docs/features/cloud-web-access/host-plan.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 

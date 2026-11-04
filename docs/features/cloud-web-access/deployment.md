@@ -16,13 +16,7 @@ pnpm --filter @zcode/fork-remote-relay exec wrangler deploy --config wrangler.js
 
 自定义域名在 Cloudflare 控制台绑定，不写入仓库。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
 
-### 页面版本归档
-
-创建 R2 桶 `zcode-remote-web-assets`，为 Worker 配置 `REMOTE_WEB_ARCHIVE` 绑定。Cloudflare Builds 设置 `REMOTE_WEB_ARCHIVE_BUCKET=zcode-remote-web-assets`、`CLOUDFLARE_ACCOUNT_ID`，并以构建 secret 提供该桶的 `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。凭据需要对象读写权限。也可使用有 R2 对象读写权限的用户 `CLOUDFLARE_API_TOKEN`；构建器通过官方 token 校验取得标识并在内存中派生 S3 凭据。
-
-Builds 根据 `WORKERS_CI_COMMIT_SHA` 构建与同提交 Server 一致的完整开发版本。上传成功后才发布版本清单，再执行原部署命令。相同版本重复发布必须内容一致；上传或凭据校验失败会阻止部署。普通本地 `pnpm --filter @zcode/web build` 沿用本地构建。
-
-`/remote/v4?app_version=<完整版本>` 选择对应页面；无版本入口进入当前页面，配对后按宿主版本校正。旧版本清单及其引用资源保留在 R2，未知版本显示版本不可用。保留支持中的所有版本清单和引用资源；撤销支持后再清理清单及未被其他版本引用的资源。
+Worker 使用本次 Web 构建产物提供 `/remote/v4` 页面及静态资源。网页与 Server 随 canary 更新部署。
 
 ## 2. 设置单租户认证
 
@@ -96,7 +90,7 @@ zcode server down
 按顺序检查：
 
 1. `https://<relay>/` 重定向到 `/remote/v4`，且该路径返回当前 Web SPA；
-2. 页面引用的 `/remote/v4/<完整版本>/assets/...` 返回对应资源及正确内容类型；
+2. 页面引用的 `/assets/...` 返回实际资源及正确内容类型；
 3. 未知 `/api/not-real` 返回 JSON 404；
 4. 匿名、错误密码和正确账号密码的登录结果分别为 401、401、200；
 5. Server 日志出现认证/登记和 `auth_ack waiting`，设备列表显示在线；

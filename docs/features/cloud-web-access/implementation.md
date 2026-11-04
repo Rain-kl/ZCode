@@ -1,6 +1,6 @@
 # 自建云端网页远控实现记录
 
-状态：2026-11-04，Server 通过现有 Relay V2 提供项目导航、会话与文件访问；网页按宿主版本加载。
+状态：2026-11-04，Server 通过现有 Relay V2 提供项目导航、会话与文件访问；网页使用 Worker 当前部署。
 
 ## 1. 交付结构
 
@@ -21,7 +21,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 - `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，不设时间过期，响应字段是 `token`、`userInfo`。会话声明只保留账号与 `AUTH_EPOCH` 版本，轮换 epoch 即撤销全部旧会话。
 - 复用 shared 的 V2 register/list/delete/token 和 `/api/v1/remote/ws2`；浏览器和 Server 不进入官方 OAuth。
-- `/remote/v4` 按宿主完整版本选择页面；当前资源来自构建产物，历史版本来自 R2，未知 `/api/*` 返回 JSON 404。
+- `/remote/v4` 提供当前构建的页面及哈希资源，未知 `/api/*` 返回 JSON 404。
 - 有 `Origin` 时要求同源；Node/CLI 请求可以省略 Origin，WS 仍必须使用一次性票据。
 
 `packages/fork-remote-relay/src/relayRoom.ts` 是单租户设备、一次性票据和 `(device_sid, role)` owner 的唯一协调者：
@@ -114,7 +114,7 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 
 - **CWA29**：在隔离数据目录运行真实 Core、CLI、SQLite 和 390×844 浏览器，以受控模型验证空主机创建项目、项目内首次发送、收到回复、刷新恢复、Relay 断线后继续发送、项目文件浏览；任务 ID、归属与执行目录保持一致。已有项目入口执行同样闭环；宽屏同目录多项目验证草稿刷新后仍归属用户选择的项目。
 - **宿主与连接合同**：真实项目与身份映射服务的 10 个场景、Core 清理的 2 个场景通过；Connector 的导航、代际、取消、错误上下文和 Core 断连通知 17 个场景通过。
-- **CWA30**：本地 workerd 验证完整版本入口、旧资源、HEAD、缺失与损坏反馈；发布器验证资源去重、不可变版本与清单最后发布。按 Cloudflare 构建环境完成实际 Web 构建及受控归档，生成 3898 个文件条目。
+- **CWA30**：本地 workerd 验证不同连接版本参数均进入当前页面，资源类型、HEAD 与缺失资源反馈正确。
 - **应用检查**：fork 依赖合同 58 文件、1181 测试通过；根类型检查、Lint、架构与移除守卫通过，Lint 保留 85 条既有警告。
 
 可重放入口：`packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs`，空主机场景传入 `--empty`，同目录多项目场景传入 `--same-root`。证据及环境范围见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-04-host-alignment.md)。

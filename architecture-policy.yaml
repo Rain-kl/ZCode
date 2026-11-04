@@ -32,7 +32,7 @@ modules:
     layers: { contract: contract.ts, adapters: . }
     owner: fork
   - id: fork-remote-relay
-    roots: [packages/fork-remote-relay/src, scripts/fork-remote-web, packages/web/vite/remoteFrontendVersion.mjs]
+    roots: [packages/fork-remote-relay/src, packages/web/vite/remoteFrontendVersion.mjs]
     managed: true
     requires: [shared, web-remote-relay]
     publicEntrypoints:

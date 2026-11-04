@@ -10,7 +10,6 @@
     "run_worker_first": true,
     "html_handling": "none",
   },
-  "r2_buckets": [{ "binding": "REMOTE_WEB_ARCHIVE", "bucket_name": "zcode-remote-web-assets" }],
   "durable_objects": {
     "bindings": [
       {
