@@ -6,7 +6,7 @@
  *   「最新的非 prerelease、非 draft 发布」，语义确定；不用 `provider: "github"`，
  *   因为它从 `releases.atom` 取第一条 entry 当最新版本，而该 feed 既包含 prerelease，
  *   本仓库的 entry 顺序还是「旧 → 新」，会解析到错误的 tag。
- * - preview 基址是固定 tag 的指针 Release，由发布流水线每次 `--clobber` 覆盖资产。
+ * - preview 基址是固定 tag 的指针 Release，由发布流水线每次更新到当前提交并重建资产。
  * - 本模块保持纯函数：不 import electron / electron-updater，便于单测。
  */
 
@@ -16,7 +16,7 @@ import type { ElectronReleaseChannel } from "@zcode/shared";
 export const FORK_GITHUB_UPDATE_OWNER = "Rain-kl";
 export const FORK_GITHUB_UPDATE_REPO = "ZCode";
 
-/** preview 通道的固定 Release tag；发布时重建 Release，但不移动 tag。 */
+/** preview 通道的固定 Release tag；发布时更新到当前提交并重建 Release。 */
 export const FORK_GITHUB_UPDATE_PREVIEW_TAG = "canary-build";
 
 /** dev Source Server 的固定 Release；descriptor 版本仍必须与 Desktop 完整版本一致。 */

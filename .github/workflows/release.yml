@@ -29,7 +29,7 @@ name: Release Desktop
 # FORK(github-update) 更新通道（见 docs/features/github-update/design.md）
 # 客户端不再查上游 zcode.z.ai 的服务端 manifest，改为查本仓库的 GitHub Release：
 # - stable 通道：`releases/latest/download`（GitHub 定义的「最新非 prerelease」），读 latest.yml / latest-mac.yml；
-# - preview 通道：固定 tag `canary-build` 的指针 Release（每次重建 Release、不移动 tag），读 dev.yml / dev-mac.yml。
+# - preview 通道：固定 tag `canary-build` 的指针 Release（每次把 tag 与 Release 更新到当前提交），读 dev.yml / dev-mac.yml。
 # 因此本流水线必须上传更新元数据与差分块；只发安装包会让客户端报「找不到 channel 文件」。
 # 元数据文件名由 packages/desktop/electron-builder.config.js 的 detectUpdateChannel 决定。
 
@@ -580,8 +580,8 @@ jobs:
 
           # FORK-BEGIN(github-update)
           # dev 通道使用固定地址，客户端读 .../releases/download/canary-build/dev.yml。
-          # GitHub 不支持置顶 prerelease；每次删除旧 Release（保留 tag）后以 draft 重建，
-          # 上传完成再公开，使当前 canary 回到 Releases 列表前部且不会累积旧资产。
+          # GitHub 不支持置顶 prerelease，且列表按 tag 的创建时间排序。删除旧 Release，
+          # 把固定 tag 强制指向当前提交，再以 draft 重建并公开，才能让 canary 回到列表前部。
           if [[ "${PRERELEASE}" == "true" ]]; then
             pointer_tag="canary-build"
             pointer_title="Dev channel (latest canary)"
@@ -600,11 +600,9 @@ jobs:
             if gh release view "${pointer_tag}" >/dev/null 2>&1; then
               retry gh release delete "${pointer_tag}" --yes
             fi
-            if git rev-parse --verify --quiet "refs/tags/${pointer_tag}" >/dev/null; then
-              retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag --draft
-            else
-              retry gh release create "${pointer_tag}" "${pointer_args[@]}" --target "${COMMIT}" --draft
-            fi
+            retry gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/${pointer_tag}" \
+              -f "sha=${COMMIT}" -F force=true >/dev/null
+            retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag --draft
             retry gh release upload "${pointer_tag}" release-assets/* --clobber
             retry gh release edit "${pointer_tag}" "${pointer_args[@]}" --draft=false
 

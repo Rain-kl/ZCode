@@ -30,7 +30,7 @@ Source Server 与 Desktop 使用同一提交计算版本，但拥有独立的构
 
 ## Release 列表顺序
 
-GitHub 不支持置顶 prerelease。Desktop 的 `canary-build` 与 Server 的 `server-canary-build` 每次成功发布时重新公开固定 tag 对应的 Release，使当前 canary 回到 Releases 列表前部；稳定版仍由 GitHub 的 latest 规则管理。
+GitHub 不支持置顶 prerelease，并按 tag 创建时间排序。Desktop 的 `canary-build` 与 Server 的 `server-canary-build` 每次成功发布时把固定 tag 更新到当前提交，再重新公开对应 Release，使当前 canary 回到 Releases 列表前部；稳定版仍由 GitHub 的 latest 规则管理。
 
 ## 验收场景
 

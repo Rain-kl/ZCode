@@ -147,6 +147,14 @@ test("publishes dev to the fixed canary release and removes historical dev relea
   assert.ok(create.includes("--draft"));
   assert.ok(create.includes("server-canary-build"));
   assert.ok(create.includes("--verify-tag"));
+  const moveTag = calls.find(
+    (args) =>
+      args[0] === "api" &&
+      args.includes("repos/Rain-kl/ZCode/git/refs/tags/server-canary-build"),
+  );
+  assert.ok(moveTag);
+  assert.ok(moveTag.includes("sha=12345678"));
+  assert.ok(moveTag.includes("force=true"));
   assert.ok(create.includes("--latest=false"));
   assert.equal(calls.filter((args) => args[1] === "upload").length, 2);
   const descriptorUpload = calls.find(
@@ -322,6 +330,7 @@ test("Source Server has an independent workflow and cleanup preserves only curre
   assert.match(serverWorkflow, /source-server-release\.mjs publish/);
   assert.match(serverWorkflow, /group: source-server-release-/);
   assert.match(desktopWorkflow, /group: desktop-release-/);
+  assert.match(desktopWorkflow, /git\/refs\/tags\/\$\{pointer_tag\}/);
   assert.match(cleanup, /server-canary-build/);
   const guard = cleanup.match(/is_dev_channel_tag\(\) \{[^}]+\}/u);
   assert.ok(guard, "cleanup retention guard is required");

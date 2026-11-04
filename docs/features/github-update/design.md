@@ -81,7 +81,7 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 - dev 专属覆盖保留：`ZCODE_UPDATE_FEED_URL` / `--zcode-update-feed-url` 直接替换**基址**，
   且仅未打包时生效（打包版 warn 并忽略），用于本地对联调更新闭环。
 - preview 的 `canary-build` 是**固定 tag 的指针 Release**。发布流水线每次重建该 Release 并上传当前资产；
-  tag 不移动，因此不需要 force push，同时新的 published time 让 canary 回到 Releases 列表前部。
+  tag 同时指向当前 canary 提交，使 Release 按创建时间回到列表前部。
 
 ### 状态与所有者
 
@@ -106,7 +106,7 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 流水线还需要把元数据与 blockmap 一起上传（当前只上传安装包本体）：
 
 - stable（tag 构建）→ tag Release 额外包含 `latest.yml` / `latest-mac.yml` + `*.blockmap`；
-- dev（canary 构建）→ 只把同一批资产 `--clobber` 到固定 tag `canary-build` 的指针 Release；自 2026-09-29 起不再建 dev-<sha8> 发布（见 `docs/specs/desktop-release.md`）。
+- dev（canary 构建）→ 把固定 tag `canary-build` 更新到当前提交，并重建指针 Release；自 2026-09-29 起不再建 dev-<sha8> 发布（见 `docs/specs/desktop-release.md`）。
 
 ## 验收场景
 

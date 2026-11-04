@@ -233,8 +233,18 @@ export async function publishSourceServerRelease(
     }
   }
   if (isDev && release) {
-    // GitHub 不支持置顶 prerelease；删除 Release 但保留固定 tag，再重新公开，更新时间会回到列表前部。
+    // GitHub 列表按 tag 创建时间排序；删除 Release 后把固定 tag 指向当前提交，再重新公开。
     await run(["release", "delete", tag, "--repo", repo, "--yes"]);
+    await run([
+      "api",
+      "--method",
+      "PATCH",
+      `repos/${repo}/git/refs/tags/${tag}`,
+      "-f",
+      `sha=${commit}`,
+      "-F",
+      "force=true",
+    ]);
   }
   if (!release || isDev) {
     await run([

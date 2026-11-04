@@ -56,7 +56,7 @@
 2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
 3. **半套产物不发布**：`publish` 直接依赖 `resolve`、`verify`、`unit-tests` 和两类桌面构建。canary 只要求 macOS 与 Windows 构建成功；正式 tag 还必须 `verify` 与 `unit-tests` 全部 `success`。任一门禁/分片/构建失败、跳过或取消时，即使已上传 Actions artifact，也不得创建 Desktop Release。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
-5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，固定 tag `canary-build` 每次重新公开并只上传本次集成的一套资产。这样既不会累积旧版本包，也会让当前 canary 出现在 GitHub Releases 列表前部。
+5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，固定 tag `canary-build` 每次更新到当前提交，重新公开并只上传本次集成的一套资产。这样既不会累积旧版本包，也会让当前 canary 出现在 GitHub Releases 列表前部。
 
 ## 边界与已知缺口
 

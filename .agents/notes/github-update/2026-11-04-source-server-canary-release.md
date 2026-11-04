@@ -4,7 +4,7 @@
 
 - Desktop 与 Source Server 共享提交版本计算，但各自拥有独立 workflow、并发组和发布写入者。
 - Source Server dev 使用固定 `server-canary-build`；正式版继续使用不可变 `server-v<version>`。
-- Desktop `canary-build` 和 Server `server-canary-build` 每次重新公开固定 tag 的 Release。原因是 GitHub 没有 prerelease 置顶能力，单纯 edit 或覆盖资产不会刷新 Release 在列表中的创建/发布时间顺序。
+- Desktop `canary-build` 和 Server `server-canary-build` 每次把固定 tag 更新到当前提交，再重新公开 Release。GitHub 没有 prerelease 置顶能力，且列表按 tag 创建时间排序；只删 Release 而保留旧 tag 仍会排在后面。
 - dev descriptor 仍声明完整 `<version>-dev.<sha8>`，并作为实际安装版本。开发通道只校验双方都是 dev，不比较提交哈希；正式通道继续严格要求版本相等。
 
 ## 发布顺序
