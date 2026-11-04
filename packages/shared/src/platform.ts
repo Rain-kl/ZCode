@@ -20,6 +20,8 @@ import type {
   WebRemoteControlReconnectWorkspaceResult,
   WebRemoteControlStartOperationResult,
   WebRemoteControlStatus,
+  WebRemoteControlRelayConfigurationInput,
+  WebRemoteControlRelayConfigurationStatus,
   WebRemoteControlReconnectWorkspaceRequest,
   WebRemoteControlWorkspaceTarget,
 } from "./web-remote-control.js";
@@ -836,6 +838,14 @@ export interface IPlatformService {
 
   /** 查询当前窗口 Web 远程控制状态 */
   getWebRemoteControlStatus(): Promise<WebRemoteControlStatus>;
+
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 需要通过 Platform 边界读取与提交配置；见 FEATURES.md 的 cloud-web-access 条目。
+  getWebRemoteControlRelayConfiguration?(): Promise<WebRemoteControlRelayConfigurationStatus>;
+  configureWebRemoteControlRelay?(
+    input: WebRemoteControlRelayConfigurationInput,
+  ): Promise<WebRemoteControlRelayConfigurationStatus>;
+  // FORK-END(cloud-web-access)
 
   /** 桌面 OAuth 会话通知；main 独立重读凭据后决定是否恢复远控。 */
   notifyWebRemoteControlAuthStateChanged?(change: WebRemoteControlAuthStateChange): void;

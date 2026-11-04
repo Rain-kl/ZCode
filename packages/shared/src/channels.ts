@@ -254,6 +254,11 @@ export const PlatformChannels = {
   StopWebRemoteControl: "zcode:stop-web-remote-control",
   /** 查询当前窗口的 Web 远程控制状态 */
   GetWebRemoteControlStatus: "zcode:get-web-remote-control-status",
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 配置必须经类型化 Main IPC 完成鉴权与安全存储；见 FEATURES.md 的 cloud-web-access 条目。
+  GetWebRemoteControlRelayConfiguration: "zcode:get-web-remote-control-relay-configuration",
+  ConfigureWebRemoteControlRelay: "zcode:configure-web-remote-control-relay",
+  // FORK-END(cloud-web-access)
   /** Renderer → Main：OAuth 会话变化通知，不携带凭据 */
   WebRemoteControlAuthStateChanged: "zcode:web-remote-control-auth-state-changed",
   /** Main → Renderer：当前窗口 Web 远程控制状态变化 */
@@ -892,6 +897,17 @@ export interface PlatformChannelMap {
     request: void;
     response: WebRemoteControlStatus;
   };
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 配置必须经类型化 Main IPC 完成鉴权与安全存储；见 FEATURES.md 的 cloud-web-access 条目。
+  [PlatformChannels.GetWebRemoteControlRelayConfiguration]: {
+    request: void;
+    response: import("./web-remote-control.js").WebRemoteControlRelayConfigurationStatus;
+  };
+  [PlatformChannels.ConfigureWebRemoteControlRelay]: {
+    request: import("./web-remote-control.js").WebRemoteControlRelayConfigurationInput;
+    response: import("./web-remote-control.js").WebRemoteControlRelayConfigurationStatus;
+  };
+  // FORK-END(cloud-web-access)
   [PlatformChannels.WebRemoteControlStatusChanged]: {
     request: WebRemoteControlStatus;
     response: void;

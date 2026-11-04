@@ -85,6 +85,7 @@ import type {
   WebRemoteControlRendererActionRequest,
   WebRemoteControlRendererActionResult,
   WebRemoteControlStatus,
+  WebRemoteControlRelayConfigurationInput,
   WebRemoteControlWorkspaceTarget,
   RemoteConnectionRuntimeLog,
   WindowControlsOverlayMetrics,
@@ -299,6 +300,13 @@ contextBridge.exposeInMainWorld("zcode", {
   stopWebRemoteControl: (): Promise<void> =>
     ipcRenderer.invoke(PlatformChannels.StopWebRemoteControl),
   getWebRemoteControlStatus: () => ipcRenderer.invoke(PlatformChannels.GetWebRemoteControlStatus),
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 凭据只能提交给 Main，Renderer 不直接持久化；见 FEATURES.md 的 cloud-web-access 条目。
+  getWebRemoteControlRelayConfiguration: () =>
+    ipcRenderer.invoke(PlatformChannels.GetWebRemoteControlRelayConfiguration),
+  configureWebRemoteControlRelay: (input: WebRemoteControlRelayConfigurationInput) =>
+    ipcRenderer.invoke(PlatformChannels.ConfigureWebRemoteControlRelay, input),
+  // FORK-END(cloud-web-access)
   onWebRemoteControlStatusChanged: (
     callback: (status: WebRemoteControlStatus) => void,
   ): (() => void) => {

@@ -440,6 +440,17 @@ export interface AppSettings {
     workspaceIdentity?: string;
     initialTaskId?: string;
   };
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 需要恢复非敏感身份元数据；会话令牌仍只存 credentialService；见 FEATURES.md 的 cloud-web-access 条目。
+  webRemoteControlSelfHostedRelay?: {
+    endpointOrigin: string;
+    username: string;
+    userId: string;
+    /** 旧版本写入的会话过期时间；会话不再过期后仅兼容读取，不再写回。 */
+    expiresAt?: string;
+    tokenCredentialKey: string;
+  };
+  // FORK-END(cloud-web-access)
   /** 设置页里的临时 endpoint override；正式/测试默认 base url 由 ZCODE_BASE_URL env 管理。 */
   zcodeEndpointOrigin?: string;
 }

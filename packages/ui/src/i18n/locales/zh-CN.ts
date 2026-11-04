@@ -2478,6 +2478,19 @@ const zhCN: Record<string, string> = {
   "webRemoteControl.authRequired.description":
     "登录后即可使用手机远程控制。手机和电脑需登录同一账号。",
   "webRemoteControl.authRequired.login": "登录",
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 配置需要独立于官方 OAuth 的用户文案；见 FEATURES.md 的 cloud-web-access 条目。
+  "webRemoteControl.selfHosted.title": "连接自建远控服务",
+  "webRemoteControl.selfHosted.description": "输入 Relay 地址和统一账号密码，当前电脑会主动连接该服务。",
+  "webRemoteControl.selfHosted.endpoint": "Relay 地址",
+  "webRemoteControl.selfHosted.username": "账号",
+  "webRemoteControl.selfHosted.password": "密码",
+  "webRemoteControl.selfHosted.connect": "连接并开启远控",
+  "webRemoteControl.selfHosted.reconfigure": "更改 Relay",
+  "webRemoteControl.selfHosted.configured": "自建 Relay 已配置",
+  "webRemoteControl.selfHosted.unavailable": "当前平台不支持配置自建 Relay",
+  "webRemoteControl.selfHosted.configureFailed": "自建 Relay 配置失败：{error}",
+  // FORK-END(cloud-web-access)
   "webRemoteControl.title": "移动端远程控制",
   "webRemoteControl.description": "扫码或在手机上打开链接，即可远程控制当前工作区。",
   "webRemoteControl.statusLabel": "会话状态",

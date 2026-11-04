@@ -13,6 +13,8 @@
 | 手机登录       | fork登录入口          | 同账号密码→Relay凭据                | 自建认证边界                     | 不恢复官方模型账号              |
 | 手机项目/聊天  | 现有手机首页/会话组件 | bootstrap/bridge→原RPC/CommandInbox | 原Core/CLI/runtime               | 仅当前terminalowner；replayable |
 | 手机替换/离线  | 现有transport状态页   | 原V2 KICKED/DEVICE_OFFLINE/恢复     | 当前socket/attachmentowner       | 不新增多对多或离线缓存策略      |
+| Desktop首次配置 | 项目侧栏远控弹层      | 平台边界提交并由 Main 登录校验      | Main 设置与安全凭据存储          | Renderer 不持久化密码或令牌     |
+| Desktop远控     | 同一远控弹层与二维码  | 现有连接与 attachment               | Desktop Main                     | 不新增 connector/Host/runtime   |
 
 ## 共享与差异
 
@@ -28,11 +30,13 @@
 | must-inspect   | connector→原Core terminal attachment     | server-core/core.ts/http.ts                                              |
 | must-inspect   | Relay→同SID单roleowner                   | shared/web-remote-relay/contract.ts与官方配对规格                        |
 | must-inspect   | raw传输→内存/字节/ACK边界                | shared/web-remote-control-rpc-transport.ts                               |
+| must-inspect   | Desktop弹层→平台边界→Main唯一manager     | WebRemoteControlDialog、desktopWebRemoteControlIpc、webRemoteControlManager |
+| should-inspect | 本地模式入口门控与Desktop Root装配        | Root、renderer main、WorkspaceWebRemoteControlTrigger                    |
 | invariant-only | 新远控→旧SSH、WebDAV、desktop continuous | 原生命周期、配置与移除守卫                                               |
 
 ## 状态所有者和不变量
 
-配置归Server配置端口；进程归原Supervisor；登录/设备/票据/配对归RelayRoom；scope归Core；任务/已接纳输入归CLI；草稿归当前浏览器。Relay与Main均不保存task/snapshot/queue。
+Server 配置归 Server 配置端口；Desktop 配置归 Main，表单草稿归 Renderer；进程归原 Supervisor；登录、设备、票据和配对归 RelayRoom；任务与已接纳输入归 CLI。Relay 与 Main 均不保存 task、snapshot 或 queue。
 
 第二个terminal替换旧terminal；不能把同账号解释为允许广播。wire SID不等于sourceServerId。旧close不删新owner，旧bridge不污染新attachment。down会停止服务，logs Ctrl+C只退出查看，connect不启动服务。
 

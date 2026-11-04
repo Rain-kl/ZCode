@@ -2,6 +2,26 @@ version: 1
 
 # 存量模块先标记为 legacy；新模块或完成迁移的模块设置 managed: true。
 modules:
+  - id: cloud-web-access-ui
+    roots: [packages/ui/src/fork/cloud-web-access]
+    managed: true
+    requires: [shared, ui]
+    publicEntrypoints:
+      - packages/ui/src/fork/cloud-web-access/contract.ts
+      - packages/ui/src/fork/cloud-web-access/module.ts
+    layers: {contract: contract.ts, ui: .}
+    layerOrder: [contract, ui]
+    owner: fork
+  - id: desktop-cloud-web-access
+    roots: [packages/desktop/src/fork/cloud-web-access]
+    managed: true
+    requires: []
+    publicEntrypoints:
+      - packages/desktop/src/fork/cloud-web-access/contract.ts
+      - packages/desktop/src/fork/cloud-web-access/module.ts
+    layers: {contract: contract.ts, adapters: .}
+    layerOrder: [contract, adapters]
+    owner: fork
   - id: fork-remote-connector
     roots: [packages/fork-remote-connector/src]
     managed: true
@@ -658,6 +678,7 @@ modules:
       - services
       - shared
       - ui
+      - cloud-web-access-ui
     publicEntrypoints:
       - packages/ui/src/web-remote-control/index.ts
       - packages/ui/src/web-remote-control/contract.ts

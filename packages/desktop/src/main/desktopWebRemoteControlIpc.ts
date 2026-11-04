@@ -6,6 +6,7 @@ import {
   parseRemoteWorkspaceIdentity,
   PlatformChannels,
   webRemoteControlAuthStateChangeSchema,
+  webRemoteControlRelayConfigurationInputSchema,
   type WebRemoteControlAuthStateChange,
   type TelemetryEventPayload,
   type WebRemoteControlContext,
@@ -27,6 +28,14 @@ export interface WebRemoteControlIpcManager {
   notifyAuthStateChanged(windowId: number, change: WebRemoteControlAuthStateChange): Promise<void>;
   stop(windowId: number): Promise<void>;
   getStatus(windowId: number): WebRemoteControlStatus;
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 配置由同一个 Main manager 生命周期边界持有；见 FEATURES.md 的 cloud-web-access 条目。
+  getRelayConfiguration(): Promise<import("@zcode/shared").WebRemoteControlRelayConfigurationStatus>;
+  configureRelay(
+    windowId: number,
+    input: import("@zcode/shared").WebRemoteControlRelayConfigurationInput,
+  ): Promise<import("@zcode/shared").WebRemoteControlRelayConfigurationStatus>;
+  // FORK-END(cloud-web-access)
 }
 
 interface WebRemoteControlIpcDependencies {
@@ -137,4 +146,16 @@ export function registerWebRemoteControlIpcHandlers(
       ? dependencies.webRemoteControlManager.getStatus(win.id)
       : { status: "idle" as const };
   });
+  // FORK-BEGIN(cloud-web-access)
+  // Desktop 自建 Relay 登录必须在可信 Main 边界校验并保存；见 FEATURES.md 的 cloud-web-access 条目。
+  ipcMain.handle(PlatformChannels.GetWebRemoteControlRelayConfiguration, () =>
+    dependencies.webRemoteControlManager.getRelayConfiguration(),
+  );
+  ipcMain.handle(PlatformChannels.ConfigureWebRemoteControlRelay, async (event, payload: unknown) => {
+    const input = webRemoteControlRelayConfigurationInputSchema.parse(payload);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error("未找到当前窗口，无法配置 Web 远程控制 Relay");
+    return dependencies.webRemoteControlManager.configureRelay(win.id, input);
+  });
+  // FORK-END(cloud-web-access)
 }

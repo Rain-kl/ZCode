@@ -2509,6 +2509,11 @@ nodes:
     codeSeeds:
       - symbol: "WebRemoteControlDialog"
         file: "packages/ui/src/web-remote-control/WebRemoteControlDialog.tsx"
+      - symbol: "DesktopSelfHostedRelaySetup"
+        file: "packages/ui/src/fork/cloud-web-access/DesktopSelfHostedRelaySetup.tsx"
+    invariants:
+      - "Renderer owns only unsubmitted Relay form drafts; Desktop Main owns configuration, authentication, device transport and attachment lifecycle."
+      - "Self-hosted Relay setup remains independent from the hidden official cloud-account surface."
 
   - id: "state.task-list-row-projection"
     kind: "state-owner"
@@ -3781,6 +3786,19 @@ nodes:
       - "Start and reset-pairing do not add Desktop native confirmation; QR refresh keeps its renderer confirmation."
       - "The internal one-time ticket binds window and workspace targets but is not proof of user authorization and is not an XSS mitigation."
       - "Renderer-reachable IPC dependencies expose only target-bound start/reset methods."
+
+  - id: "state.desktop-self-hosted-relay-configuration"
+    kind: "state-owner"
+    label: "Desktop Main self-hosted Relay configuration and credential reference"
+    docs:
+      - "docs/features/cloud-web-access/design.md"
+      - "docs/features/cloud-web-access/protocol.md"
+    codeSeeds:
+      - symbol: "createDesktopSelfHostedRemoteRelayConfiguration"
+        file: "packages/desktop/src/fork/cloud-web-access/relayConfiguration.ts"
+    invariants:
+      - "Settings contain only endpoint, account identity and a credential reference; passwords and session tokens never enter Renderer persistence."
+      - "Changing endpoint or account cannot reuse the previous Relay device identity."
 
   - id: "service.desktop-app-shutdown-policy"
     kind: "service"
@@ -7848,6 +7866,14 @@ edges:
   - from: "surface.desktop-web-remote-control-dialog"
     to: "service.desktop-web-remote-control-authorization"
     type: "commits-start-and-reset-through"
+    rank: "must-inspect"
+  - from: "surface.desktop-web-remote-control-dialog"
+    to: "state.desktop-self-hosted-relay-configuration"
+    type: "commits-self-hosted-login-through-main"
+    rank: "must-inspect"
+  - from: "state.desktop-self-hosted-relay-configuration"
+    to: "service.desktop-web-remote-control-authorization"
+    type: "provides-endpoint-and-login-to"
     rank: "must-inspect"
   - from: "service.desktop-web-remote-control-authorization"
     to: "service.shared-host-attachment"

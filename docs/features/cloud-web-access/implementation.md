@@ -10,6 +10,7 @@
 | Server connector | `packages/fork-remote-connector/**`                      | 已完成 Core loopback、AppPayload bridge、代际和启动失败清理 |
 | Server 命令/配置 | `packages/zcode-server-cli/src/fork/cloud-web-access/**` | 已完成 connect、配置保存、持久日志、up/down/logs 接线       |
 | Web 登录入口     | `packages/web/src/web-remote-control/**` + `packages/ui` | 已完成 `/remote/v4` 同源账号密码登录和 Root 启动门控        |
+| Desktop 远控入口 | Desktop Main、平台边界与远控弹层                         | 已完成自建 Relay 登录、会话保存和既有远控连接接入           |
 | 根工作流         | `package.json`、`architecture-policy.yaml`、测试清单     | 已接入 typecheck、架构边界和 fork 合同测试                  |
 
 Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只保留组合根和入口适配，并用 `FORK(cloud-web-access)` 标出产品接线。配置和日志路径属于 Server 实例的 canonical root，不建立第二套 daemon 或数据目录。
@@ -86,6 +87,7 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 - Relay：6/6（真实 workerd、认证/V2、票据单次消费、owner 替换、离线 meta、alarm 清理、Workers-safe KDF 预算）；
 - Connector：11/11，包含真实 WebSocket 在 router 订阅前发送 RPC `Initialize` 并完成 setting channel roundtrip；Server CLI 定向 13/13；tsup 工程测试 4/4；
 - Web 认证/transport 定向 19/19；self-hosted auth 错误语义回归 7/7；UI Root startup 回归纳入 fork 合同清单；
+- Desktop 自建 Relay 配置、撤销后重新登录与现有远控回归 19/19；隔离 Desktop 实例已确认侧栏入口和地址、账号、密码表单；Desktop 生产构建通过；
 - `pnpm test:unit:fork` 10 组通过；补齐 CLI 构建产物后 `pnpm test:unit:contracts` 53 文件/1165 测试通过；
 - 根 `pnpm typecheck` 通过；根 `pnpm lint` 为 85 warnings/0 errors（既有警告）；架构变更检查 0 违规；`pnpm fork:check-removals` 通过；CLI build、Web lint/build、Relay/Connector lint 通过。
 

@@ -16,6 +16,8 @@
 
 Server connect 保存 endpoint、userId、可撤销/可轮换凭据及 V2 设备身份；不默认持久保存密码。浏览器使用既有凭据边界接入自建登录，密码本身不入 localStorage。凭据失效时停止认证重试；设备 SID 按 endpoint/user 隔离，换地址/账号不复用旧身份。
 
+Desktop 使用同一登录合同。Renderer 只提交一次 Relay 地址、账号和密码；Main 校验登录结果后保存非敏感配置和可撤销会话凭据。密码和会话令牌不进入 Renderer 持久化。Desktop 继续复用原有设备注册、配对、二维码和 attachment 生命周期；Relay 地址或账号变化时，旧设备身份不能跨身份复用。
+
 Worker 对存在的 `Origin` 校验同源；Node device 可以不带 Origin，但仍须合法登录与一次性票据。当前 Worker 不提供 IP 登录限速，生产部署必须在 Cloudflare WAF/网关配置限速或等价保护。密码错误返回 401；没有账号注册或管理后台。
 
 ## 3. 原样支持的 HTTP 合同

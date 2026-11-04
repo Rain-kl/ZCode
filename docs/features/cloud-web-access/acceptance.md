@@ -41,6 +41,10 @@
 | CWA22 | 1/6/8/16 MiB 消息、坏片/CRC/丢 ACK、慢接收/配额                        | 既有尺寸/重放边界成立；无持久正文或无界队列                 | not-run at Relay boundary；仅有 shared transport 既有测试   |
 | CWA23 | Server 下线后手机刷新、冷/热页面                                       | 沿用官方离线/配对流程，不宣称新增离线阅读；原缓存行为不改   | not-run：只做 source/契约审计                               |
 | CWA24 | 注入敏感占位符、JWT/token、密码与 RPC 正文到失败路径                   | 持久日志/前台/logs 都不泄露；保留错误上下文                 | partial：日志脱敏单测；全失败路径注入未跑                   |
+| CWA25 | Desktop 本地模式打开项目侧栏远控入口，尚未配置 Relay                   | 入口可见；展示自建地址、账号和密码表单；不跳转官方 OAuth    | pass：隔离 Desktop 实例实际打开侧栏入口和配置表单           |
+| CWA26 | Desktop 提交合法或非法 Relay 配置并重新打开弹层                        | Main 校验登录；密码不持久化；错误保留具体上下文             | pass：配置合同与凭据边界回归                                |
+| CWA27 | Desktop 配置成功后启动、扫码、复制链接、停止与重启                     | 复用现有连接与 attachment；链接指向自建 `/remote/v4`        | partial：生产构建通过；未使用真实账号完成扫码控制           |
+| CWA28 | Desktop 会话被 epoch 撤销或更换 Relay 地址、账号                       | 回到重新登录；旧设备身份不跨地址或账号复用                  | pass：撤销会话与地址、账号隔离回归                          |
 
 ## 3. 测试组织与剪枝
 

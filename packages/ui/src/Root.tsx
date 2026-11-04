@@ -175,13 +175,12 @@ export function Root(props: RootProps) {
               <TabStoreProvider>
                 <ProjectDirectoryProvider isDesktop={props.isDesktop}>
                   <DiffsWorkerPoolProvider>
-                    {/* FORK(local-mode): 上游手机远控要求云账号 JWT，不符合匿名功能条件。 */}
+                    {/* FORK-BEGIN(cloud-web-access) */}
+                    {/* 自建 Relay 不依赖官方云账号界面，Desktop 显式能力开关即可展示入口；见 FEATURES.md 的 cloud-web-access 条目。 */}
                     <WebRemoteControlFeatureProvider
-                      enabled={
-                        isCloudAccountSurfaceEnabled() &&
-                        props.webRemoteControlFeatureEnabled === true
-                      }
+                      enabled={props.webRemoteControlFeatureEnabled === true}
                     >
+                    {/* FORK-END(cloud-web-access) */}
                       <AssistantCodeCommentFeatureProvider
                         enabled={props.assistantCodeCommentCardsEnabled}
                       >
