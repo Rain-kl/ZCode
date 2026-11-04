@@ -30,7 +30,6 @@ import {
 } from "react";
 import { Hand } from "lucide-react";
 import {
-  BUILTIN_MODEL_PROVIDER_IDS,
   buildCustomSupplierKey,
   isHighspeedProviderId,
   isRemoteWorkspaceIdentity,
@@ -5154,7 +5153,7 @@ export function SessionPane({
     sendSubmissionError,
   ]);
   // 远端 workspace 的模型目录来自远端 Registry；本机配置保存后由 Provisioning 自动下发，
-  // 因此缺模型横幅只切换措辞，配置/升级动作仍统一指向本机。
+  // 因此缺模型横幅只切换措辞，配置动作仍统一指向本机。
   const modelConfigTarget: ChatErrorBannerModelConfigTarget = isRemoteWorkspaceIdentity(
     workspaceIdentity ?? "",
   )
@@ -5164,14 +5163,7 @@ export function SessionPane({
     setPendingSettingsSectionIntent("modelProvider");
     openSettingsTab();
   }, [openSettingsTab]);
-  const handleOpenModelUpgrade = useCallback(() => {
-    if (!codingPlanUpgradeDialog) return;
-    const providerId =
-      sharedSettings?.providerFamilyDomain === "bigmodel"
-        ? BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
-        : BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan;
-    codingPlanUpgradeDialog.openCodingPlanUpgrade({ providerId });
-  }, [codingPlanUpgradeDialog, sharedSettings?.providerFamilyDomain]);
+  // FORK(其他更新): 缺模型横幅不再提供升级套餐入口，原 handleOpenModelUpgrade 已移除；见 FEATURES.md 的 其他更新 条目
   const handleOpenQuotaUpgrade = useCallback(() => {
     const providerId = quotaBanner.upgradeProviderId;
     if (!providerId || !codingPlanUpgradeDialog) return;
@@ -5639,7 +5631,6 @@ export function SessionPane({
       onRetryInitialization={handleRetrySubscribe}
       onRetryError={retryConfigReadEnabled ? handleRetryConfigRead : undefined}
       onOpenModelSettings={handleOpenModelSettings}
-      onOpenModelUpgrade={handleOpenModelUpgrade}
       modelConfigTarget={modelConfigTarget}
       onOpenCodeViewer={onOpenCodeViewer}
       suppressGoalCommands={selectionSideChat}

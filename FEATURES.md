@@ -411,6 +411,7 @@
 
 - **上游同步记录（2026-10-24，`aac47556..3c5b2276`）**：采用上游 WorkspaceShellLayout 与侧栏折叠结构，保持 bg-sidebar 和 12px 默认字号；合入新的 remote continuity 色值。
 
+- 2026-11-04：缺模型横幅去掉「请开通编程套餐」引导文案与「升级」按钮，只保留「配置」与关闭入口；`packages/ui/src/ChatErrorBanner.tsx`、`packages/ui/src/i18n/locales/zh-CN.ts`、`packages/ui/src/i18n/locales/en-US.ts`、`packages/ui/src/v4/ConversationComposer.tsx`、`packages/ui/src/v4/SessionPane.tsx`。
 - 2026-10-17：子代理配置监听修复目录快速替换的漏检——父目录原生 `rename` 事件原先只触发 `stat` 比对，Linux ext4 复用刚释放的 inode 时 `dev/ino` 不变，旧 watcher 不会关闭，后续配置修改静默失效。现在事件指名被监听目录项时强制重建；`packages/services/src/subagents/subagentConfigScope.ts`、`packages/services/test/subagentRuntimeConfig.test.ts`。
 - **上游同步记录（2026-10-16，`29628c9..aac47556`）**：`packages/ui/src/lib/uiFontSize.ts` 的默认字号冲突为上游 14px、fork 12px；保留已记录的 12px 首次启动默认值。`packages/ui/src/app-shell/WorkspaceShellLayout.tsx` 冲突为上游可拖拽宽度面板与 fork 侧栏底色；采用上游面板结构并保留 `bg-sidebar`。
 - **同步维护（2026-10-16）**：为上游新增的 `packages/services/src/gen-ui` 补齐架构规则要求的 `contract.test.ts`；将 fork 专属 test id 移至 `packages/shared/src/test-ids-fork.ts`，保持公开导出并修复上游文件触发的 max-lines lint。

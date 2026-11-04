@@ -7296,7 +7296,8 @@ const enUS: Record<string, string> = {
   "chat.error.collapseDetails": "Hide details",
   "chat.error.feedback": "Report issue",
   "chat.error.feedbackOpened": "Feedback opened with the error context attached",
-  "chat.error.noAvailableModel": "No model available. Upgrade or set a custom model.",
+  // FORK(其他更新): 缺模型提示去掉开通套餐引导；见 FEATURES.md 的 其他更新 条目
+  "chat.error.noAvailableModel": "No model available.",
   "chat.error.remoteNoAvailableModel":
     "This remote device has no available model yet. Configure models on this computer first; they will sync to the remote device automatically after you save.",
   "chat.error.sendFailed": "Failed to send. Try again later.",
