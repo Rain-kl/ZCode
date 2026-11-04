@@ -20,7 +20,9 @@ describe("remoteCdn", () => {
         timeZone: "Asia/Shanghai",
         version: "0.0.0-test",
       }),
-    ).toEqual(["https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test"]);
+    ).toEqual([
+      "https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test",
+    ]);
   });
 
   it("语言和时区不改变版本锁定的 GitHub Server 下载源", () => {
@@ -43,15 +45,22 @@ describe("remoteCdn", () => {
         timeZone: "America/Los_Angeles",
         version: "0.0.0-test",
       }),
-    ).toEqual(["https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test"]);
+    ).toEqual([
+      "https://github.com/Rain-kl/ZCode/releases/download/server-v0.0.0-test",
+    ]);
   });
 
-  it("canary 不消费可变指针，旧客户端仍锁定旧版本", () => {
-    for (const version of ["3.17.162-dev.084c4811", "3.17.162-dev.12345678", "3.17.162"]) {
+  it("canary 复用固定 Server Release，正式版仍锁定版本 Release", () => {
+    for (const version of ["3.17.162-dev.084c4811", "3.17.162-dev.12345678"]) {
       expect(resolveRemoteCdnBaseUrls({ env: "production", version })).toEqual([
-        `https://github.com/Rain-kl/ZCode/releases/download/server-v${version}`,
+        "https://github.com/Rain-kl/ZCode/releases/download/server-canary-build",
       ]);
     }
+    expect(
+      resolveRemoteCdnBaseUrls({ env: "production", version: "3.17.162" }),
+    ).toEqual([
+      "https://github.com/Rain-kl/ZCode/releases/download/server-v3.17.162",
+    ]);
   });
 
   it("东八区判断应按 UTC 偏移而不是固定城市名单", () => {
@@ -68,7 +77,9 @@ describe("remoteCdn", () => {
         timeZone: "Asia/Shanghai",
         version: "0.0.0-test",
       }),
-    ).toEqual(["http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test"]);
+    ).toEqual([
+      "http://intranet.example.invalid:12345/ssh-remote-assets/0.0.0-test",
+    ]);
   });
 
   it("显式覆盖 CDN 基址时不再按产品环境选择默认值", () => {

@@ -134,11 +134,7 @@ def main():
         temp = Path(temp)
         index = temp / "index"
         if dev:
-            download(DOWNLOADS + "/canary-build/dev.yml", index)
-            versions = re.findall(r"^version: *([^\s]+) *$", index.read_text(), re.MULTILINE)
-            require(len(versions) == 1, "Invalid canary dev.yml version")
-            version = versions[0]
-            require("-dev." in version, "Canary version must be a dev release")
+            base = DOWNLOADS + "/server-canary-build"
         else:
             download("https://api.github.com/repos/" + REPO + "/releases/latest", index)
             release = json.loads(index.read_text())
@@ -148,11 +144,15 @@ def main():
             require(isinstance(tag, str) and tag.startswith("v"), "Invalid stable release tag")
             version = tag[1:]
             require("-" not in version, "Stable version cannot be a prerelease")
-        require(VERSION.fullmatch(version) is not None, "Invalid release version: " + version)
-        base = DOWNLOADS + "/server-v" + version
+            require(VERSION.fullmatch(version) is not None, "Invalid release version: " + version)
+            base = DOWNLOADS + "/server-v" + version
         descriptor_path = temp / "descriptor.json"
         download(base + "/source-server-release.json", descriptor_path)
         descriptor = json.loads(descriptor_path.read_text())
+        if dev:
+            version = descriptor.get("version", "")
+            require(VERSION.fullmatch(version) is not None and "-dev." in version,
+                    "Canary descriptor must declare a dev version")
         require(descriptor.get("schemaVersion") == 1 and descriptor.get("version") == version,
                 "Invalid Source Server descriptor schema/version")
         entries = descriptor.get("archives")

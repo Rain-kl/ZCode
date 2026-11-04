@@ -266,13 +266,14 @@
 ### 远程 Server 从 GitHub 配套发布（2026-11-02）
 
 - **背景与修改**：fork 桌面已发布，但上游 CDN 没有同版本 Source Server，新增 SSH 设备在下载 descriptor 时 404。
-  远程资源默认改为本仓库 `server-v<完整版本>` GitHub Release，复用原 descriptor、缓存、大小和 SHA-256 校验；
-  不跟随可变的 canary-build 指针，后续 canary 不破坏旧客户端安装。显式源覆盖和开发本地产物策略保留。
+  正式远程资源使用本仓库不可变的 `server-v<完整版本>` GitHub Release；开发资源使用固定的
+  `server-canary-build` Release，并在每次 canary 成功后替换旧包。两种通道均复用 descriptor、缓存、大小和 SHA-256 校验；显式源覆盖和开发本地产物策略保留。
 - **修改文件与标记**：`packages/desktop/src/main/{remoteCdn.ts,fork/github-update/feed.ts}`、
-  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`；
+  `packages/server/src/remote/remoteAssetCdn.ts`、`packages/desktop/src/host/sourceServerReleaseResolver.ts`、
+  `scripts/{install-server.sh,ci/source-server-release.mjs}` 与独立 Source Server 发布流水线；
   上游接线使用 `FORK(github-update)`，下载失败携带 URL 与具体错误。
 - **文档**：[设计](docs/features/github-update/design.md#配套远程-server-下载2026-11-02)、
-  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+  [实现与验证](docs/features/github-update/implementation.md)、[发布合同](docs/specs/source-server-release.md)。
 
 ### 开发渠道 Source Server 版本门（2026-11-03）
 

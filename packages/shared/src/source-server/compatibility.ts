@@ -40,7 +40,9 @@ export function createCompatibilityManifest(
   });
 }
 
-export const ZCODE_COMPATIBILITY_MANIFEST = Object.freeze(createCompatibilityManifest());
+export const ZCODE_COMPATIBILITY_MANIFEST = Object.freeze(
+  createCompatibilityManifest(),
+);
 
 interface ParsedVersion {
   major: number;
@@ -52,7 +54,9 @@ interface ParsedVersion {
 function parseVersion(value: string): ParsedVersion {
   const match = value
     .trim()
-    .match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u);
+    .match(
+      /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u,
+    );
   if (!match) throw new Error(`Invalid compatibility version: ${value}`);
   return {
     major: Number(match[1]),
@@ -62,16 +66,31 @@ function parseVersion(value: string): ParsedVersion {
   };
 }
 
-// FORK(github-update): dev 哈希没有时间顺序，开发渠道不能据此阻止 Source Server 连接。
+// FORK-BEGIN(github-update)
+// dev 哈希没有时间顺序，开发渠道连接与固定 Release 下载都按通道而不是哈希相等判断。
+export function isSourceServerDevelopmentVersion(version: string): boolean {
+  try {
+    return parseVersion(version).prerelease[0]?.toLowerCase() === "dev";
+  } catch {
+    return false;
+  }
+}
+
+export function isSourceServerReleaseVersionAccepted(
+  controllerVersion: string,
+  releaseVersion: string,
+): boolean {
+  return isSourceServerDevelopmentVersion(controllerVersion)
+    ? isSourceServerDevelopmentVersion(releaseVersion)
+    : controllerVersion === releaseVersion;
+}
+
 export function shouldEnforceSourceServerVersionCompatibility(
   controller: CompatibilityManifest,
 ): boolean {
-  try {
-    return parseVersion(controller.productVersion).prerelease[0]?.toLowerCase() !== "dev";
-  } catch {
-    return true;
-  }
+  return !isSourceServerDevelopmentVersion(controller.productVersion);
 }
+// FORK-END(github-update)
 
 function compareIdentifier(left: string, right: string): number {
   const leftNumeric = /^\d+$/u.test(left);
@@ -81,21 +100,32 @@ function compareIdentifier(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
-export function compareCompatibilityVersions(left: string, right: string): number {
+export function compareCompatibilityVersions(
+  left: string,
+  right: string,
+): number {
   const a = parseVersion(left);
   const b = parseVersion(right);
   for (const key of ["major", "minor", "patch"] as const) {
     if (a[key] !== b[key]) return a[key] - b[key];
   }
   if (a.prerelease.length === 0 || b.prerelease.length === 0) {
-    return a.prerelease.length === b.prerelease.length ? 0 : a.prerelease.length === 0 ? 1 : -1;
+    return a.prerelease.length === b.prerelease.length
+      ? 0
+      : a.prerelease.length === 0
+        ? 1
+        : -1;
   }
   const length = Math.max(a.prerelease.length, b.prerelease.length);
   for (let index = 0; index < length; index += 1) {
     const leftIdentifier = a.prerelease[index];
     const rightIdentifier = b.prerelease[index];
     if (leftIdentifier === undefined || rightIdentifier === undefined) {
-      return leftIdentifier === rightIdentifier ? 0 : leftIdentifier === undefined ? -1 : 1;
+      return leftIdentifier === rightIdentifier
+        ? 0
+        : leftIdentifier === undefined
+          ? -1
+          : 1;
     }
     const comparison = compareIdentifier(leftIdentifier, rightIdentifier);
     if (comparison !== 0) return comparison;
@@ -129,18 +159,28 @@ export function evaluateSourceServerCompatibility(
     };
   }
 
-  const comparison = compareCompatibilityVersions(controller.productVersion, server.productVersion);
-  const newerEndpoint = comparison > 0 ? "controller" : comparison < 0 ? "server" : "equal";
+  const comparison = compareCompatibilityVersions(
+    controller.productVersion,
+    server.productVersion,
+  );
+  const newerEndpoint =
+    comparison > 0 ? "controller" : comparison < 0 ? "server" : "equal";
   const newer = comparison >= 0 ? controller : server;
   const older = comparison >= 0 ? server : controller;
   const compatible =
-    compareCompatibilityVersions(older.productVersion, newer.minCompatibleVersion) >= 0;
+    compareCompatibilityVersions(
+      older.productVersion,
+      newer.minCompatibleVersion,
+    ) >= 0;
   return {
     compatible,
     updateAvailable: comparison !== 0,
     newerEndpoint,
     ...(!compatible
-      ? { upgradeTarget: comparison >= 0 ? ("server" as const) : ("controller" as const) }
+      ? {
+          upgradeTarget:
+            comparison >= 0 ? ("server" as const) : ("controller" as const),
+        }
       : {}),
     newerVersion: newer.productVersion,
     olderVersion: older.productVersion,

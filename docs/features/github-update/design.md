@@ -66,10 +66,10 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 
 因此用 electron-updater 的 generic provider，把基址指向该别名即可，不解析 feed、不做版本排序：
 
-| 通道 | 触发条件 | 基址 | channel 文件（win / mac） |
-| --- | --- | --- | --- |
-| stable | `receivePreviewUpdates !== true`（默认） | `https://github.com/Rain-kl/ZCode/releases/latest/download/` | `latest.yml` / `latest-mac.yml` |
-| preview | `receivePreviewUpdates === true` | `https://github.com/Rain-kl/ZCode/releases/download/canary-build/` | `dev.yml` / `dev-mac.yml` |
+| 通道    | 触发条件                                 | 基址                                                               | channel 文件（win / mac）       |
+| ------- | ---------------------------------------- | ------------------------------------------------------------------ | ------------------------------- |
+| stable  | `receivePreviewUpdates !== true`（默认） | `https://github.com/Rain-kl/ZCode/releases/latest/download/`       | `latest.yml` / `latest-mac.yml` |
+| preview | `receivePreviewUpdates === true`         | `https://github.com/Rain-kl/ZCode/releases/download/canary-build/` | `dev.yml` / `dev-mac.yml`       |
 
 **基址必须以 `/` 结尾**：electron-updater 用 `new URL(相对路径, base)` 解析 metadata 与资产 URL，
 基址不带尾斜杠时最后一个路径段会被当成文件名丢掉，`.../latest/download` 会被解析成 `.../latest/<asset>`（404）。
@@ -80,17 +80,17 @@ location: https://github.com/Rain-kl/ZCode/releases/download/v3.14.3/latest.yml
 - 同时设置 `allowPrerelease`，与 channel 语义保持一致。
 - dev 专属覆盖保留：`ZCODE_UPDATE_FEED_URL` / `--zcode-update-feed-url` 直接替换**基址**，
   且仅未打包时生效（打包版 warn 并忽略），用于本地对联调更新闭环。
-- preview 的 `canary-build` 是**固定 tag 的指针 Release**，由发布流水线每次 `--clobber` 覆盖其资产；
-  不移动 tag（只换资产），因此不需要 force push。
+- preview 的 `canary-build` 是**固定 tag 的指针 Release**。发布流水线每次重建该 Release 并上传当前资产；
+  tag 不移动，因此不需要 force push，同时新的 published time 让 canary 回到 Releases 列表前部。
 
 ### 状态与所有者
 
-| 事实 | 所有者 |
-| --- | --- |
-| 当前通道（stable / preview） | main 进程 `availableUpdateChannel`，来源是 `settingService.receivePreviewUpdates` |
-| 更新器 feed 配置 | `packages/desktop/src/main/fork/github-update/feed.ts`（本 fork 唯一写入点） |
-| 更新状态机（checking / available / downloading / downloaded） | `packages/desktop/src/main/autoUpdater.ts`（不变） |
-| 更新元数据文件与资产 | 发布流水线（`.github/workflows/release.yml`） |
+| 事实                                                          | 所有者                                                                            |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| 当前通道（stable / preview）                                  | main 进程 `availableUpdateChannel`，来源是 `settingService.receivePreviewUpdates` |
+| 更新器 feed 配置                                              | `packages/desktop/src/main/fork/github-update/feed.ts`（本 fork 唯一写入点）      |
+| 更新状态机（checking / available / downloading / downloaded） | `packages/desktop/src/main/autoUpdater.ts`（不变）                                |
+| 更新元数据文件与资产                                          | 发布流水线（`.github/workflows/release.yml`）                                     |
 
 通道切换时（用户在设置里翻转「接收 preview 版本」）必须**重新应用 feed 再发起 check**，
 否则会用新 channel 去请求旧基址，或反之。这一步合进既有的 `refreshAutoUpdaterReleaseChannel`。
@@ -164,11 +164,10 @@ sha512 仅验证下载完整性，不证明发布者身份。接受 GitHub 仓�
 
 ## 配套远程 Server 下载（2026-11-02）
 
-桌面自动更新仍消费 stable/latest 或 canary-build 指针；远程 Server 必须锁定当前完整版本，默认从
-`https://github.com/Rain-kl/ZCode/releases/download/server-v<VERSION>/source-server-release.json`
-读取既有 descriptor，归档相对 URL 位于同一 Release。不能消费 latest/canary-build 的 Server，
-也不能去掉 dev 后缀请求上游 CDN：二者都会破坏同版本源码与运行时的一致性。
+桌面自动更新仍消费 stable/latest 或 `canary-build` 指针。正式版远程 Server 从不可变的
+`server-v<VERSION>` Release 下载并严格校验版本相等；dev 从固定 `server-canary-build` Release 下载，
+以 descriptor 声明的完整 dev 版本作为安装目标。dev 不比较提交哈希，不能去掉 dev 后缀请求上游 CDN。
 
 沿用 `fork/github-update/feed.ts` 的仓库身份常量与既有资源解析器，不创建第二套安装、校验或缓存逻辑。
 下载源显式覆盖、test 环境与开发态本地构建策略不变。CI 所有权、事件顺序、保留/重跑合同及验收见
-[桌面发布 spec](../../specs/desktop-release.md#2026-11-02-配套-source-server-发布)。
+[Source Server 发布 spec](../../specs/source-server-release.md)。
