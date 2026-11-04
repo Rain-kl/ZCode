@@ -4,16 +4,17 @@
 
 ## 1. 构建并部署 Worker
 
-Worker 的 `assets.directory` 指向 `packages/web/dist`，因此必须先构建 Web：
+Cloudflare Workers Builds 监听 `canary`，使用以下命令：
 
 ```sh
-pnpm --filter @zcode/web build
+# Build command
+pnpm install --frozen-lockfile --ignore-scripts && pnpm --filter @zcode/web build
+
+# Deploy command
 pnpm --filter @zcode/fork-remote-relay exec wrangler deploy --config wrangler.jsonc
 ```
 
-`wrangler.jsonc` 不保存部署者的自定义域名，只在 Cloudflare 控制台或外部部署配置中绑定。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
-
-部署前确认 Web 构建产物属于当前提交；旧 `packages/web/dist` 可能让页面能打开但缺少本次登录入口。
+自定义域名在 Cloudflare 控制台绑定，不写入仓库。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
 
 ## 2. 设置单租户认证
 
