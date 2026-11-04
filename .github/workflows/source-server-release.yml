@@ -99,7 +99,11 @@ jobs:
               --fetch-retries=5 \
               --fetch-retry-mintimeout=10000 \
               --fetch-retry-maxtimeout=60000)
-            if [ "$attempt" -gt 1 ]; then args+=(--force); fi
+            if [ "$attempt" -gt 1 ]; then
+              # Hoisted linker 的 parent/child rename race 会留下已丢失的 tmp 目录；
+              # 必须清理整棵工作区 node_modules 后做干净安装，--force 复用残留仍会失败。
+              rm -rf node_modules
+            fi
             pnpm "${args[@]}" 2>&1 | tee /tmp/source-server-pnpm-install.log
             install_status=${PIPESTATUS[0]}
             if [ "$install_status" -eq 0 ]; then break; fi
