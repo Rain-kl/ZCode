@@ -12,7 +12,7 @@
 
 CLI 必须先解析并移除全局 `--server-root`，再归一化 server 子命令；单独 `zcode server --server-root <root>` 仍是帮助，root 位于命令前后均命中同一分发流程，不能把全局参数当作子命令。
 
-安装与更新沿用 SSH 的生命周期锁、运行任务保护、降级确认及幂等完整性规则。不得使用 `--force` / `--allow-downgrade`；busy 时拒绝并保持当前版本，空闲运行中的实例由现有更新流程协调重启，无实例时只安装、不启动。未知错误保留具体命令、退出码及 stderr。脚本只有 Server 安装成功才切换 PATH 入口。
+安装与更新沿用 SSH 的生命周期锁、运行任务保护、降级确认及幂等完整性规则。固定 canary 包是 `dev` 安装的权威版本，允许其覆盖 commit hash 排序更低的开发版本；稳定版仍要求降级确认。所有安装都不使用 `--force`；busy 时拒绝并保持当前版本，空闲运行中的实例由现有更新流程协调重启，无实例时只安装、不启动。未知错误保留具体命令、退出码及 stderr。脚本只有 Server 安装成功才切换 PATH 入口。
 
 资源统一：所有 Source Server 归档和 agent-runtime 组件必须包含与 Agent bundle 同次构建的 `runtime/provider/zcode-builtin.json`；缺失时 staging 失败。该文件进入既有组件哈希与归档，不在安装时从仓库拉取零散配置，不改用户 provider 配置。`zcode server connect/logout/up/down/logs` 为本发行包的远控命令；不增加通用 `--web` 模式。
 

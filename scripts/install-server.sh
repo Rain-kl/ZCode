@@ -192,6 +192,8 @@ def main():
         # 复用 SSH 的唯一安装 owner：不自行发布版本目录、current 或完整性记录。
         update_args = [str(unpacked / "bin/zcode"), "update", "--from-archive", str(archive_path),
                        "--server-root", str(root), "--json"]
+        if dev:
+            update_args.insert(-1, "--allow-downgrade")
         result = subprocess.run(update_args)
         require(result.returncode == 0, "Server installation command failed (exit " + str(result.returncode)
                 + "): " + shlex.join(update_args))
@@ -213,7 +215,7 @@ def main():
     print("ZCode Server " + version + " installed: " + str(command))
     print("Run: zcode server connect\nThen: zcode server up -d\nLogs: zcode server logs -f\nLogout: zcode server logout")
     print("Server root: " + str(root) + " (shared with SSH installations)")
-    print("Running-task and downgrade checks follow the Server updater; no force options are used.")
+    print("Running-task checks follow the Server updater; no force options are used.")
     if str(bin_dir) not in os.environ.get("PATH", "").split(os.pathsep):
         print("Add to PATH: export PATH=" + shlex.quote(str(bin_dir)) + ':"$PATH"')
 
