@@ -14,7 +14,6 @@ export interface RemoteConnectionConfig {
   endpoint: string;
   username: string;
   sessionToken: string;
-  expiresAt: string;
   /** Relay V2 wire identity; independent from the Source Server installation id. */
   deviceMid: string;
   deviceSid: string;

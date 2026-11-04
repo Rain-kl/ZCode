@@ -18,7 +18,7 @@ Relay 和 connector 是独立 managed 包；Core、CLI、Web 的上游文件只�
 
 `packages/fork-remote-relay/src/worker.ts` 提供：
 
-- `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，有效期 12 小时，响应字段是 `token`、`expiresAt`、`userInfo`。
+- `POST /api/fork-remote/auth/login`：单租户用户名/密码校验；当前密码 KDF 为 PBKDF2-SHA256 100000 次（生产 Workers CPU 安全预算），HMAC 会话为两段 `payload.signature`，不设时间过期，响应字段是 `token`、`userInfo`。会话声明只保留账号与 `AUTH_EPOCH` 版本，轮换 epoch 即撤销全部旧会话。
 - 复用 shared 的 V2 register/list/delete/token 和 `/api/v1/remote/ws2`；浏览器和 Server 不进入官方 OAuth。
 - 静态资源直接来自 `packages/web/dist`；`/remote/v4` 使用 SPA fallback，未知 `/api/*` 返回 JSON 404。
 - 有 `Origin` 时要求同源；Node/CLI 请求可以省略 Origin，WS 仍必须使用一次性票据。
@@ -59,14 +59,14 @@ zcode server logs -f
 ```
 
 - `connect` 支持 TUI 或 `--url`、`--username`、`--password-stdin`；密码只从 masked TTY 或 stdin 读取，不进入 argv。先登录并注册设备，再以临时文件 + rename 原子写入 `config/remote-connection.json`，POSIX 权限为 `0600`。
-- 配置保存 endpoint、会话令牌、过期时间、`deviceMid`、`deviceSid` 和用户显示信息；不保存密码。运行中的 Server 会被生命周期锁阻止换配置。
-- `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失或过期会让启动失败并保留具体原因。普通 `serve` 没有配置时保持原有启动路径，只有配置有效时才启用 Relay。
+- 配置保存 endpoint、会话令牌、`deviceMid`、`deviceSid` 和用户显示信息；不保存密码。运行中的 Server 会被生命周期锁阻止换配置。
+- `up` 复用现有 Supervisor/Core；前台展示真实 Core 日志，`-d` 复用已有后台 daemon，并把 `--require-remote-config` 写入 OS service 参数。配置缺失会让启动失败并保留具体原因。普通 `serve` 没有配置时保持原有启动路径，有配置时启用 Relay。
 - `down` 调用既有 stop-and-wait 生命周期，不停留成只关 Relay 的伪停止。
 - `logs`/`-f` 读取 canonical root 的 `logs/server-YYYY-MM-DD.log`，默认最近 200 行；日志写入前脱敏，按日文件轮转，保留 7 天，单文件日上限 10 MiB；`-f` 只跟踪日志，不启动或停止 Server，并会从快照之后新出现的文件开头跟踪。
 
 ## 5. Web
 
-`/remote/v4` 的登录表单使用同源 `/api/fork-remote/auth/login`。浏览器只在 `localStorage` 保存临时 Relay 会话，不保存密码；会话校验失败、过期或 logout 会清理本地会话。登录后继续使用现有设备列表、V2 transport、KICKED 和已知设备行为，不新增离线只读或多手机同控。
+`/remote/v4` 的登录表单使用同源 `/api/fork-remote/auth/login`。浏览器只在 `localStorage` 保存临时 Relay 会话，不保存密码；会话校验失败、Relay 返回 401 或 logout 会清理本地会话。登录后继续使用现有设备列表、V2 transport、KICKED 和已知设备行为，不新增离线只读或多手机同控。
 
 Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OAuth 恢复不能阻塞 initial workspace 注入；普通非远控 Root 仍保持官方 OAuth 行为。此修复解决选择设备后出现空 `h-dvh` 白屏的真实浏览器问题。
 

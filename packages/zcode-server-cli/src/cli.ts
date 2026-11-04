@@ -466,7 +466,6 @@ async function runServerConnect(
             ok: true,
             endpoint: config.endpoint,
             username: config.username,
-            expiresAt: config.expiresAt,
           }
         : `ZCode Server connected to ${config.endpoint} as ${config.username}`,
     );

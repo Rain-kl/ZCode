@@ -81,17 +81,9 @@ export async function runServerCore(
         remoteConnectionFile: layout.remoteConnectionFile,
         logsDir: layout.logsDir,
       });
-  const remoteConnection =
-    configuredRemoteConnection && Date.parse(configuredRemoteConnection.expiresAt) > Date.now()
-      ? configuredRemoteConnection
-      : undefined;
+  const remoteConnection = configuredRemoteConnection;
   if (!remoteConnection && remoteConnectionRequired) {
-    throw new Error("ZCode Server Relay configuration is missing or expired");
-  }
-  if (configuredRemoteConnection && !remoteConnection) {
-    console.warn(
-      "ZCode Server Relay login has expired; ordinary serve continues without remote access",
-    );
+    throw new Error("ZCode Server Relay configuration is missing");
   }
   // FORK-END(cloud-web-access)
   const topicResourcePeers = createTopicResourcePeers();

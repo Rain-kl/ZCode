@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
 import { normalizeServerCommandGroup, runServerCli } from "../src/cli.js";
 import {
@@ -174,7 +174,6 @@ test("connect authenticates before atomically replacing the restricted config", 
     return url.endsWith("/api/fork-remote/auth/login")
       ? Response.json({
           token: "session-token-not-a-model-token",
-          expiresAt: "2026-12-03T00:00:00.000Z",
           userInfo: { id: "single-tenant", username: "owner", displayName: "Owner" },
         })
       : (() => {
@@ -273,7 +272,6 @@ test("connect preserves the last valid config when device registration fails", a
         String(input).endsWith("/api/fork-remote/auth/login")
           ? Response.json({
               token: "new-token",
-              expiresAt: "2026-12-03T00:00:00.000Z",
               userInfo: { id: "single-tenant", username: "owner", displayName: "Owner" },
             })
           : Response.json({ code: 5001, msg: "registration unavailable" }, { status: 503 }),
@@ -283,33 +281,38 @@ test("connect preserves the last valid config when device registration fails", a
   assert.equal(await readFile(layout.remoteConnectionFile, "utf8"), before);
 });
 
-test("an expired login cannot satisfy the server-up configuration gate", async () => {
+test("a legacy config with a past expiresAt keeps satisfying the server-up configuration gate", async () => {
   const layout = resolveServerLayout(await temporaryServerRoot());
-  await configureRemoteConnection({
-    layout,
-    endpoint: "https://relay.example.com",
-    username: "owner",
-    password: "password",
-    fetcher: authenticatedRegistrationFetcher(
-      "expired-token",
-      "expired-device-sid",
-      "2020-01-01T00:00:00.000Z",
-    ),
-  });
-  await assert.rejects(requireRemoteConnectionConfig(layout), /login has expired/u);
+  await mkdir(dirname(layout.remoteConnectionFile), { recursive: true });
+  await writeFile(
+    layout.remoteConnectionFile,
+    `${JSON.stringify({
+      version: 2,
+      endpoint: "https://relay.example.com",
+      username: "owner",
+      sessionToken: "legacy-session-token",
+      expiresAt: "2020-01-01T00:00:00.000Z",
+      deviceMid: "0f9a6a2c-8f1a-4a1a-9a1a-3c2b1d0e9f87",
+      deviceSid: "legacy-device-sid",
+      userInfo: { id: "single-tenant", username: "owner", displayName: "Owner" },
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    })}\n`,
+    "utf8",
+  );
+  const config = await requireRemoteConnectionConfig(layout);
+  assert.equal(config.sessionToken, "legacy-session-token");
+  assert.equal("expiresAt" in config, false);
 });
 
 function authenticatedRegistrationFetcher(
   token: string,
   deviceSid: string,
-  expiresAt = "2026-12-03T00:00:00.000Z",
 ): typeof fetch {
   return async (input, init) => {
     const url = String(input);
     if (url.endsWith("/api/fork-remote/auth/login")) {
       return Response.json({
         token,
-        expiresAt,
         userInfo: { id: "single-tenant", username: "owner", displayName: "Owner" },
       });
     }

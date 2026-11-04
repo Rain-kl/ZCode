@@ -1,4 +1,4 @@
-import { FORK_REMOTE_SESSION_SECONDS, type ForkRemoteLoginResult } from "./contract.js";
+import type { ForkRemoteLoginResult } from "./contract.js";
 
 const encoder = new TextEncoder();
 const PASSWORD_ALGORITHM = "PBKDF2-SHA256";
@@ -71,7 +71,6 @@ export async function verifyPassword(password: string, encoded: string): Promise
 interface SessionClaims {
   sub: string;
   epoch: string;
-  exp: number;
 }
 
 async function signingKey(secret: string, usage: Array<"sign" | "verify">) {
@@ -90,13 +89,10 @@ export async function issueSession(
   username: string,
   epoch: string,
   secret: string,
-  now = Date.now(),
 ): Promise<ForkRemoteLoginResult> {
-  const expiresAt = Math.floor(now / 1_000) + FORK_REMOTE_SESSION_SECONDS;
   const claims: SessionClaims = {
     sub: username,
     epoch,
-    exp: expiresAt,
   };
   const payload = base64Url(encoder.encode(JSON.stringify(claims)));
   const signature = await crypto.subtle.sign(
@@ -106,7 +102,6 @@ export async function issueSession(
   );
   return {
     token: `${payload}.${base64Url(new Uint8Array(signature))}`,
-    expiresAt: new Date(expiresAt * 1_000).toISOString(),
     userInfo: { id: username, username, displayName: username },
   };
 }
@@ -116,7 +111,6 @@ export async function verifySession(
   username: string,
   epoch: string,
   secret: string,
-  now = Date.now(),
 ): Promise<boolean> {
   const [payload, signature, extra] = token.split(".");
   if (!payload || !signature || extra !== undefined) return false;
@@ -129,12 +123,8 @@ export async function verifySession(
     );
     if (!valid) return false;
     const claims = JSON.parse(new TextDecoder().decode(fromBase64Url(payload))) as SessionClaims;
-    return (
-      claims.sub === username &&
-      claims.epoch === epoch &&
-      Number.isSafeInteger(claims.exp) &&
-      claims.exp > Math.floor(now / 1_000)
-    );
+    // 会话不随时间过期；撤销只依赖 AUTH_EPOCH 轮换，旧 token 的 exp 声明按未知字段忽略。
+    return claims.sub === username && claims.epoch === epoch;
   } catch {
     return false;
   }

@@ -37,7 +37,7 @@ pnpm --filter @zcode/fork-remote-relay exec wrangler secret put AUTH_SECRET --co
 pnpm --filter @zcode/fork-remote-relay exec wrangler secret put AUTH_EPOCH --config wrangler.jsonc
 ```
 
-`AUTH_EPOCH` 用于撤销已经签发的 12 小时浏览器会话；轮换 epoch 后所有旧会话失效。`AUTH_SECRET` 少于 32 字节会导致认证失败。Worker 当前不提供账号注册或管理后台，单租户值由部署者维护。
+`AUTH_EPOCH` 是唯一的会话撤销开关：轮换 epoch 后，已经签发的浏览器与 Server 会话全部失效，需要重新登录。`AUTH_SECRET` 少于 32 字节会导致认证失败。Worker 当前不提供账号注册或管理后台，单租户值由部署者维护。
 
 ## 3. Server 配置与启动
 

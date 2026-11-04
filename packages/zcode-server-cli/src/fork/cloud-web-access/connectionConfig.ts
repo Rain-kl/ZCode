@@ -10,7 +10,6 @@ import type {
 
 const loginResponseSchema = z.strictObject({
   token: z.string().min(1).max(16_384),
-  expiresAt: z.string().datetime(),
   userInfo: z.strictObject({
     id: z.string().min(1).max(256),
     username: z.string().min(1).max(256),
@@ -23,7 +22,8 @@ const remoteConnectionConfigSchema = z.strictObject({
   endpoint: z.string().url(),
   username: z.string().min(1).max(256),
   sessionToken: z.string().min(1).max(16_384),
-  expiresAt: z.string().datetime(),
+  // 旧版 connect 写入过会话过期时间；会话不再随时间失效，这里只兼容读取旧文件，不再写回。
+  expiresAt: z.string().datetime().optional(),
   deviceMid: z.string().uuid(),
   deviceSid: z.string().min(1).max(128),
   userInfo: loginResponseSchema.shape.userInfo,
@@ -73,9 +73,10 @@ export async function readRemoteConnectionConfig(
   layout: ServerCloudWebAccessLayout,
 ): Promise<RemoteConnectionConfig | null> {
   try {
-    return remoteConnectionConfigSchema.parse(
+    const { expiresAt: _legacyExpiresAt, ...config } = remoteConnectionConfigSchema.parse(
       JSON.parse(await readFile(layout.remoteConnectionFile, "utf8")),
     );
+    return config;
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
     throw new Error(`Failed to read relay connection config at ${layout.remoteConnectionFile}`, {
@@ -90,9 +91,6 @@ export async function requireRemoteConnectionConfig(
   const config = await readRemoteConnectionConfig(layout);
   if (!config) {
     throw new Error("ZCode Server is not connected; run `zcode server connect` first");
-  }
-  if (Date.parse(config.expiresAt) <= Date.now()) {
-    throw new Error("ZCode Server relay login has expired; run `zcode server connect` again");
   }
   return config;
 }
@@ -177,7 +175,6 @@ export async function configureRemoteConnection(
     endpoint,
     username,
     sessionToken: login.token,
-    expiresAt: login.expiresAt,
     deviceMid,
     deviceSid,
     userInfo: login.userInfo,
