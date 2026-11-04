@@ -19,6 +19,8 @@ export interface SlashCommandPluginProps {
   /** 已有 Session 的 id；null/undefined 表示新建草稿，决定 Skill catalog authority。 */
   sessionId?: string | null;
   disabled?: boolean;
+  // FORK(cloud-web-access): 远控输入框按实际打开面板加载目录。
+  loadSubagentsOnDemand?: boolean;
   excludedCommandNames?: readonly string[];
   /**
    * App 层本地命令（如 `/side`）。命令目录仍以 CLI catalog 为权威；这里只允许渲染层

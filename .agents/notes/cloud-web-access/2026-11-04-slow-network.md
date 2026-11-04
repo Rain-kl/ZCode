@@ -45,3 +45,15 @@ Root 复用当前项目草稿前调用原项目准备服务，复验目录及稳
 ## 工程检查
 
 根 typecheck、architecture:check --changed、fork:check-removals 通过；根 lint 0 errors、85 条既有 warnings。Web 生产构建通过。CWA33–34 的真实浏览器候选状态为 covered / pending-review。
+
+## 目录按需读取
+
+继续按真实 Core RPC 记录方法、执行耗时和 JSON 响应大小。原场景 list 返回 142872 字节，子智能体 list 返回 50168 字节；草稿推荐只使用 draft-suggestion，关闭的 slash 面板提前请求子智能体目录。
+
+Client Scenes 服务在原 list 入口接受可选场景选择，在 RPC 返回前投影；草稿 Hook 选择 draft-suggestion。SWR 资源和可见性恢复仍由原 Hook 持有，按 service/cache/scene 隔离。网页 Composer 沿既有编辑器 props 传入按需策略，Slash 插件只在打开面板时进入原 useSubagents 加载路径，缓存继续归原 context store。
+
+服务回归先 RED（筛选仍返回完整目录），后 GREEN；覆盖完整读取、指定场景、空结果、业务错误和 HTTP 错误上下文。浏览器先 RED（打开面板前目录已加载），后 GREEN：推荐响应仅含 draft-suggestion，JSON 2807 字节；子智能体零预加载，打开后 general-purpose 可见，再次打开没有额外 list。
+
+RPC 定位证据：`zcode-cwa29-0pLb8L/artifacts`；按需场景与面板验收：`zcode-cwa29-uJoQH1/artifacts`。运行命令增加 `--catalogs`。新验收在消息行内区分两次正文，标题请求按 x-zcode-query-source 独立统计；虚拟列表使用 `/general` 搜索目标候选。
+
+两批实现后的顺序回放：原提交 `zcode-cwa29-FsfDIa/artifacts`，当前实现 `zcode-cwa29-7Zd232/artifacts`。当前项目草稿 2867→874 ms，首次回复 10964→5761 ms，刷新恢复 7976→6911 ms，重连回复 2470→1922 ms；首屏 7424→7837 ms。原 UI 由内存基线插件读取全部相关改动文件，复用相同宿主和受控模型。当前实现额外验证目录首次打开与再次打开；两次正文各执行一次，模型总请求含标题为三次。类型、Lint、架构、移除守卫、node:test 10 组与 Web 构建再次通过，Lint 保持 85 条既有警告。

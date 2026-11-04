@@ -5541,6 +5541,7 @@ SSV01/02/04 使用真实 Electron、Host 与 CLI；SSV03 同时保留 Electron �
 - 390px：当前项目新草稿复检目录，保持原 bridge；两次用户发送分别收到正文回复，刷新、Relay 重连与文件浏览保持原任务和项目。
 - Server 到 Relay 每方向 150 ms、64 KiB/s；同一夹具可从指定 Git 提交读取 UI 作为性能对照，记录导航耗时、bridge 次数及传输字节。
 - 候选：`packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`。真实 Core、CLI、SQLite、Chrome，模型与 Relay 账号为本地夹具；规则见[慢链路体验](features/cloud-web-access/slow-network.md)。
+- CWA36 增加 `--catalogs`：草稿推荐响应只包含目标场景；网页打开 `/` 前目录零请求，搜索后候选可用，重复打开复用缓存。服务合同同时验证完整目录、空结果与错误上下文。
 
 ## Fork FRR01：/refresh 与 /reload 命名隔离（accepted / pending）
 

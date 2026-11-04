@@ -6046,3 +6046,5 @@ Fork sync 2026-11-03: upstream M07m preemption evidence does not cover this fork
 FRR01 修复后真实 macOS Electron + Host/CLI 显式 replay 在 `packages/desktop/.e2e-artifacts/desktop-e2e-20261103034836677-p75939-160e432e8a8fcc16` 中 1/1 通过：refresh 不新增用户/模型请求且 generation 不变，reload 同 taskId/history、新 generation ready、完成 marker 保留，随后新实例续发收到固定回复。此 run 只通过 grep 执行独立 FRR01，不代表同 spec 的 SLR01–11 或手机覆盖；候选保持 pending-review，未晋升 formal/CI。实跑后唯一生产差异是 removed-branch 完整维护三联冷裁剪与非空 sourceCommandId 校验的定向红绿修复，二者不在本次 idle 路径；未将该 artifact 冒充 rewind E2E 证据。
 
 CWA33–34（2026-11-04，covered / pending-review）：真实 Core、CLI、SQLite 与 Chrome 在每方向 150 ms、64 KiB/s 的 Server–Relay 链路下完成同项目草稿、正文回复、刷新、断线续发与文件浏览；额外 bridge 从 1 次变为 0 次。候选 `packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`，运行证据见 [慢链路 Agent Note](../../.agents/notes/cloud-web-access/2026-11-04-slow-network.md)。
+
+CWA36（2026-11-04，covered / pending-review）：同一真实浏览器候选增加 `--catalogs`，断言草稿场景投影、子智能体目录零预加载、搜索候选可用及重复打开缓存复用；服务回归验证完整读取和错误保真。证据 `zcode-cwa29-7Zd232/artifacts`。

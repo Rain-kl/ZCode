@@ -2822,6 +2822,8 @@ function ConversationComposerImpl({
           </div>
         ) : null}
         <ChatPromptEditor
+          // FORK(cloud-web-access): 远控的子智能体目录在用户打开面板时读取。
+          loadSubagentsOnDemand={isWebRemoteControl}
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
           taskId={sessionId}

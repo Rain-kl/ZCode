@@ -65,6 +65,8 @@ export function SlashCommandPlugin({
   provider,
   container,
   disabled = false,
+  // FORK(cloud-web-access): 远控按需加载，Desktop 保留既有初始化时机。
+  loadSubagentsOnDemand = false,
   excludedCommandNames,
   appCommands,
 }: SlashCommandPluginProps & { provider: ZCodeProvider }) {
@@ -74,11 +76,18 @@ export function SlashCommandPlugin({
   // 远程 workspace 的 slashCommands 写在 workspaceIdentity 桶。
   // 这里只按 workspacePath 读取会落到 path 桶，表现为 ZCode Agent 已收到 available_commands_update 但 / 面板为空。
   const commands = useSlashCommands(workspacePath, workspaceIdentity);
+  // FORK-BEGIN(cloud-web-access)
+  // 原因：关闭的 slash 面板仍下载完整子智能体目录，阻塞慢链路正文；复用既有缓存和加载入口。
   const {
     agents,
     loading: subagentsLoading,
     error: subagentsError,
-  } = useSubagents(workspacePath, provider, workspaceIdentity);
+  } = useSubagents(
+    !loadSubagentsOnDemand || (!disabled && activeTrigger?.trigger === "/") ? workspacePath : null,
+    provider,
+    workspaceIdentity,
+  );
+  // FORK-END(cloud-web-access)
   const {
     skills,
     loading: skillsLoading,

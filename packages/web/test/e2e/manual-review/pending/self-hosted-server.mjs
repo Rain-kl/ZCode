@@ -73,8 +73,10 @@ const model = createHttpServer(async (request, response) => {
   const input = JSON.parse(body || "{}");
   modelCalls++;
   // 标题也使用流式请求；按真实请求归因计数，避免把侧栏标题误当作正文回复。
-  const reply = request.headers["x-zcode-query-source"] === "main_turn"
-    ? `${marker}_${++assistantCalls}` : "CWA29 task title";
+  const reply =
+    request.headers["x-zcode-query-source"] === "main_turn"
+      ? `${marker}_${++assistantCalls}`
+      : "CWA29 task title";
   if (input.stream) {
     response.writeHead(200, { "content-type": "text/event-stream" });
     response.write(
@@ -185,6 +187,51 @@ const host = createHeadlessRemoteWorkspaceHost({
   fallbackWorkspacePath: fixtureRoot,
 });
 services.register(IProjectService, host.projectServiceForAttachment);
+// 只记录方法名、耗时与响应体积，用于区分宿主执行耗时和远端往返链。
+const rpcCalls = [];
+let stage = "startup";
+const rpcClock = performance.now();
+const exposeServices = services.exposeOnChannelServer.bind(services);
+services.exposeOnChannelServer = (server, ...options) =>
+  exposeServices(
+    {
+      registerChannel(name, channel) {
+        server.registerChannel(name, {
+          async call(context, command, args, token) {
+            const callStage = stage;
+            const started = performance.now();
+            try {
+              const result = await channel.call(context, command, args, token);
+              rpcCalls.push({
+                channel: name,
+                command,
+                stage: callStage,
+                startedMs: Math.round(started - rpcClock),
+                durationMs: Math.round(performance.now() - started),
+                resultBytes: Buffer.byteLength(JSON.stringify(result) ?? ""),
+                ...(name === "client-scenes" && Array.isArray(result?.data)
+                  ? { scenes: result.data.map((scene) => scene.scene) }
+                  : {}),
+              });
+              return result;
+            } catch (error) {
+              rpcCalls.push({
+                channel: name,
+                command,
+                stage: callStage,
+                startedMs: Math.round(started - rpcClock),
+                durationMs: Math.round(performance.now() - started),
+                failed: true,
+              });
+              throw error;
+            }
+          },
+          listen: (context, event, args) => channel.listen(context, event, args),
+        });
+      },
+    },
+    ...options,
+  );
 const http = await createCoreHttpServer(services, {
   serverId: sourceServerId,
   ingressToken: "fixture-ingress",
@@ -252,6 +299,13 @@ const baselineSources = new Map(
           "packages/ui/src/root/useRootWorkspaceActions.ts",
           "packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
           "packages/ui/src/project-sidebar/project-tree-reader.ts",
+          "packages/ui/src/hooks/useClientScenesResource.ts",
+          "packages/ui/src/v4/useDraftSuggestedPromptItems.ts",
+          "packages/ui/src/slashCommandHelpers.ts",
+          "packages/ui/src/SlashCommandPlugin.tsx",
+          "packages/ui/src/LexicalChatInput.tsx",
+          "packages/ui/src/prompt-editor/ChatPromptEditor.tsx",
+          "packages/ui/src/v4/ConversationComposer.tsx",
         ].map(async (file) => [
           resolve(root, file),
           (await promisify(execFile)("git", ["show", `${baselineRef}:${file}`], { cwd: root }))
@@ -313,6 +367,7 @@ try {
   await page.getByTestId("project-section").or(onboarding).first().waitFor({ timeout: 60000 });
   timings.openMs = Math.round(performance.now() - startedAt);
   if (await onboarding.isVisible()) await page.keyboard.press("Escape");
+  stage = "project-draft";
   if (emptyHost) {
     await page.getByTestId("virtual-project-add").click();
     await page.getByTestId("virtual-project-name").fill("E2E_CWA29_CREATED_PROJECT");
@@ -354,8 +409,13 @@ try {
     );
   }
   startedAt = performance.now();
+  stage = "first-send";
   await page.getByRole("button", { name: "Send", exact: true }).click({ timeout: 30000 });
-  await page.locator("[data-row-id]").getByText(`${marker}_1`, { exact: true }).first().waitFor({ timeout: 60000 });
+  await page
+    .locator("[data-row-id]")
+    .getByText(`${marker}_1`, { exact: true })
+    .first()
+    .waitFor({ timeout: 60000 });
   timings.firstReplyMs = Math.round(performance.now() - startedAt);
   const tree = await projects.readTree();
   assert.equal(tree.tasks.length, 1);
@@ -363,6 +423,7 @@ try {
   assert.equal(tree.tasks[0].workspacePath, projectPath);
   const taskId = tree.tasks[0].taskId;
   await page.screenshot({ path: join(artifacts, "reply.png") });
+  stage = "reload";
   startedAt = performance.now();
   await page.reload();
   const task = page.locator(`[data-session-id="${taskId}"]`).first();
@@ -371,6 +432,55 @@ try {
   if (!(await history.isVisible())) await task.click();
   await history.waitFor({ timeout: 60000 });
   timings.reloadHistoryMs = Math.round(performance.now() - startedAt);
+  if (process.argv.includes("--catalogs")) {
+    const scenes = rpcCalls.filter(
+      (call) => call.channel === "client-scenes" && call.command === "list",
+    );
+    assert.ok(scenes.length > 0);
+    assert.ok(
+      scenes.every(
+        (call) =>
+          call.scenes?.length > 0 && call.scenes.every((scene) => scene === "draft-suggestion"),
+      ),
+      "draft page must request only draft scenes",
+    );
+    assert.equal(
+      rpcCalls.filter((call) => call.channel === "subagents" && call.command === "list").length,
+      0,
+      "closed slash panel must not preload the subagent catalog",
+    );
+    const before = rpcCalls.length;
+    await input.fill("/general");
+    await page
+      .getByRole("option", { name: /general-purpose/ })
+      .first()
+      .waitFor({ timeout: 30000 });
+    assert.ok(
+      rpcCalls
+        .slice(before)
+        .some((call) => call.channel === "subagents" && call.command === "list"),
+    );
+    await input.fill("");
+    await page
+      .getByRole("option", { name: /general-purpose/ })
+      .first()
+      .waitFor({ state: "hidden" });
+    const loaded = rpcCalls.filter(
+      (call) => call.channel === "subagents" && call.command === "list",
+    ).length;
+    await input.fill("/general");
+    await page
+      .getByRole("option", { name: /general-purpose/ })
+      .first()
+      .waitFor({ timeout: 30000 });
+    assert.equal(
+      rpcCalls.filter((call) => call.channel === "subagents" && call.command === "list").length,
+      loaded,
+      "reopening the panel reuses the same directory cache",
+    );
+    await input.fill("");
+  }
+  stage = "reconnect";
   const connectedBefore = terminalConnections;
   expectedTerminalConnections = connectedBefore + 1;
   const reconnected = new Promise((done) => {
@@ -393,8 +503,13 @@ try {
   startedAt = performance.now();
   await input.fill("E2E_CWA29_AFTER_RECONNECT");
   await page.getByRole("button", { name: "Send", exact: true }).click({ timeout: 30000 });
-  await page.locator("[data-row-id]").getByText(`${marker}_2`, { exact: true }).first().waitFor({ timeout: 60000 });
+  await page
+    .locator("[data-row-id]")
+    .getByText(`${marker}_2`, { exact: true })
+    .first()
+    .waitFor({ timeout: 60000 });
   timings.reconnectedReplyMs = Math.round(performance.now() - startedAt);
+  stage = "files";
   const backHome = page.getByRole("button", {
     name: "Back to task home",
     exact: true,
@@ -425,6 +540,7 @@ try {
       timings,
       baselineRef,
       slowLink: slowLink?.metrics,
+      rpcCalls,
       errors,
       ok: true,
     }),

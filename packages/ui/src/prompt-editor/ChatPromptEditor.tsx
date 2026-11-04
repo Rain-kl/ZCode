@@ -40,6 +40,8 @@ function runAfterFrame(callback: () => void) {
 }
 
 export function ChatPromptEditor({
+  // FORK(cloud-web-access): 透传输入框宿主的目录加载策略。
+  loadSubagentsOnDemand,
   workspacePath,
   workspaceIdentity,
   taskId,
@@ -96,6 +98,8 @@ export function ChatPromptEditor({
   appSlashCommands,
   enableMentionPanel,
 }: {
+  // FORK(cloud-web-access): 远控输入框按实际面板意图加载目录。
+  loadSubagentsOnDemand?: boolean;
   workspacePath: string;
   workspaceIdentity?: string;
   taskId: string | null;
@@ -355,6 +359,8 @@ export function ChatPromptEditor({
     // 单行时输入区至少占一半宽度，上下留白与 h-7 控件对齐；两行布局下 contents 不改变原有排版。
     <div className={isInline ? "min-w-1/2 flex-1 py-1 [&_[contenteditable]]:min-h-5" : "contents"}>
       <LexicalChatInput
+        // FORK(cloud-web-access): 向编辑器传递远控目录加载策略。
+        loadSubagentsOnDemand={loadSubagentsOnDemand}
         placeholder={placeholder}
         disabled={disabled}
         submitDisabled={submitDisabled}

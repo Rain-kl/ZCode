@@ -1440,6 +1440,8 @@ function EditorApiPlugin({
 }
 
 interface LexicalChatInputProps {
+  // FORK(cloud-web-access): 远控目录按需加载策略由输入框宿主传入。
+  loadSubagentsOnDemand?: boolean;
   placeholder?: string;
   disabled?: boolean;
   submitDisabled?: boolean;
@@ -1477,6 +1479,8 @@ const EDITOR_THEME = {
 };
 
 export function LexicalChatInput({
+  // FORK(cloud-web-access): 透传远控目录加载策略。
+  loadSubagentsOnDemand,
   placeholder,
   disabled = false,
   submitDisabled = false,
@@ -1651,6 +1655,8 @@ export function LexicalChatInput({
           <PasteCapturePlugin disabled={disabled} onPaste={onPaste} />
         </div>
         <SlashCommandPlugin
+          // FORK(cloud-web-access): 面板打开时才读取远控目录。
+          loadSubagentsOnDemand={loadSubagentsOnDemand}
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
           sessionId={skillCatalogSessionId ?? taskId}

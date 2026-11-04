@@ -57,7 +57,8 @@ export interface ClientSceneItem {
 export type ClientScenesResponse = ClientSceneResponseBody<ClientSceneConfig[]>;
 
 export interface IClientScenesService {
-  list(): Promise<ClientScenesResponse>;
+  // FORK(cloud-web-access): 消费方只取当前场景，减少远控目录正文传输；见 FEATURES.md。
+  list(params?: { scene: string }): Promise<ClientScenesResponse>;
 }
 
 export const IClientScenesService = createServiceDescriptor<IClientScenesService>(

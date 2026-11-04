@@ -21,6 +21,8 @@ export function useDraftSuggestedPromptItems({
 }): DraftSuggestedPromptItem[] {
   const clientScenes = useClientScenesResource(clientScenesService, {
     enabled: rpcReady,
+    // FORK(cloud-web-access): 首页推荐只消费此场景，避免加载自动化等完整目录。
+    scene: "draft-suggestion",
   });
 
   useEffect(() => {

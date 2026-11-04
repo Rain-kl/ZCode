@@ -35,6 +35,8 @@
 ### 慢链路流控与当前项目草稿复用（2026-11-04）
 
 - **背景与行为**：可靠帧拥塞传至当前 Core 连接，复用 CLI 的输出暂停与合并；排空后恢复。同项目新草稿复检目录后保留页面与 attachment。项目树与设备目录并行读取，等价项目缓存复用原版本。
+- **按需目录**：草稿推荐仅传输草稿场景；网页打开 `/` 面板才读取子智能体目录，重复打开复用缓存。场景缓存与前台恢复按服务和场景隔离。
+- **目录接线**：`packages/services/src/client-scenes/**`、UI 的 `useClientScenesResource`、`useDraftSuggestedPromptItems`、`SlashCommandPlugin` 与 Composer/编辑器接线，使用同一 `FORK(cloud-web-access)` 标记。
 - **文件与标记**：独立 Connector 包、Server Core WebSocket、UI Root/项目动作/手机导航与项目树读取；上游接线使用 `FORK(cloud-web-access)`。
 - **设计与验收**：[慢链路体验](docs/features/cloud-web-access/slow-network.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[实现记录](docs/features/cloud-web-access/implementation.md)。
 
