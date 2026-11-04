@@ -45,12 +45,12 @@
 
 ## 4. 总体结构
 
-| 位置                                       | 内容                                                                                               | 说明                                  |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `packages/shared/src/fork/flags.ts`        | 集中开关常量（`FORK_LOCAL_MODE` 等）                                                               | 新文件；UI 与 host 共用，避免两处漂移 |
+| 位置                                       | 内容                                                                           | 说明                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------ | ------------------------------------- |
+| `packages/shared/src/fork/flags.ts`        | 集中开关常量（`FORK_LOCAL_MODE` 等）                                           | 新文件；UI 与 host 共用，避免两处漂移 |
 | `packages/ui/src/fork/local-mode/**`       | 设置页「同步」面板、冲突弹窗、左下角状态项、`useForkWebdav` hook、入口屏蔽判定 | 新目录；React 实现                    |
-| `packages/desktop/src/host/fork/webdav/**` | WebDAV 客户端、zip 打包/解包、备份与恢复引擎、状态文件读写、服务接口与描述符                       | 新目录；host 侧实现                   |
-| 上游接线                                   | 15 个文件，逐处 `FORK(local-mode)` 标记                                                            | 见第 7 节                             |
+| `packages/desktop/src/host/fork/webdav/**` | WebDAV 客户端、zip 打包/解包、备份与恢复引擎、状态文件读写、服务接口与描述符   | 新目录；host 侧实现                   |
+| 上游接线                                   | 15 个文件，逐处 `FORK(local-mode)` 标记                                        | 见第 7 节                             |
 
 放置理由：
 
@@ -64,7 +64,7 @@
 | 入口                       | 位置                                                                           | 屏蔽方式                                                           |
 | -------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
 | 首屏首次引导（要求登录）   | `packages/ui/src/lib/rootStartupGate.ts:43`                                    | `shouldEnableProviderAvailabilityLoginEntryGuard()` 返回 `false`   |
-| 登录页渲染                 | `packages/ui/src/Root.tsx:982`                                                 | 开关开启时不渲染 `WelcomeScreen`，不以 WebDAV 替代                  |
+| 登录页渲染                 | `packages/ui/src/Root.tsx:982`                                                 | 开关开启时不渲染 `WelcomeScreen`，不以 WebDAV 替代                 |
 | 手动登录入口               | `Root.tsx:870`、`:962`、`:1059`                                                | 开关开启时不注入 `onLogin` 回调                                    |
 | 侧栏登录/登出菜单项        | `packages/ui/src/WorkspaceSidebarFooter.tsx:352`                               | 开关开启时不渲染这两个菜单项                                       |
 | 会话过期提示               | `Root.tsx:205`、`packages/ui/src/root/useRootOAuthEffects.ts:203`              | 开关开启时不消费过期标记                                           |
@@ -79,14 +79,15 @@
 
 ### 5.2 后台链路停用点
 
-| 链路                       | 位置                                                                                                         | 停用方式                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| 启动静默恢复会话           | `useRootOAuthEffects.ts:128`（`restoreCachedSessionState`）                                                  | 开关开启时跳过，直接置未登录态          |
-| 账号连接丢失监听           | 同文件 `:121`                                                                                                | 不挂载                                  |
-| 账号 provider 下发到 Agent | `packages/services/src/zcode-agent/zcodeAgentService.ts:1381`（`syncAccountProviderConfigToClient`）及调用点 | 开关开启时提前返回空交付并记 debug 日志 |
-| 账号 provider 刷新         | `packages/services/src/node.ts:1644`（`refreshAccountProviders`）                                            | 开关开启时不触发                        |
+| 链路                       | 位置                                                                                                         | 停用方式                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| 启动静默恢复会话           | `useRootOAuthEffects.ts:128`（`restoreCachedSessionState`）                                                  | 开关开启时跳过，直接置未登录态             |
+| 账号连接丢失监听           | 同文件 `:121`                                                                                                | 不挂载                                     |
+| 账号 provider 下发到 Agent | `packages/services/src/zcode-agent/zcodeAgentService.ts:1381`（`syncAccountProviderConfigToClient`）及调用点 | 开关开启时提前返回空交付并记 debug 日志    |
+| 账号 provider 刷新         | `packages/services/src/node.ts:1644`（`refreshAccountProviders`）                                            | 开关开启时不触发                           |
+| Built-in Provider 远端刷新 | `packages/services/src/node.ts`（Provider Config Runtime 装配）                                              | 开关开启时只加载随包配置，不创建远端同步器 |
 
-未登录状态下账号 provider 集合本就为空，上述停用是为「保证应用不再与云账号后端交互」；OAuth 服务、凭据读写、账号 provider 解析代码全部保留，开关回退即可恢复原行为。
+未登录状态下账号 provider 集合本就为空，上述停用是为「保证应用不再与云账号后端交互」；OAuth 服务、凭据读写、账号 provider 解析代码全部保留，开关回退即可恢复原行为。Built-in Provider 的远端刷新也必须随总开关停用，避免本地上游网络门禁把它伪装成周期性的无效响应错误。
 
 ## 6. WebDAV 备份与恢复
 
@@ -201,7 +202,7 @@ WebDAV 引擎（`packages/desktop/src/host/fork/webdav/**`）不含任何业务�
 | 文件                                                           | 位置                                                       | 改动                                                                                            |
 | -------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages/ui/src/lib/rootStartupGate.ts`                       | `:43`                                                      | 返回 fork 开关                                                                                  |
-| `packages/ui/src/Root.tsx`                                     | `:205`、`:870`、`:962`、`:982`、`:1059` + 冲突弹窗挂载     | 不挂载 WebDAV 首屏、屏蔽手动登录、挂载冲突弹窗                                                            |
+| `packages/ui/src/Root.tsx`                                     | `:205`、`:870`、`:962`、`:982`、`:1059` + 冲突弹窗挂载     | 不挂载 WebDAV 首屏、屏蔽手动登录、挂载冲突弹窗                                                  |
 | `packages/ui/src/WorkspaceSidebarFooter.tsx`                   | `:138`、`:346`、`:352`                                     | 隐藏用量/升级/登录项，插入 WebDAV 状态项                                                        |
 | `packages/shared/src/index.ts`                                 | 公开入口                                                   | 导出 `fork/flags.js`（UI 与 host 共用开关）                                                     |
 | `packages/ui/src/lib/settingsNavigation.ts`                    | `SettingsSectionId` 联合类型                               | 新增 `configSync`                                                                               |

@@ -6,19 +6,19 @@
 
 ## 1. 新增文件（全部在 `fork/` 目录内，零上游冲突面）
 
-| 位置                                                                                      | 职责                                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared/src/fork/flags.ts`                                                       | 本地模式开关与智谱过滤判定（纯函数）                                                                                                                                                                                                |
-| `packages/shared/src/fork/webdav-contract.ts`                                             | 通道名/常量/数据契约（状态、凭据、备份条目、设置补丁）                                                                                                                                                                              |
-| `packages/services/src/fork/webdav.ts`                                                    | `IForkWebdavService` 服务面 + 描述符（`fork-webdav` 通道，含属性式 `onStatusChanged: Event<T>`）                                                                                                                                    |
-| `packages/desktop/src/host/fork/webdav/backup-archive.ts`                                 | zip 打包/解包、`zcode-YYYYMMDD-HHmmss.zip` 命名、稳定序列化哈希、保留清理选择                                                                                                                                                       |
-| `.../webdav-client.ts`                                                                    | MKCOL/PROPFIND/GET/PUT/DELETE + Basic Auth，`fetch` 注入复用 host 代理与自定义 CA                                                                                                                                                   |
-| `.../state-store.ts`                                                                      | fork 状态文件（原子写、损坏回落默认值）+ 凭据端口                                                                                                                                                                                   |
-| `.../local-snapshot.ts`                                                                   | 18 个白名单字段投影、远端快照应用                                                                                                                                                                                                   |
-| `.../sync-engine.ts`                                                                      | 四分支状态机、去重、保留清理、恢复前备份、`allowUpload` 防抖门                                                                                                                                                                      |
-| `.../service.ts` / `index.ts`                                                             | 装配：远端解析、60s 轮询、2 分钟上传防抖、文件锁（含陈旧锁回收）、状态广播                                                                                                                                                          |
+| 位置                                                                                      | 职责                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/fork/flags.ts`                                                       | 本地模式开关与智谱过滤判定（纯函数）                                                                                                                                               |
+| `packages/shared/src/fork/webdav-contract.ts`                                             | 通道名/常量/数据契约（状态、凭据、备份条目、设置补丁）                                                                                                                             |
+| `packages/services/src/fork/webdav.ts`                                                    | `IForkWebdavService` 服务面 + 描述符（`fork-webdav` 通道，含属性式 `onStatusChanged: Event<T>`）                                                                                   |
+| `packages/desktop/src/host/fork/webdav/backup-archive.ts`                                 | zip 打包/解包、`zcode-YYYYMMDD-HHmmss.zip` 命名、稳定序列化哈希、保留清理选择                                                                                                      |
+| `.../webdav-client.ts`                                                                    | MKCOL/PROPFIND/GET/PUT/DELETE + Basic Auth，`fetch` 注入复用 host 代理与自定义 CA                                                                                                  |
+| `.../state-store.ts`                                                                      | fork 状态文件（原子写、损坏回落默认值）+ 凭据端口                                                                                                                                  |
+| `.../local-snapshot.ts`                                                                   | 18 个白名单字段投影、远端快照应用                                                                                                                                                  |
+| `.../sync-engine.ts`                                                                      | 四分支状态机、去重、保留清理、恢复前备份、`allowUpload` 防抖门                                                                                                                     |
+| `.../service.ts` / `index.ts`                                                             | 装配：远端解析、60s 轮询、2 分钟上传防抖、文件锁（含陈旧锁回收）、状态广播                                                                                                         |
 | `packages/ui/src/fork/local-mode/**`                                                      | `useForkWebdav`（服务访问与订阅）、`WebdavConnectionForm`（设置面板）、`ConfigSyncPanel`（设置栏目）、`ForkWebdavConflictDialog` + `conflictDialogBus`、`ForkWebdavStatusMenuItem` |
-| `packages/desktop/test/forkWebdav*.test.ts`、`packages/shared/test/forkLocalMode.test.ts` | 内核单测（zip 往返、假 WebDAV 服务端、状态机全分支、保留清理、锁、白名单投影、开关过滤）                                                                                                                                            |
+| `packages/desktop/test/forkWebdav*.test.ts`、`packages/shared/test/forkLocalMode.test.ts` | 内核单测（zip 往返、假 WebDAV 服务端、状态机全分支、保留清理、锁、白名单投影、开关过滤）                                                                                           |
 
 ## 2. 上游接线点（全部带 `FORK(local-mode)` 标记，共 21 个文件、43 处）
 
@@ -57,6 +57,7 @@
 - 聊天模型选择器（用户反馈后补齐）：过滤「需要智谱账号」的 provider 后，选择器不再出现 Start Plan / GLM-5.3 / 免费 / Coding Plan 条目，用户自己的提供商与「管理模型」保留。
 - 端到端（dev 应用 + 本地假 WebDAV 服务）：测试连接提示「连接正常」；配置后自动上传首份备份；「云端备份」再上传一份并在列表出现；断开连接后表单恢复、远端包保留、凭据删除、状态文件重置；**冲突流程**：注入更新的远端备份 + 本地改开关 → 弹窗出现 → 「以本地为准备份」→ 弹窗关闭且远端新增一个包（未删旧包）。
 - 后台账号链路停用（日志对照）：改动前「account provider config 已交付」6 次，改动后 0 次；`host log` 中 host/agent 正常（数百次 RPC 正常返回）。
+- Local mode 下 Built-in Provider 不再装配 Endpoint 远端同步器，只读取随包配置；不会再周期性请求上游 `client/configs`，也不会因本地网络门禁产生 `invalid response` 警告。
 
 ## 5. 与设计的偏差（均已同步回设计/计划文档）
 

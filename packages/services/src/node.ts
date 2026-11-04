@@ -36,6 +36,7 @@ import {
   createNodeProviderRuntimePathEnv,
   NodeModelSelectionConfigRepository,
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
+  type ZCodeBuiltinRefreshEvent,
 } from "@zcode/provider-node";
 import { getAppConfigDir as resolveAppConfigDir } from "./paths.js";
 import {
@@ -47,6 +48,7 @@ import {
   buildLocalMediaPreviewUrl,
   type DynamicWorkflowMode,
   type ProviderProvisioningSourceTrigger,
+  isCloudAccountBackgroundEnabled,
 } from "@zcode/shared";
 
 export {
@@ -1521,27 +1523,31 @@ export function createLocalServices(options: {
   );
   const providerConfigLog = createServiceLogger("provider-config");
   const clientConfigPlatform = resolveClientConfigPlatform();
+  // FORK(local-mode): 本地模式只使用随包 Provider 配置，不装配远端刷新器；见 FEATURES.md 的 local-mode 条目
+  const zcodeBuiltinEnvironment = isCloudAccountBackgroundEnabled()
+    ? {
+        environmentConfigRoot: resolveAppConfigDir(),
+        platform: clientConfigPlatform,
+        appVersion: ZCODE_VERSION,
+        resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
+        onRefreshResult: (event: ZCodeBuiltinRefreshEvent) => {
+          if (event.result === "updated")
+            providerConfigLog.info(undefined, "ZCode Built-in CDN 配置已更新", event);
+          else providerConfigLog.debug(undefined, "ZCode Built-in 刷新检查", event);
+        },
+        fetchRelease: (endpointOrigin: string, signal?: AbortSignal) =>
+          fetchZCodeBuiltinRemoteRelease({
+            apiClient,
+            endpointOrigin,
+            signal,
+            appVersion: ZCODE_VERSION,
+            platform: clientConfigPlatform,
+          }),
+      }
+    : undefined;
   const providerConfigRuntime = createProviderConfigRuntime({
     zcodeBuiltinFilePath: options.zcodeBuiltinProviderConfigFilePath,
-    zcodeBuiltinEnvironment: {
-      environmentConfigRoot: resolveAppConfigDir(),
-      platform: clientConfigPlatform,
-      appVersion: ZCODE_VERSION,
-      resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
-      onRefreshResult: (event) => {
-        if (event.result === "updated")
-          providerConfigLog.info(undefined, "ZCode Built-in CDN 配置已更新", event);
-        else providerConfigLog.debug(undefined, "ZCode Built-in 刷新检查", event);
-      },
-      fetchRelease: (endpointOrigin, signal) =>
-        fetchZCodeBuiltinRemoteRelease({
-          apiClient,
-          endpointOrigin,
-          signal,
-          appVersion: ZCODE_VERSION,
-          platform: clientConfigPlatform,
-        }),
-    },
+    zcodeBuiltinEnvironment,
     onZCodeBuiltinRefreshError: (error) => {
       providerConfigLog.warn(undefined, "ZCode Built-in Config 远端刷新失败", { error });
     },

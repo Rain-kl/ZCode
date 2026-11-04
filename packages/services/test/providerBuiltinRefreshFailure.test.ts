@@ -144,4 +144,29 @@ describe("Builtin 远端失败不阻断有效本地配置的业务刷新", () =>
     vi.spyOn(console, "warn").mockImplementation(() => {});
     await expect(fixture.runtime.providerSettings.refresh("settings-manual")).rejects.toThrow();
   });
+
+  it("本地静态配置模式不创建远端刷新器", async () => {
+    const root = await mkdtemp(join(tmpdir(), "builtin-static-only-"));
+    const bundled = join(root, "bundled.json");
+    const release = JSON.parse(
+      await readFile(
+        new URL("../../../config/provider/zcode-builtin.json", import.meta.url),
+        "utf8",
+      ),
+    );
+    await writeFile(bundled, JSON.stringify(release));
+    const runtime = createProviderConfigRuntime({
+      zcodeBuiltinFilePath: bundled,
+      personalFilePath: join(root, "personal.json"),
+      personalPollingIntervalMs: false,
+      watch: false,
+    });
+    cleanups.push(async () => {
+      runtime.dispose();
+      await rm(root, { recursive: true, force: true });
+    });
+
+    await runtime.start();
+    await expect(runtime.refreshZCodeBuiltin({ force: true })).resolves.toBe("skipped");
+  });
 });
