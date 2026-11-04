@@ -4,7 +4,7 @@
 
 提供独立 `scripts/install-server.sh`，通过 `curl -fsSL https://raw.githubusercontent.com/Rain-kl/ZCode/canary/scripts/install-server.sh | sh` 安装 Source Server；`sh -s -- dev` 选择开发版，无参数选择正式版，其他参数报错。支持 Linux/macOS x64/arm64，需要 curl、Python 3（3.8+）；使用发行包自带 Node，不安装系统包、不使用 sudo、不启动服务、不写连接凭据。
 
-正式版读取 GitHub `/repos/Rain-kl/ZCode/releases/latest` 的稳定 `v<version>`；开发版读取 `canary-build/dev.yml` 顶层 version。两者均固定到不可变的 `server-v<完整版本>`，下载 `source-server-release.json` 与当前平台归档。不得用发布时间排序选择 Server，也不得在正式版缺包时回退开发版。
+正式版读取 GitHub `/repos/Rain-kl/ZCode/releases/latest` 的稳定 `v<version>`，并从不可变的 `server-v<version>` 下载；开发版直接读取固定 `server-canary-build` 的 descriptor，以 descriptor 声明的完整 dev 版本安装，不等待 Desktop canary。两种通道都必须校验 descriptor 版本、目标、大小与 SHA-256。不得用发布时间排序选择 Server，也不得在正式版缺包时回退开发版。
 
 2026-11-03 统一安装：curl 与 SSH 都由既有 Server `update --from-archive` / ReleaseInstaller / ReleaseManager 维护安装。统一根为 `~/.zcode/server`，运行包在 `releases/<version>-<target>-<sha前12位>`，当前版本由 `current.json` 指定，稳定入口为 `bin/zcode`。安装脚本不得自行写 releases、current/pending、完整性或安装所有权文件。通过 `ZCODE_DATA_BASE_DIR` 改变基目录时同样拼接 `.zcode/server`；旧 `ZCODE_SERVER_INSTALL_DIR` 明确报错并提示新设置，不继续创建独立版本树。
 
