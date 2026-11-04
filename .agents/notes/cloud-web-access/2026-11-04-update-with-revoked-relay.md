@@ -14,7 +14,3 @@
 - 更新模式中的 Relay connector 启动失败只停止 connector，并在日志保留 endpoint、HTTP 状态与 cause，然后继续发送本地 Core ready。
 - 更新成功后候选 Core 保持运行；后续重启仍沿用该更新启动模式，避免同一会话问题造成 Core 重启循环。
 - 真实 handoff 会启动新的普通 `serve` Supervisor，因此普通模式遇到“配置存在但认证已撤销”也必须停止 connector 后本地 ready；只有显式 `server up` 保持严格认证失败。
-
-## 验证边界
-
-真实 ARM64 已完成版本切换和 handoff，但 handoff 后的普通 `serve` 仍进入严格模式，暴露了上述第二层问题。修复后需再次验证：普通 serve、更新候选和最终 handoff 均能本地 ready；`server up` 仍严格失败；重新 connect 并重启后远控恢复。

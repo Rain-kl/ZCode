@@ -15,4 +15,3 @@
 - 根 typecheck、architecture check 和 fork removal guard 通过；根 lint 为 85 个既有 warning、0 error。
 - Desktop 生产构建通过。
 - 使用隔离 HOME、用户数据和会话目录启动 Desktop，侧栏显示“移动端远程控制”；打开后展示 Relay 地址、账号、密码及“连接并开启远控”。
-- 未使用真实账号提交登录，因此公网扫码控制仍需部署账号做最终验收。
