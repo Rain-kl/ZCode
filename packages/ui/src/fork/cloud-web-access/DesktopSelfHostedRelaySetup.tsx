@@ -14,9 +14,7 @@ export function DesktopSelfHostedRelaySetup({
 }: DesktopSelfHostedRelaySetupProps) {
   const platform = usePlatform();
   const { intl } = useZCodeIntl();
-  const [endpoint, setEndpoint] = useState(
-    current?.endpoint ?? "https://relay.example.com",
-  );
+  const [endpoint, setEndpoint] = useState(current?.endpoint ?? "");
   const [username, setUsername] = useState(current?.username ?? "");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -25,9 +23,7 @@ export function DesktopSelfHostedRelaySetup({
     event.preventDefault();
     const configure = platform.configureWebRemoteControlRelay;
     if (!configure) {
-      toast(
-        intl.formatMessage({ id: "webRemoteControl.selfHosted.unavailable" }),
-      );
+      toast(intl.formatMessage({ id: "webRemoteControl.selfHosted.unavailable" }));
       return;
     }
     setSubmitting(true);
@@ -35,9 +31,7 @@ export function DesktopSelfHostedRelaySetup({
       const result = await configure({ endpoint, username, password });
       setPassword("");
       onConfigured(result);
-      toast(
-        intl.formatMessage({ id: "webRemoteControl.selfHosted.configured" }),
-      );
+      toast(intl.formatMessage({ id: "webRemoteControl.selfHosted.configured" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       toast(
@@ -72,9 +66,7 @@ export function DesktopSelfHostedRelaySetup({
         </p>
       </div>
       <label className="space-y-1.5 text-ui-base text-foreground">
-        <span>
-          {intl.formatMessage({ id: "webRemoteControl.selfHosted.endpoint" })}
-        </span>
+        <span>{intl.formatMessage({ id: "webRemoteControl.selfHosted.endpoint" })}</span>
         <Input
           value={endpoint}
           onChange={(event) => setEndpoint(event.target.value)}
@@ -85,9 +77,7 @@ export function DesktopSelfHostedRelaySetup({
         />
       </label>
       <label className="space-y-1.5 text-ui-base text-foreground">
-        <span>
-          {intl.formatMessage({ id: "webRemoteControl.selfHosted.username" })}
-        </span>
+        <span>{intl.formatMessage({ id: "webRemoteControl.selfHosted.username" })}</span>
         <Input
           value={username}
           onChange={(event) => setUsername(event.target.value)}
@@ -97,9 +87,7 @@ export function DesktopSelfHostedRelaySetup({
         />
       </label>
       <label className="space-y-1.5 text-ui-base text-foreground">
-        <span>
-          {intl.formatMessage({ id: "webRemoteControl.selfHosted.password" })}
-        </span>
+        <span>{intl.formatMessage({ id: "webRemoteControl.selfHosted.password" })}</span>
         <Input
           type="password"
           value={password}
@@ -108,11 +96,7 @@ export function DesktopSelfHostedRelaySetup({
           required
         />
       </label>
-      <Button
-        type="submit"
-        disabled={submitting}
-        className="gap-2 enabled:cursor-pointer"
-      >
+      <Button type="submit" disabled={submitting} className="gap-2 enabled:cursor-pointer">
         {submitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
         {intl.formatMessage({ id: "webRemoteControl.selfHosted.connect" })}
       </Button>

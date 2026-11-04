@@ -11,7 +11,7 @@ pnpm --filter @zcode/web build
 pnpm --filter @zcode/fork-remote-relay exec wrangler deploy --config wrangler.jsonc
 ```
 
-`wrangler.jsonc` 当前是一个 Worker 名称和一套 DO migration。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
+`wrangler.jsonc` 不保存部署者的自定义域名，只在 Cloudflare 控制台或外部部署配置中绑定。staging 与 production 必须使用不同 Worker 名称、Cloudflare 账号或部署配置，不能共享 DO namespace 后误以为数据隔离。自定义域名必须启用 TLS；`zcode server connect` 只接受 HTTPS，`http://localhost` 仅用于本机调试。
 
 部署前确认 Web 构建产物属于当前提交；旧 `packages/web/dist` 可能让页面能打开但缺少本次登录入口。
 

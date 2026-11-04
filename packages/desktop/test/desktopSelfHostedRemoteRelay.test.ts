@@ -41,9 +41,7 @@ describe("Desktop self-hosted remote relay configuration", () => {
       userId: "owner",
       tokenCredentialKey: "session-key",
     };
-    expect(
-      appSettingsSchema.parse({ webRemoteControlSelfHostedRelay: relay }),
-    ).toMatchObject({
+    expect(appSettingsSchema.parse({ webRemoteControlSelfHostedRelay: relay })).toMatchObject({
       webRemoteControlSelfHostedRelay: relay,
     });
   });
@@ -90,9 +88,9 @@ describe("Desktop self-hosted remote relay configuration", () => {
     });
     expect(JSON.stringify(f.readSettings())).not.toContain("session-secret");
     expect(JSON.stringify(f.readSettings())).not.toContain("password");
-    expect(
-      f.credentials.get("web-remote-control:self-hosted:session:generation-1"),
-    ).toBe("session-secret");
+    expect(f.credentials.get("web-remote-control:self-hosted:session:generation-1")).toBe(
+      "session-secret",
+    );
   });
 
   it("rejects insecure non-loopback endpoints and mismatched identities without changing settings", async () => {
@@ -207,10 +205,6 @@ describe("Desktop self-hosted remote relay configuration", () => {
     ).rejects.toThrow("settings unavailable");
     expect(f.readSettings().webRemoteControlSelfHostedRelay).toEqual(old);
     expect(f.credentials.get("old-key")).toBe("old-secret");
-    expect(
-      f.credentials.has(
-        "web-remote-control:self-hosted:session:new-generation",
-      ),
-    ).toBe(false);
+    expect(f.credentials.has("web-remote-control:self-hosted:session:new-generation")).toBe(false);
   });
 });
