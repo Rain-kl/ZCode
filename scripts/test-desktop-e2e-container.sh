@@ -5,7 +5,7 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-zcode-desktop-e2e-demo}"
 DOCKERFILE="${DOCKERFILE:-Dockerfile.desktop-e2e}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
-PNPM_VERSION="${PNPM_VERSION:-10.33.2}"
+PNPM_VERSION="${PNPM_VERSION:-11.28.9}"
 DEFAULT_E2E_SPEC="./test/e2e/container-boot.test.ts,./test/e2e/smoke.test.ts,./test/e2e/e2ecase-regression.test.ts,./test/e2e/upstream-provider.test.ts,./test/e2e/task-list-archive-confirmation.test.ts"
 # 修复原因：formal/local replay 通过不等于 Docker admission；Assistant Preview Cards 的容器尝试
 # 停在镜像解析阶段，CDD01 则在 WDIO 内失败；两者都没有 replay-isolated 绿色证据。

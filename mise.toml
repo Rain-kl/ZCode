@@ -1,9 +1,9 @@
 [tools]
-node = "24"
-pnpm = "10.33.2"
+node = "24.14.0"
+"npm:pnpm" = "11.28.9"
 
 [env]
-COREPACK_ENABLE_PROJECT_SPEC = "0"
+COREPACK_ENABLE_PROJECT_SPEC = "1"
 ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
 
 [tasks.install]

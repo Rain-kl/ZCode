@@ -19,9 +19,11 @@ async function pathExists(path) {
   );
 }
 
-export async function clearHoistedPatchedDependencyTargets({ rootDir, packageJsonPath }) {
-  const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
-  const patchedDependencies = packageJson.pnpm?.patchedDependencies ?? {};
+export async function clearHoistedPatchedDependencyTargets({ rootDir, workspacePath }) {
+  if (!(await pathExists(join(rootDir, "node_modules")))) return [];
+  const { parse } = await import("yaml");
+  const workspace = parse(await readFile(workspacePath, "utf8"));
+  const patchedDependencies = workspace.patchedDependencies ?? {};
   const packageNames = Object.keys(patchedDependencies).map(resolvePatchedDependencyPackageName);
   const removed = [];
   for (const packageName of packageNames) {

@@ -24,7 +24,7 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 ## 初始化
 
-准备 Git、Node.js **24.14.0** 和 pnpm **10.33.2**，版本以 [mise.toml](mise.toml) 为准。以下开发和打包命令均在仓库根目录执行。
+准备 Git、Node.js **24.14.0** 和 pnpm **11.28.9**，版本以 [mise.toml](mise.toml) 为准。以下开发和打包命令均在仓库根目录执行。
 
 ```bash
 pnpm bootstrap

@@ -20,17 +20,13 @@ test("解析 scoped 与普通 patched dependency key", () => {
 test("bootstrap install 前只清理 hoisted patched dependency 目标", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "zcode-bootstrap-patch-"));
   try {
-    const packageJsonPath = join(rootDir, "package.json");
+    const workspacePath = join(rootDir, "pnpm-workspace.yaml");
     await writeFile(
-      packageJsonPath,
-      JSON.stringify({
-        pnpm: {
-          patchedDependencies: {
-            "@arms/rum-electron@0.0.3": "patches/arms.patch",
-            "vitest@4.1.7": "patches/vitest.patch",
-          },
-        },
-      }),
+      workspacePath,
+      `patchedDependencies:
+  '@arms/rum-electron@0.0.3': patches/arms.patch
+  'vitest@4.1.7': patches/vitest.patch
+`,
     );
     await mkdir(join(rootDir, "node_modules/@arms/rum-electron"), {
       recursive: true,
@@ -40,7 +36,7 @@ test("bootstrap install 前只清理 hoisted patched dependency 目标", async (
 
     const removed = await clearHoistedPatchedDependencyTargets({
       rootDir,
-      packageJsonPath,
+      workspacePath,
     });
 
     assert.deepEqual(removed.sort(), ["@arms/rum-electron", "vitest"]);

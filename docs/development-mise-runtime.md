@@ -2,7 +2,7 @@
 
 ## 背景
 
-仓库根目录和 `apps/zcode-cli` 都依赖 Node / pnpm 版本一致性。此前根目录只在 `package.json` 的 `engines.node` 标注 `>=24.0.0`，而 Agent 子工程通过 `.node-version` 和 `packageManager` 固定到 Node `24.14.0`、pnpm `10.33.2`。新机器或新 worktree 容易先装错运行时，再在 Electron、Vite 或 Agent 构建阶段暴露问题。
+仓库根目录和 CLI 使用一致的 Node.js 与 pnpm 版本，支持通过 mise 安装和运行。
 
 ## 目标
 

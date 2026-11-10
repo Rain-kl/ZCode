@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { parse } from "yaml";
 
 const repositoryRoot = new URL("../../", import.meta.url);
 
@@ -10,10 +11,7 @@ async function readJson(relativePath) {
 }
 
 function gitBlobHash(content) {
-  return createHash("sha1")
-    .update(`blob ${content.byteLength}\0`)
-    .update(content)
-    .digest("hex");
+  return createHash("sha1").update(`blob ${content.byteLength}\0`).update(content).digest("hex");
 }
 
 function assertCoherentHunkOffsets(patch) {
@@ -39,24 +37,24 @@ function assertCoherentHunkOffsets(patch) {
 }
 
 test("ARMS patch 固定 0.0.3 且目标 blob 与安装产物一致", async () => {
-  const [rootManifest, desktopManifest, npmrc, patch, installedEntry] = await Promise.all([
-    readJson("package.json"),
+  const [workspaceText, desktopManifest, patch, installedEntry] = await Promise.all([
+    readFile(new URL("pnpm-workspace.yaml", repositoryRoot), "utf8"),
     readJson("packages/desktop/package.json"),
-    readFile(new URL(".npmrc", repositoryRoot), "utf8"),
     readFile(new URL("patches/@arms__rum-electron@0.0.3.patch", repositoryRoot), "utf8"),
     readFile(new URL("node_modules/@arms/rum-electron/dist/index.mjs", repositoryRoot)),
   ]);
 
-  assert.match(npmrc, /^node-linker=hoisted$/mu);
+  const workspace = parse(workspaceText);
+  assert.equal(workspace.nodeLinker, "hoisted");
 
   const armsSpecifier = desktopManifest.dependencies?.["@arms/rum-electron"];
   assert.equal(armsSpecifier, "^0.0.3");
   const armsVersion = "0.0.3";
   assert.equal(
-    rootManifest.pnpm?.patchedDependencies?.[`@arms/rum-electron@${armsVersion}`],
+    workspace.patchedDependencies?.[`@arms/rum-electron@${armsVersion}`],
     `patches/@arms__rum-electron@${armsVersion}.patch`,
   );
-  assert.equal(rootManifest.pnpm?.patchedDependencies?.["@arms/rum-electron@0.0.7"], undefined);
+  assert.equal(workspace.patchedDependencies?.["@arms/rum-electron@0.0.7"], undefined);
 
   // Bugfix：旧 patch 分次追加 hunk 后仍保留旧目标 hash，pnpm hoisted 第二次安装会误判并重复打补丁。
   const patchIndex = patch.match(/^index ([0-9a-f]{40})\.\.([0-9a-f]{40}) 100644$/mu);

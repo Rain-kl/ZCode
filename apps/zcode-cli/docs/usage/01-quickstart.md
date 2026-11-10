@@ -2,7 +2,7 @@
 
 ## 从源码构建
 
-准备 Git、Node.js 24.14.0 和 pnpm 10.33.2；以仓库根目录的 [mise.toml](../../../../mise.toml) 为准。以下命令在仓库根目录执行：
+准备 Git、Node.js 24.14.0 和 pnpm 11.28.9；以仓库根目录的 [mise.toml](../../../../mise.toml) 为准。以下命令在仓库根目录执行：
 
 ```sh
 pnpm install --frozen-lockfile

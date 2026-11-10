@@ -260,3 +260,30 @@ test("all dependency install retries remove node_modules after the first attempt
   assert.match(sourceServerInstall?.run ?? "", /rm -rf node_modules/);
   assert.doesNotMatch(sourceServerInstall?.run ?? "", /args\+=\(--force\)/);
 });
+
+test("release installs use a pinned supported toolchain and workspace-owned patches", async () => {
+  const root = new URL("../../", import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const workspace = parse(await readFile(new URL("pnpm-workspace.yaml", root), "utf8"));
+  const nodeVersion = (await readFile(new URL(".nvmrc", root), "utf8")).trim();
+  assert.equal(manifest.packageManager, "pnpm@11.28.9");
+  const cliManifest = JSON.parse(
+    await readFile(new URL("apps/zcode-cli/package.json", root), "utf8"),
+  );
+  assert.equal(cliManifest.packageManager, manifest.packageManager);
+  assert.equal(nodeVersion, cliManifest.engines.node);
+  assert.equal(workspace.nodeLinker, "hoisted");
+  assert.equal(workspace.verifyDepsBeforeRun, false);
+  assert.equal(workspace.allowBuilds.sharp, true);
+  assert.equal(workspace.allowBuilds.workerd, true);
+  const cliWorkspace = parse(
+    await readFile(new URL("apps/zcode-cli/pnpm-workspace.yaml", root), "utf8"),
+  );
+  assert.equal(cliWorkspace.verifyDepsBeforeRun, false);
+  assert.equal(cliWorkspace.nodeLinker, "hoisted");
+  assert.equal(
+    workspace.patchedDependencies["wdio-electron-service@9.2.1"],
+    "patches/wdio-electron-service@9.2.1.patch",
+  );
+  assert.equal(workspace.overrides.react, "19.2.7");
+});

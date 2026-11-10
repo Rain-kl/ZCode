@@ -15,3 +15,6 @@ supportedArchitectures:
   libc:
     - current
     - glibc
+
+nodeLinker: hoisted
+verifyDepsBeforeRun: false
