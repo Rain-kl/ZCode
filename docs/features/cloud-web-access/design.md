@@ -183,3 +183,18 @@ Cloudflare 官方资料：[DO WebSocket/休眠](https://developers.cloudflare.co
 当前分支已有 Relay、connector、Server 命令和 Web 登录入口；验收按 [acceptance.md](acceptance.md) 区分本地自动化、本地运行时和未执行。没有可供审计的官方线上 Relay 后端，本稿只承诺自建方案不持久化业务正文，不替官方生产服务作数据保留声明。部署步骤见 [deployment.md](deployment.md)。
 
 网页打开无设备参数的远控入口时展示设备列表，用户选择设备后连接；包含设备参数的链接继续连接指定设备。
+
+网页设备列表的刷新按钮左侧提供删除入口。点击后进入选择模式，可选择一台或多台离线设备，确认后删除所选设备的离线连接记录；在线设备继续保留。删除后刷新列表，失败时显示原因并保留未删除的设备。取消选择模式返回普通列表。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant W as 网页设备列表
+    participant R as Relay
+    U->>W: 选择离线设备并确认删除
+    W->>R: 删除所选设备的离线连接记录
+    R->>R: 校验账号和设备离线状态
+    R-->>W: 删除结果
+    W->>R: 刷新设备列表
+    R-->>W: 当前设备状态
+```

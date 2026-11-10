@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createWebRemoteControlDeleteDeviceClient } from "../src/web-remote-control/adapters/webRemoteControlDeviceClient.js";
+import { groupWebRemoteControlDevices } from "../src/web-remote-control/domain/webRemoteControlDeviceGroups.js";
 import { WebRemoteControlEntry } from "../src/web-remote-control/app/webRemoteControlEntry.js";
 import { createSelfHostedRemoteAuth } from "../src/web-remote-control/adapters/selfHostedRemoteAuth.js";
 
@@ -194,6 +196,23 @@ describe("self-hosted Web remote authentication", () => {
     expect(connect).not.toHaveBeenCalled();
     entry.selectDevice("device-1");
     expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it("retains offline connection identities for the delete action", () => {
+    const devices = [
+      { device_sid: "old-a", device_mid: "machine", online: false, created_at: 1, meta: {} },
+      { device_sid: "old-b", device_mid: "machine", online: false, created_at: 2, meta: {} },
+    ];
+    expect(groupWebRemoteControlDevices(devices, "en-US")[0]?.offlineConnections).toEqual(devices);
+  });
+
+  it("reports relay deletion failures with their response context", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ code: 3005, msg: "wrong status" }, { status: 400 }));
+    const remove = createWebRemoteControlDeleteDeviceClient("https://relay.example", fetcher);
+    await expect(remove("jwt", "device-1", new AbortController().signal)).rejects.toThrow("3005");
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ device_sid: "device-1" }));
   });
 
   it("does not treat OAuth-shaped remote URLs as an official login callback", async () => {

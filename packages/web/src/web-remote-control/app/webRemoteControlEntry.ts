@@ -147,6 +147,47 @@ export class WebRemoteControlEntry {
     return list.request;
   }
 
+  // FORK(cloud-web-access): 只提交当前设备列表中全离线设备的连接，由 Relay 复核在线状态。
+  async deleteOfflineDevices(mids: string[]): Promise<void> {
+    const list = this.list;
+    const jwt = this.options.auth.getZCodeJwtToken();
+    if (
+      !list ||
+      list.view.loading ||
+      list.view.error ||
+      !jwt ||
+      list.acceptedJwt !== jwt ||
+      !this.options.deleteDevice
+    )
+      throw new Error("Device list is unavailable");
+    const selected = list.view.devices.filter(
+      (device) => mids.includes(device.deviceMid) && device.onlineConnections.length === 0,
+    );
+    if (selected.length !== new Set(mids).size)
+      throw new Error("Device selection is no longer offline");
+    const signal = this.scope.signal;
+    const results = await Promise.allSettled(
+      selected.flatMap((device) =>
+        (device.offlineConnections ?? []).map((record) =>
+          this.options.deleteDevice!(jwt, record.device_sid, signal),
+        ),
+      ),
+    );
+    // Bugfix: 删除期间开始的列表请求可能返回旧快照；等待它结束后重新读取。
+    if (!signal.aborted && this.list === list) {
+      if (list.request) await list.request;
+      if (!signal.aborted && this.list === list) await this.refreshDevices();
+    }
+    const failures = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failures.length)
+      throw new AggregateError(
+        failures.map((result) => result.reason),
+        `Failed to delete ${failures.length} device connection(s): ${failures.map((result) => String(result.reason)).join("; ")}`,
+      );
+  }
+
   selectDevice(sid: string): void {
     if (!this.list || this.list.view.loading || this.list.view.error) return;
     if (this.list.acceptedJwt !== this.options.auth.getZCodeJwtToken()) {

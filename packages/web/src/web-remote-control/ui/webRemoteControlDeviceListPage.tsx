@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { ChevronRightIcon, LaptopIcon, RefreshCwIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  ChevronRightIcon,
+  CircleIcon,
+  LaptopIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { Button } from "@zcode/ui/button";
 import { DevicePlatformIcon, getDevicePlatformLabel } from "@zcode/ui/device-platform-icon";
 import { WebRemoteControlBrand } from "#src/web-remote-control/ui/webRemoteControlBrand.js";
@@ -16,12 +23,17 @@ import type {
 import type { WebRemoteControlScreenLocale } from "#src/web-remote-control/domain/webRemoteControlScreenCopy.js";
 import { WebRemoteControlSwitchAccountDialog } from "#src/web-remote-control/ui/webRemoteControlSwitchAccountDialog.js";
 
+// FORK(cloud-web-access): 离线设备删除复用设备页的语言与视觉规范。
 const copyByLocale = {
   "zh-CN": {
     title: "选择电脑",
     switchAccount: "切换",
     switchAccountFallback: "切换账号",
     refresh: "刷新",
+    deleteOffline: "删除离线设备",
+    deleteSelected: "删除已选",
+    cancel: "取消",
+    deleteError: "删除失败",
     loading: "正在加载设备…",
     online: "在线",
     offline: "离线",
@@ -37,6 +49,10 @@ const copyByLocale = {
     switchAccount: "Switch",
     switchAccountFallback: "Switch account",
     refresh: "Refresh",
+    deleteOffline: "Delete offline devices",
+    deleteSelected: "Delete selected",
+    cancel: "Cancel",
+    deleteError: "Deletion failed",
     loading: "Loading devices…",
     online: "Online",
     offline: "Offline",
@@ -64,6 +80,7 @@ interface WebRemoteControlDeviceListPageProps {
   view: WebRemoteControlDeviceListView;
   locale: WebRemoteControlScreenLocale;
   onSelect(sid: string): void;
+  onDelete(mids: string[]): Promise<void>;
   onRefresh(): void;
   onSwitchAccount(): void;
   /** 多连接弹层的“启动于”相对时间基准，测试注入。 */
@@ -117,12 +134,16 @@ function DeviceSection({
   devices,
   copy,
   selectable,
+  selecting,
+  selected,
   onOpen,
 }: {
   label: string;
   devices: WebRemoteControlDeviceGroup[];
   copy: DeviceListCopy;
   selectable: boolean;
+  selecting: boolean;
+  selected: ReadonlySet<string>;
   onOpen(device: WebRemoteControlDeviceGroup): void;
 }) {
   if (devices.length === 0) return null;
@@ -144,12 +165,19 @@ function DeviceSection({
               <WebRemoteControlDeviceRow
                 first={index === 0}
                 // 全离线行原生禁用；在线行在刷新中/失败时也暂不可选，沿用入口 admission。
-                disabled={!online || !selectable}
+                disabled={!selectable || (selecting ? online : !online)}
+                selected={selecting && !online ? selected.has(device.deviceMid) : undefined}
                 onClick={() => onOpen(device)}
                 dimmed={!online}
                 leading={<DeviceTile platform={device.platform} online={online} />}
                 trailing={
-                  online ? (
+                  selecting && !online ? (
+                    selected.has(device.deviceMid) ? (
+                      <CheckCircle2Icon aria-hidden="true" className="size-5 text-foreground" />
+                    ) : (
+                      <CircleIcon aria-hidden="true" className="size-5 text-foreground-subtle" />
+                    )
+                  ) : online ? (
                     <>
                       {multiple ? (
                         <span className="shrink-0 text-ui-sm text-foreground-subtle">
@@ -233,17 +261,36 @@ export function WebRemoteControlDeviceListPage({
   view,
   locale,
   onSelect,
+  onDelete,
   onRefresh,
   onSwitchAccount,
   now = () => Date.now(),
 }: WebRemoteControlDeviceListPageProps) {
   const copy = copyByLocale[locale];
+  // FORK(cloud-web-access): 勾选状态仅属于当前设备页。
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [sheetDeviceMid, setSheetDeviceMid] = useState<string | null>(null);
-  const selectable = !view.loading && !view.error;
+  const selectable = !view.loading && !view.error && !deleting;
   const onlineDevices = view.devices.filter((device) => device.onlineConnections.length > 0);
   const offlineDevices = view.devices.filter((device) => device.onlineConnections.length === 0);
+  const selectedMids = offlineDevices
+    .filter((device) => selected.has(device.deviceMid))
+    .map((device) => device.deviceMid);
   const sheetDevice = onlineDevices.find((device) => device.deviceMid === sheetDeviceMid);
   const openDevice = (device: WebRemoteControlDeviceGroup) => {
+    if (selecting) {
+      if (device.onlineConnections.length) return;
+      setSelected((previous) => {
+        const next = new Set(previous);
+        if (next.has(device.deviceMid)) next.delete(device.deviceMid);
+        else next.add(device.deviceMid);
+        return next;
+      });
+      return;
+    }
     const [only, ...others] = device.onlineConnections;
     if (!only) return;
     if (others.length === 0) onSelect(only.device_sid);
@@ -259,19 +306,37 @@ export function WebRemoteControlDeviceListPage({
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <h1 className="text-ui-xl font-semibold">{copy.title}</h1>
-          <Button
-            type="button"
-            variant="ghost"
-            aria-label={copy.refresh}
-            title={copy.refresh}
-            disabled={view.loading}
-            onClick={onRefresh}
-            className="-mr-2 size-10 rounded-lg text-foreground-subtle focus-visible:bg-hover"
-          >
-            <RefreshCwIcon
-              className={["size-[18px]", view.loading ? "animate-spin" : ""].join(" ")}
-            />
-          </Button>
+          {/* FORK(cloud-web-access): 离线设备删除入口与刷新操作并排。 */}
+          <div className="flex items-center">
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={selecting ? copy.cancel : copy.deleteOffline}
+              title={selecting ? copy.cancel : copy.deleteOffline}
+              disabled={deleting || (!selecting && (offlineDevices.length === 0 || !selectable))}
+              onClick={() => {
+                setSelecting(!selecting);
+                setSelected(new Set());
+                setDeleteError(null);
+              }}
+              className="size-10 rounded-lg text-foreground-subtle focus-visible:bg-hover"
+            >
+              <Trash2Icon aria-hidden="true" className="size-[18px]" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label={copy.refresh}
+              title={copy.refresh}
+              disabled={view.loading}
+              onClick={onRefresh}
+              className="-mr-2 size-10 rounded-lg text-foreground-subtle focus-visible:bg-hover"
+            >
+              <RefreshCwIcon
+                className={["size-[18px]", view.loading ? "animate-spin" : ""].join(" ")}
+              />
+            </Button>
+          </div>
         </div>
         <AccountRow
           account={view.account}
@@ -285,7 +350,12 @@ export function WebRemoteControlDeviceListPage({
             {copy.error}
           </p>
         ) : null}
-        <div aria-busy={view.loading}>
+        {deleteError ? (
+          <p role="alert" className="mt-5 px-1 text-ui-sm text-destructive">
+            {copy.deleteError}: {deleteError}
+          </p>
+        ) : null}
+        <div aria-busy={view.loading || deleting}>
           {view.devices.length > 0 ? (
             <>
               <DeviceSection
@@ -293,6 +363,8 @@ export function WebRemoteControlDeviceListPage({
                 devices={onlineDevices}
                 copy={copy}
                 selectable={selectable}
+                selecting={selecting}
+                selected={selected}
                 onOpen={openDevice}
               />
               <DeviceSection
@@ -300,8 +372,45 @@ export function WebRemoteControlDeviceListPage({
                 devices={offlineDevices}
                 copy={copy}
                 selectable={selectable}
+                selecting={selecting}
+                selected={selected}
                 onOpen={openDevice}
               />
+              {selecting ? (
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={deleting}
+                    onClick={() => {
+                      setSelecting(false);
+                      setSelected(new Set());
+                    }}
+                  >
+                    {copy.cancel}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={!selectable || selectedMids.length === 0}
+                    onClick={() => {
+                      setDeleting(true);
+                      setDeleteError(null);
+                      void onDelete(selectedMids)
+                        .then(() => {
+                          setSelecting(false);
+                          setSelected(new Set());
+                        })
+                        .catch((error: unknown) =>
+                          setDeleteError(error instanceof Error ? error.message : String(error)),
+                        )
+                        .finally(() => setDeleting(false));
+                    }}
+                  >
+                    {copy.deleteSelected} ({selectedMids.length})
+                  </Button>
+                </div>
+              ) : null}
               <p className="px-1 pt-3 text-ui-sm leading-5 text-foreground-subtlest">
                 {copy.notFound}
               </p>

@@ -35,6 +35,8 @@ export function groupWebRemoteControlDevices(
         deviceMid: record.device_mid,
         name: displayName(record) || undefined,
         onlineConnections: [],
+        // FORK(cloud-web-access): 保留离线 SID 供用户删除。
+        offlineConnections: [],
       };
       groups.set(record.device_mid, group);
     }
@@ -45,6 +47,8 @@ export function groupWebRemoteControlDevices(
     }
     // 历史离线注册不再生成设备行；在线 SID 不能去重成一个随意选择的连接目标。
     if (record.online) group.onlineConnections.push(record);
+    // FORK(cloud-web-access): 同一设备的所有离线记录均可删除。
+    else group.offlineConnections?.push(record);
   }
   return [...groups.values()];
 }

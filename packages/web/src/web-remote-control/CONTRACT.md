@@ -30,3 +30,5 @@ terminal token 的 Bearer 请求。401 显示固定的凭据错误，不保存�
 logout 都原子清除整套会话。它不替代模型账号，也不写官方 OAuth key。
 旧的 `/remote/v4?state=...&code=...` 形状不再进入官方 OAuth callback；官方 OAuth
 只保留给 `/share/callback` 与 `/cn/share/callback`。
+
+设备列表支持选择离线设备并删除；Relay 校验账号及在线状态，完成后重新读取列表。

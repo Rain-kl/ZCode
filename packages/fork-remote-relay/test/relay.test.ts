@@ -288,6 +288,13 @@ test("real workerd runtime consumes tickets once and fences replaced owners", as
   const deviceAuth = await device();
   assert.equal(deviceAuth.type, "auth_ack");
   assert.equal(deviceAuth.pair_status, "waiting");
+  const onlineDelete = await call(
+    "/api/v1/remote/device/delete",
+    { device_sid: created.data.device_sid },
+    session.token,
+  );
+  assert.equal(onlineDelete.status, 400);
+  assert.equal(((await json(onlineDelete)) as { code: number }).code, 3005);
 
   const firstTerminalSocket = await openSocket(await issueTicket("terminal"));
   const firstTerminal = messageInbox(firstTerminalSocket);

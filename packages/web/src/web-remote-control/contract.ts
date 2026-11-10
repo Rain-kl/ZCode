@@ -8,6 +8,8 @@ export interface WebRemoteControlDeviceGroup {
   /** relay meta.platform（darwin / win32 / linux 等），离线时回退到本机记住的平台。 */
   platform?: string;
   onlineConnections: WebRemoteControlRelayV2Device[];
+  // FORK(cloud-web-access): 离线记录身份用于删除。
+  offlineConnections?: WebRemoteControlRelayV2Device[];
 }
 
 /** 本机见过的在线设备展示信息；name / platform 至少一项非空。 */
@@ -55,6 +57,8 @@ export interface WebRemoteControlEntryOptions {
   storage: Pick<Storage, "getItem" | "setItem">;
   locale: "zh-CN" | "en-US";
   devices(jwt: string, signal: AbortSignal): Promise<WebRemoteControlRelayV2Device[]>;
+  // FORK(cloud-web-access): 设备删除沿用同一账号和入口生命周期。
+  deleteDevice?(jwt: string, sid: string, signal: AbortSignal): Promise<void>;
   subscribeVisible(listener: () => void): () => void;
   token(jwt: string, signal: AbortSignal): Promise<string>;
   connect(connection: WebRemoteControlEntryConnection): void;

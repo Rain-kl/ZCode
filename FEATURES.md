@@ -24,6 +24,11 @@
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
 - **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。
 
+### 网页删除离线设备（2026-11-10）
+
+- 设备列表支持选择并删除离线设备，保留在线设备；刷新按钮左侧提供删除入口。
+- **文件与标记**：Web 远控入口、设备列表与 Relay 适配器，`FORK(cloud-web-access)`。
+
 ### 桌面远控凭据恢复（2026-11-10）
 
 - 自建 Relay 登录密码保存在桌面凭据服务，重启后自动登录并恢复已启用的远控连接。

@@ -55,6 +55,7 @@ export function WebRemoteControlDeviceRow({
   children,
   trailing,
   dimmed,
+  selected,
 }: {
   first: boolean;
   disabled: boolean;
@@ -63,11 +64,14 @@ export function WebRemoteControlDeviceRow({
   children: ReactNode;
   trailing?: ReactNode;
   dimmed?: boolean;
+  // FORK(cloud-web-access): 删除模式使用行的选中状态。
+  selected?: boolean;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      aria-pressed={selected}
       onClick={onClick}
       className="flex w-full min-w-0 items-center gap-3 pl-4 text-left text-foreground outline-none enabled:active:bg-hover focus-visible:bg-hover disabled:cursor-not-allowed"
     >

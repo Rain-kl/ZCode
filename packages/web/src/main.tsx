@@ -77,6 +77,7 @@ import {
   createSelfHostedRemoteAuth,
   readKnownDevices,
   createWebRemoteControlDeviceClient,
+  createWebRemoteControlDeleteDeviceClient,
   createWebRemoteControlBridgeRecoveryRunner,
   acceptWebRemoteControlBridgeInvalidation,
   resolveWebRemoteControlRecoveryTarget,
@@ -403,6 +404,8 @@ const remoteEntry = new WebRemoteControlEntry({
   storage: webRemoteControlStorage,
   locale: resolveWebRemoteControlScreenLocale(navigator.language),
   devices: createWebRemoteControlDeviceClient(window.location.origin),
+  // FORK(cloud-web-access): 复用 Relay 的离线设备删除接口。
+  deleteDevice: createWebRemoteControlDeleteDeviceClient(window.location.origin),
   subscribeVisible: (listener) => {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") listener();
@@ -423,6 +426,7 @@ const remoteEntry = new WebRemoteControlEntry({
         <WebRemoteControlDeviceListPage
           view={view}
           onSelect={(sid) => remoteEntry.selectDevice(sid)}
+          onDelete={(mids) => remoteEntry.deleteOfflineDevices(mids)}
           onRefresh={() => {
             void remoteEntry.refreshDevices();
           }}
