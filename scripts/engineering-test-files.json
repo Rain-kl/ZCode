@@ -1,5 +1,4 @@
 [
-  "scripts/test/android-release.test.mjs",
   "scripts/test/prebuilt-binary-extract.test.mjs",
   "packages/desktop/scripts/gen-ui-runtime-assets.test.ts",
   "packages/desktop/test/app-asar-repack.test.ts",

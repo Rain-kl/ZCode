@@ -282,7 +282,7 @@ export const REGISTRY = [
           "发布流水线必须上传 macOS 更新元数据，否则客户端报找不到 channel 文件",
       },
       {
-        path: ".github/workflows/release.yml",
+        path: ".github/workflows/publish-release.yml",
         // 独立匹配赋值语句：只匹配 canary-build 的话，注释里的字样就能满足规则。
         pattern: /pointer_tag="canary-build"/,
         reason: "preview 通道的固定指针 Release",
