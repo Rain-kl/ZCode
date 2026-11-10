@@ -13,15 +13,14 @@ const CREDENTIAL_KEY_PREFIX = "web-remote-control:self-hosted:session:";
 
 interface Dependencies {
   loadSettings(): Promise<DesktopSelfHostedRemoteRelaySettings>;
-  patchSettings(
-    patch: Partial<DesktopSelfHostedRemoteRelaySettings>,
-  ): Promise<void>;
+  patchSettings(patch: Partial<DesktopSelfHostedRemoteRelaySettings>): Promise<void>;
   credentialStore: {
     load(key: string): Promise<string | null>;
     save(key: string, value: string): Promise<void>;
     delete(key: string): Promise<void>;
   };
   randomId?: () => string;
+  fetcher?: typeof fetch;
 }
 
 interface LoginResponse {
@@ -36,22 +35,15 @@ function normalizeEndpoint(value: string): string {
   } catch (error) {
     throw new Error("Relay URL is invalid", { cause: error });
   }
-  const loopback =
-    endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1";
-  if (
-    endpoint.protocol !== "https:" &&
-    !(loopback && endpoint.protocol === "http:")
-  ) {
-    throw new Error(
-      "Relay URL must use HTTPS (HTTP is allowed only for localhost)",
-    );
+  const loopback = endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1";
+  if (endpoint.protocol !== "https:" && !(loopback && endpoint.protocol === "http:")) {
+    throw new Error("Relay URL must use HTTPS (HTTP is allowed only for localhost)");
   }
   if (endpoint.username || endpoint.password)
     throw new Error("Relay URL must not contain credentials");
   if (endpoint.search || endpoint.hash)
     throw new Error("Relay URL must not contain query or fragment");
-  if (endpoint.pathname !== "/")
-    throw new Error("Relay URL must be an origin without a path");
+  if (endpoint.pathname !== "/") throw new Error("Relay URL must be an origin without a path");
   return endpoint.origin;
 }
 
@@ -114,21 +106,63 @@ function statusFor(
     : { configured: false, authenticated: false };
 }
 
+async function authenticate(
+  endpointOrigin: string,
+  username: string,
+  password: string,
+  fetcher: typeof fetch,
+): Promise<LoginResponse> {
+  let response: Response;
+  try {
+    response = await fetcher(new URL(LOGIN_PATH, endpointOrigin), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    throw new Error(`Relay authentication request failed for ${endpointOrigin}`, { cause: error });
+  }
+  if (!response.ok) {
+    throw new Error(
+      response.status === 401
+        ? "Relay authentication failed"
+        : `Relay authentication failed with HTTP ${response.status}`,
+    );
+  }
+  let login: LoginResponse;
+  try {
+    login = parseLoginResponse(await response.json());
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Relay authentication returned")) {
+      throw error;
+    }
+    throw new Error("Relay authentication returned an invalid response", {
+      cause: error,
+    });
+  }
+  if (login.userInfo.username !== username) {
+    throw new Error("Relay authentication returned a different account identity");
+  }
+  return login;
+}
+
 export function createDesktopSelfHostedRemoteRelayConfiguration(
   dependencies: Dependencies,
 ): DesktopSelfHostedRemoteRelayConfiguration {
   const randomId = dependencies.randomId ?? randomUUID;
+  let restored:
+    | { key: string; value: Promise<DesktopSelfHostedRemoteRelayLogin | undefined> }
+    | undefined;
 
   async function readLogin(): Promise<{
     setting: DesktopSelfHostedRemoteRelaySetting | undefined;
     login: DesktopSelfHostedRemoteRelayLogin | undefined;
   }> {
-    const setting = (await dependencies.loadSettings())
-      .webRemoteControlSelfHostedRelay;
+    const setting = (await dependencies.loadSettings()).webRemoteControlSelfHostedRelay;
     if (!setting) return { setting, login: undefined };
-    const token = await dependencies.credentialStore.load(
-      setting.tokenCredentialKey,
-    );
+    const token = await dependencies.credentialStore.load(setting.tokenCredentialKey);
     return {
       setting,
       login: token ? { userId: setting.userId, jwt: token } : undefined,
@@ -141,53 +175,11 @@ export function createDesktopSelfHostedRemoteRelayConfiguration(
       const username = input.username.trim();
       if (!username) throw new Error("Relay username is required");
       if (!input.password) throw new Error("Relay password is required");
-      if (input.password.length > 4_096)
-        throw new Error("Relay password is too long");
+      if (input.password.length > 4_096) throw new Error("Relay password is too long");
 
-      let response: Response;
-      try {
-        response = await fetcher(new URL(LOGIN_PATH, endpointOrigin), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password: input.password }),
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-        });
-      } catch (error) {
-        throw new Error(
-          `Relay authentication request failed for ${endpointOrigin}`,
-          { cause: error },
-        );
-      }
-      if (!response.ok) {
-        throw new Error(
-          response.status === 401
-            ? "Relay authentication failed"
-            : `Relay authentication failed with HTTP ${response.status}`,
-        );
-      }
-      let login: LoginResponse;
-      try {
-        login = parseLoginResponse(await response.json());
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message.startsWith("Relay authentication returned")
-        ) {
-          throw error;
-        }
-        throw new Error("Relay authentication returned an invalid response", {
-          cause: error,
-        });
-      }
-      if (login.userInfo.username !== username) {
-        throw new Error(
-          "Relay authentication returned a different account identity",
-        );
-      }
+      const login = await authenticate(endpointOrigin, username, input.password, fetcher);
 
-      const previous = (await dependencies.loadSettings())
-        .webRemoteControlSelfHostedRelay;
+      const previous = (await dependencies.loadSettings()).webRemoteControlSelfHostedRelay;
       const tokenCredentialKey = `${CREDENTIAL_KEY_PREFIX}${randomId()}`;
       const setting: DesktopSelfHostedRemoteRelaySetting = {
         endpointOrigin,
@@ -197,35 +189,63 @@ export function createDesktopSelfHostedRemoteRelayConfiguration(
       };
       await dependencies.credentialStore.save(tokenCredentialKey, login.token);
       try {
+        await dependencies.credentialStore.save(`${tokenCredentialKey}:password`, input.password);
         await dependencies.patchSettings({
           webRemoteControlSelfHostedRelay: setting,
         });
       } catch (error) {
-        await dependencies.credentialStore
-          .delete(tokenCredentialKey)
-          .catch(() => {});
+        await dependencies.credentialStore.delete(tokenCredentialKey).catch(() => {});
+        await dependencies.credentialStore.delete(`${tokenCredentialKey}:password`).catch(() => {});
         throw error;
       }
-      if (
-        previous?.tokenCredentialKey &&
-        previous.tokenCredentialKey !== tokenCredentialKey
-      ) {
+      restored = {
+        key: tokenCredentialKey,
+        value: Promise.resolve({ userId: setting.userId, jwt: login.token }),
+      };
+      if (previous?.tokenCredentialKey && previous.tokenCredentialKey !== tokenCredentialKey) {
+        await dependencies.credentialStore.delete(previous.tokenCredentialKey).catch(() => {});
         await dependencies.credentialStore
-          .delete(previous.tokenCredentialKey)
+          .delete(`${previous.tokenCredentialKey}:password`)
           .catch(() => {});
       }
       return statusFor(setting, true);
     },
     async getLogin() {
-      return (await readLogin()).login;
+      const { setting, login } = await readLogin();
+      if (!setting) return undefined;
+      const key = setting.tokenCredentialKey;
+      if (!restored || restored.key !== key) {
+        // Bugfix: 重启后需要重新使用安全存储的密码登录，同一次启动并发请求共享认证结果。
+        const value = (async () => {
+          const password = await dependencies.credentialStore.load(`${key}:password`);
+          if (!password) return login;
+          const response = await authenticate(
+            setting.endpointOrigin,
+            setting.username,
+            password,
+            dependencies.fetcher ?? fetch,
+          );
+          if (response.userInfo.id !== setting.userId)
+            throw new Error("Relay authentication returned a different account identity");
+          return { userId: response.userInfo.id, jwt: response.token };
+        })();
+        restored = { key, value };
+        void value.catch(() => {
+          if (restored?.value === value) restored = undefined;
+        });
+      }
+      const current = restored;
+      const result = await current.value;
+      const latest = (await dependencies.loadSettings()).webRemoteControlSelfHostedRelay;
+      if (latest?.tokenCredentialKey !== key) return this.getLogin();
+      return result;
     },
     async getStatus() {
       const { setting, login } = await readLogin();
       return statusFor(setting, Boolean(login));
     },
     async getEndpointOrigin() {
-      return (await dependencies.loadSettings()).webRemoteControlSelfHostedRelay
-        ?.endpointOrigin;
+      return (await dependencies.loadSettings()).webRemoteControlSelfHostedRelay?.endpointOrigin;
     },
   };
 }

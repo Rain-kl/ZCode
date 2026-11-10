@@ -181,7 +181,9 @@ describe("self-hosted Web remote authentication", () => {
       replaceHref: vi.fn(),
       storage,
       locale: "en-US",
-      devices: async () => [{ device_sid: "device-1", device_mid: "machine-1", online: true, created_at: 1, meta: {} }],
+      devices: async () => [
+        { device_sid: "device-1", device_mid: "machine-1", online: true, created_at: 1, meta: {} },
+      ],
       subscribeVisible: () => () => {},
       token: async () => "unused",
       connect,

@@ -164,6 +164,78 @@ describe("Desktop self-hosted remote relay configuration", () => {
     });
   });
 
+  it("restores a saved password and signs in when the desktop service restarts", async () => {
+    const f = fixture();
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({
+        token: "new-session",
+        userInfo: { id: "owner", username: "owner", displayName: "Owner" },
+      }),
+    );
+    await f.service.configure(
+      { endpoint: "https://relay.example.com", username: "owner", password: "saved-password" },
+      fetcher,
+    );
+    const restored = createDesktopSelfHostedRemoteRelayConfiguration({
+      loadSettings: async () => f.readSettings(),
+      patchSettings: async () => {},
+      credentialStore: {
+        load: async (key) => f.credentials.get(key) ?? null,
+        save: async (key, value) => {
+          f.credentials.set(key, value);
+        },
+        delete: async (key) => {
+          f.credentials.delete(key);
+        },
+      },
+      fetcher,
+    });
+    fetcher.mockClear();
+    const logins = await Promise.all([restored.getLogin(), restored.getLogin()]);
+    expect(logins).toEqual([
+      { userId: "owner", jwt: "new-session" },
+      { userId: "owner", jwt: "new-session" },
+    ]);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ username: "owner", password: "saved-password" }),
+    );
+    expect(JSON.stringify(f.readSettings())).not.toContain("saved-password");
+  });
+
+  it("keeps saved credentials when automatic login fails and retries on the next attempt", async () => {
+    const f = fixture();
+    const login = {
+      token: "session",
+      userInfo: { id: "owner", username: "owner", displayName: "Owner" },
+    };
+    await f.service.configure(
+      { endpoint: "https://relay.example.com", username: "owner", password: "saved-password" },
+      async () => Response.json(login),
+    );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json(login));
+    const restored = createDesktopSelfHostedRemoteRelayConfiguration({
+      loadSettings: async () => f.readSettings(),
+      patchSettings: async () => {},
+      credentialStore: {
+        load: async (key) => f.credentials.get(key) ?? null,
+        save: async (key, value) => {
+          f.credentials.set(key, value);
+        },
+        delete: async (key) => {
+          f.credentials.delete(key);
+        },
+      },
+      fetcher,
+    });
+    await expect(restored.getLogin()).rejects.toThrow("HTTP 503");
+    await expect(restored.getLogin()).resolves.toEqual({ userId: "owner", jwt: "session" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the previous configuration if settings persistence fails", async () => {
     const old = {
       endpointOrigin: "https://old.example.com",

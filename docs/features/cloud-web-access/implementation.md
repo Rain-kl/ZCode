@@ -130,3 +130,5 @@ Root 增加了自建远控启动门控：Relay 已经完成认证时，官方 OA
 回放入口为 `packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`；同目录多项目和空主机分别使用 `--same-root`、`--empty`。证据和检查结果见 [Agent Note](../../../.agents/notes/cloud-web-access/2026-11-04-slow-network.md)。
 
 草稿推荐的场景响应 JSON 从 142872 字节降至 2807 字节，约减少 98%。网页首次进入会话的子智能体目录请求为零；打开 `/` 后正常显示候选，重复打开复用缓存。场景筛选保持完整目录读取、业务错误与网络错误的原有结果。弱网回放增加 `--catalogs` 验证这组行为，并记录各阶段 RPC 名称、执行耗时及响应体积。
+
+Desktop 自建 Relay 登录密码与会话通过凭据服务保存，启动后使用保存的账号密码重新登录并恢复已启用的连接。

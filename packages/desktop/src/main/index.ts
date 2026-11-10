@@ -748,7 +748,7 @@ app.whenReady().then(() => {
 const mainSettingService = createSettingService();
 const webRemoteControlCredentialService = createCredentialService();
 // FORK-BEGIN(cloud-web-access)
-// Desktop 自建 Relay 的密码只用于一次登录，会话令牌交给现有加密凭据服务；见 FEATURES.md 的 cloud-web-access 条目。
+// Desktop 自建 Relay 的密码和会话令牌交给现有加密凭据服务；见 FEATURES.md 的 cloud-web-access 条目。
 const desktopSelfHostedRemoteRelayConfiguration =
   createDesktopSelfHostedRemoteRelayConfiguration({
     loadSettings: () => mainSettingService.get(),
