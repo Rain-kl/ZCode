@@ -510,8 +510,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-36.1" "build-tools;36.1.0"
+        with:
+          # SDK 仓库已移除 tools；覆盖 action 默认包清单，统一安装当前构建依赖。
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.1.0'
       - name: Test Android
         if: ${{ needs.resolve.outputs.prerelease != 'true' }}
         working-directory: packages/android
