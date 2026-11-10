@@ -67,8 +67,11 @@ class MainActivity : ComponentActivity() {
     private fun openRemoteUrl(rawUrl: String): Boolean {
         val enteredOrigin = ServerAddress.origin(rawUrl)
         if (enteredOrigin != null) {
-            getSharedPreferences("zcode_remote_server", MODE_PRIVATE).edit().putString("origin", enteredOrigin).apply()
-            RemoteControlUrlPolicy.serverOrigin = enteredOrigin
+            val selected = ServerAddress.selectOrigin(RemoteControlUrlPolicy.serverOrigin, rawUrl) ?: return false
+            if (RemoteControlUrlPolicy.serverOrigin == null) {
+                getSharedPreferences("zcode_remote_server", MODE_PRIVATE).edit().putString("origin", selected).apply()
+                RemoteControlUrlPolicy.serverOrigin = selected
+            }
         }
         val resolvedUrl = RemoteControlUrlPolicy.resolve(if (enteredOrigin != null) "$enteredOrigin/remote/v4" else rawUrl) ?: return false
         recentLinks = RemoteControlRecentLinksStore.record(this, resolvedUrl)
@@ -80,9 +83,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun closeRemote() {
-        remoteUrl = null
+        // FORK(android-remote): 返回键退出应用，已保存的后端不重新进入配置页。
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         RemoteControlKeepAliveService.stop(this)
+        finish()
     }
 
     private fun clearRecentLinks() {

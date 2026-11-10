@@ -14,13 +14,11 @@
     <string name="remote_scan_camera_failed">Could not start the camera.</string>
     <string name="remote_recent_title">Recent links</string>
     <string name="remote_recent_clear">Clear</string>
-    <string name="remote_screen_title">Remote control</string>
-    <string name="remote_reload_button">Reload</string>
-    <string name="remote_close_button">Close</string>
     <string name="remote_retry_button">Retry</string>
     <string name="remote_load_failed_title">Could not load remote control</string>
     <string name="remote_keep_alive_title">ZCode remote control is active</string>
     <string name="remote_keep_alive_text">Keeping the remote session ready while this phone is in use.</string>
     <string name="remote_keep_alive_channel">Remote control</string>
     <string name="remote_keep_alive_channel_description">Connection status for ZCode remote control sessions.</string>
+    <string name="remote_close_button">Close</string>
 </resources>

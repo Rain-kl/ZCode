@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FORK(android-remote): 复用桌面客户端图标。 -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android" android:src="@drawable/zcode_launcher" android:gravity="fill" />

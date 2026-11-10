@@ -34,15 +34,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -541,16 +538,8 @@ private fun RemoteControlWebViewScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        RemoteControlTopBar(
-            remoteUrl = remoteUrl,
-            isLoading = isLoading,
-            onReload = {
-                pageError = null
-                webView?.reload()
-            },
-            onClose = onCloseRemote,
-        )
+    // FORK(android-remote): 网页使用完整内容区，仅保留系统安全区。
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         if (isLoading) {
             LinearProgressIndicator(
                 progress = { (progress.coerceIn(0, 100) / 100f) },
@@ -593,52 +582,6 @@ private fun RemoteControlWebViewScreen(
                     },
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun RemoteControlTopBar(
-    remoteUrl: String,
-    isLoading: Boolean,
-    onReload: () -> Unit,
-    onClose: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .height(48.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.remote_screen_title),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text = remoteUrl,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-        TextButton(onClick = onReload) {
-            Text(stringResource(R.string.remote_reload_button))
-        }
-        TextButton(onClick = onClose) {
-            Text(stringResource(R.string.remote_close_button))
         }
     }
 }
