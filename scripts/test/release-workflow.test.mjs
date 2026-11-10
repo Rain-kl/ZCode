@@ -17,67 +17,93 @@ const sourceServerWorkflow = parse(
   ),
 );
 const sourceServerJobs = sourceServerWorkflow.jobs;
-const gates = ["resolve", "verify", "unit-tests", "build-macos", "build-windows", "build-android"];
+const builds = ["build-macos", "build-windows", "build-android"];
+const checks = ["verify", "unit-tests", "android-tests"];
+const gates = ["resolve", ...checks, ...builds];
 
-test("builds and complete test gates start after resolve without waiting for each other", () => {
-  for (const name of gates.slice(1)) {
+test("builds and all tests start after resolve on both channels", () => {
+  for (const name of [...checks, ...builds]) {
     assert.deepEqual(jobs[name].needs, ["resolve"], name);
+    assert.doesNotMatch(jobs[name].if ?? "", /prerelease/u, name);
     assert.ok(!jobs[name]["continue-on-error"], name);
-    for (const step of jobs[name].steps) {
-      if (step.name !== "Third-party inventory check (advisory)") {
-        assert.ok(!step["continue-on-error"], `${name}: ${step.name}`);
-      }
-    }
   }
-  assert.match(jobs.verify.if, /needs\.resolve\.outputs\.prerelease != 'true'/);
-  assert.match(jobs["unit-tests"].if, /needs\.resolve\.outputs\.prerelease != 'true'/);
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
 });
 
-test("publication requires builds and stable-only test gates", () => {
-  assert.deepEqual(jobs.publish.needs, gates);
-  const condition = jobs.publish.if;
-  assert.match(condition, /!cancelled\(\)/);
-  function permits(results, cancelled = false) {
-    const expression = condition
-      .replace(/^\$\{\{\s*|\s*\}\}$/g, "")
-      .replace(/cancelled\(\)/g, JSON.stringify(cancelled))
-      .replace(/needs\.resolve\.outputs\.prerelease/g, JSON.stringify(results.prerelease))
-      .replace(/needs\.([\w-]+)\.result/g, (_, gate) => JSON.stringify(results[gate]));
-    return Function(`"use strict"; return (${expression});`)();
-  }
-  const success = {
-    ...Object.fromEntries(gates.map((gate) => [gate, "success"])),
-    prerelease: "false",
-  };
-  assert.equal(permits(success), true);
-  assert.equal(permits(success, true), false);
-  assert.equal(
-    permits({
-      ...success,
-      verify: "skipped",
-      "unit-tests": "skipped",
-      prerelease: "true",
-    }),
-    true,
-  );
-  for (const gate of ["verify", "unit-tests", "build-macos", "build-windows", "build-android"]) {
-    for (const result of ["failure", "skipped", "cancelled"]) {
-      assert.equal(permits({ ...success, [gate]: result }), false, `${gate}: ${result}`);
+function permits(job, results, cancelled = false) {
+  const expression = job.if
+    .replace(/^\$\{\{\s*|\s*\}\}$/g, "")
+    .replace(/cancelled\(\)/g, JSON.stringify(cancelled))
+    .replace(/needs\.resolve\.outputs\.prerelease/g, JSON.stringify(results.prerelease))
+    .replace(/needs\.([\w-]+)\.result/g, (_, gate) => JSON.stringify(results[gate]));
+  return Function(`"use strict"; return (${expression});`)();
+}
+
+test("canary publication waits only for builds and keeps failed tests visible", () => {
+  const job = jobs["publish-canary"];
+  assert.ok(job);
+  assert.deepEqual(job.needs, ["resolve", ...builds]);
+  const success = { ...Object.fromEntries(gates.map((gate) => [gate, "success"])), prerelease: "true" };
+  assert.equal(permits(job, success), true);
+  assert.equal(permits(job, success, true), false);
+  assert.equal(permits(job, { ...success, prerelease: "false" }), false);
+  for (const gate of checks) {
+    for (const result of ["failure", "cancelled", "in_progress"]) {
+      assert.equal(permits(job, { ...success, [gate]: result }), true, `${gate}: ${result}`);
     }
   }
-  for (const gate of ["build-macos", "build-windows", "build-android"]) {
-    assert.equal(
-      permits({
-        ...success,
-        verify: "skipped",
-        "unit-tests": "skipped",
-        prerelease: "true",
-        [gate]: "failure",
-      }),
-      false,
-      `canary ${gate}: failure`,
-    );
+  for (const gate of ["resolve", ...builds]) {
+    for (const result of ["failure", "skipped", "cancelled"]) {
+      assert.equal(permits(job, { ...success, [gate]: result }), false, `${gate}: ${result}`);
+    }
+  }
+  assert.deepEqual(jobs["test-summary"].needs, checks);
+  assert.equal(jobs["test-summary"].if, "${{ always() }}");
+});
+
+test("stable publication requires every build and test and shares the publisher", () => {
+  assert.deepEqual(jobs.publish.needs, gates);
+  assert.equal(jobs.publish.uses, jobs["publish-canary"].uses);
+  const success = { ...Object.fromEntries(gates.map((gate) => [gate, "success"])), prerelease: "false" };
+  assert.equal(permits(jobs.publish, success), true);
+  assert.equal(permits(jobs.publish, success, true), false);
+  assert.equal(permits(jobs.publish, { ...success, prerelease: "true" }), false);
+  for (const gate of gates) {
+    for (const result of ["failure", "skipped", "cancelled"]) {
+      assert.equal(permits(jobs.publish, { ...success, [gate]: result }), false, `${gate}: ${result}`);
+    }
+  }
+});
+
+test("both channels pass the same version and commit to the reusable publisher", async () => {
+  const publisher = parse(await readFile(new URL("../../.github/workflows/publish-release.yml", import.meta.url), "utf8"));
+  const inputs = publisher.on.workflow_call.inputs;
+  for (const name of ["publish", "publish-canary"]) {
+    assert.equal(jobs[name].uses, "./.github/workflows/publish-release.yml");
+    for (const input of ["version", "release_tag", "prerelease", "commit"]) {
+      assert.deepEqual(inputs[input], { required: true, type: "string" });
+      assert.equal(jobs[name].with[input], `\${{ needs.resolve.outputs.${input} }}`);
+    }
+  }
+});
+
+test("test summary records success and failure without hiding a failed check", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "zcode-test-summary-"));
+  try {
+    const step = jobs["test-summary"].steps.find((item) => item.name === "Summarize checks");
+    for (const result of ["success", "failure", "cancelled"]) {
+      const summary = join(dir, `${result}.md`);
+      const results = Object.fromEntries(checks.map((name) => [name, { result: "success" }]));
+      results["unit-tests"].result = result;
+      const output = spawnSync("bash", ["-e", "-c", step.run], {
+        env: { ...process.env, CHECK_RESULTS: JSON.stringify(results), GITHUB_STEP_SUMMARY: summary },
+        encoding: "utf8",
+      });
+      assert.equal(output.status, result === "success" ? 0 : 1, output.stderr);
+      assert.ok((await readFile(summary, "utf8")).includes(`| unit-tests | ${result} |`));
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 

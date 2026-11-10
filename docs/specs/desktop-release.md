@@ -1,14 +1,14 @@
 # 桌面端发布流水线
 
-范围：`.github/workflows/release.yml` 与 `scripts/ci/release-version.mjs`。
-覆盖 macOS（arm64）与 Windows（x64）桌面包的构建与 GitHub Release 发布。Source Server 使用独立流水线，合同见 [Source Server 发布](source-server-release.md)。
+范围：`.github/workflows/release.yml`、`.github/workflows/publish-release.yml` 与 `scripts/ci/release-version.mjs`。
+覆盖 macOS（arm64）、Windows（x64）桌面包与 Android APK的构建与 GitHub Release 发布。Source Server 使用独立流水线，合同见 [Source Server 发布](source-server-release.md)。
 
 ## 通道与触发
 
 | 通道     | 触发条件                              | 版本                                | Release                                                                           |
 | -------- | ------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------- |
 | `stable` | 推送 `v*.*.*` tag                     | tag 去掉 `v` 前缀（如 `3.14.3`）    | `v3.14.3`，正式 Release                                                           |
-| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | 固定 tag `canary-build` 的指针发布（不建 dev-<sha8>）；不运行测试，只要求构建成功 |
+| `dev`    | 推送到 `canary` 分支，或手动 dispatch | `<根 package.json 版本>-dev.<sha8>` | 固定 tag `canary-build` 的指针发布（不建 dev-<sha8>）；执行全部测试，构建成功即可发布 |
 
 手动 dispatch 只能选 `dev`；`stable` 必须由 tag 触发，否则流水线在 `resolve` 阶段直接失败，避免出现「人工填版本 + 无 tag」的稳定版本。
 
@@ -27,19 +27,11 @@
 
 ## 作业门禁与跳过语义
 
-- `verify`（typecheck / lint / architecture / fork-removals / CLI 构建 / fork 契约）与 `unit-tests`（完整 Vitest 集合的四个分片）只在正式 tag 通道运行。canary 是快速集成构建，不运行测试，也不把静态门禁作为发布前置。
-- 正式发布的完整门禁范围不缩减；canary 产物不是稳定版本，不能以构建成功替代 tag 发布的测试放行。
-- **无 `if` 的作业隐式条件是 `success()`，它要求依赖图上「所有祖先作业」成功——被跳过的祖先会让下游被判成 skip。** 这不是「只要求直接 `needs` 成功」。实测踩到过：`verify` 按预期 skipped、两个平台构建都 success，但 `publish` 因为没有显式条件而被跳过，dev 包没发出来（run 36521516436）。
-- 因此凡是 `needs` 链上可能出现 skipped 的作业都必须显式写条件。当前判定如下：
+- 每次发布均运行 `verify`、四个 `unit-tests` 分片和独立的 `android-tests`，保留真实失败状态。测试与 macOS、Windows、Android 构建在版本解析后并行启动。
+- Canary 发布只依赖构建，构建成功即可发布；测试失败或仍在运行时也可发布。正式版要求所有构建、静态检查与测试通过。
+- 两个通道调用同一个发布流程，使用当前版本、提交和构建产物。
+- 测试结果汇总列出静态检查与契约、Vitest 分片和 Android 测试状态；Android JUnit 报告作为 Actions artifact 保存。
 
-| 渠道                    | `verify` / `unit-tests` | 桌面构建               | `publish`                        |
-| ----------------------- | ----------------------- | ---------------------- | -------------------------------- |
-| dev（推送 canary）      | `if` 条件跳过           | resolve 成功后并行运行 | macOS 与 Windows 构建成功即运行  |
-| tag 且门禁通过          | 必须全部成功            | resolve 成功后并行运行 | 两类门禁与两类构建全部成功才运行 |
-| 任一正式门禁失败/跳过   | 非 success              | 可已完成或仍在运行     | 不创建 Desktop Release           |
-| canary 任一桌面构建失败 | skipped                 | 可为 success/failure   | 不更新 `canary-build` 指针       |
-
-- 新增作业时照抄这条规则：**只要它 `needs` 的链上可能有 skipped 作业，就必须写显式条件**（用 `!cancelled()` 而非 `always()`，后者在被取消时也会继续跑）。
 - `verify` 里在单测前会按依赖链构建 CLI 包（`pnpm -r --filter "@zcode/core..."`）：`apps/zcode-cli/packages/core/test` 的测试 import 上游 tool 入口，而这些包的 `exports` 指向 `dist`，verify 只 install 不 build 会 `ERR_MODULE_NOT_FOUND` 让整组失败。
 
 ## 构建环境契约
@@ -54,7 +46,7 @@
 
 1. **tag 版本进入程序**：`verify` 步骤比对 app.asar 内 `package.json#version` 与 `build-meta.json#appVersion` 等于 tag 版本，且 `buildCommitId` 为该 tag 提交的短 SHA。产物文件名同时包含该版本号（`ZCode-<version>-mac-arm64.dmg` 等），上传步骤使用 `if-no-files-found: error`。
 2. **dev 通道不污染稳定通道**：dev 只更新 `canary-build` 指针发布，且以 `--prerelease --latest=false` 更新，`releases/latest` 仍指向稳定版本；dev 不再产生 dev-<sha8> 发布。
-3. **半套产物不发布**：`publish` 直接依赖 `resolve`、`verify`、`unit-tests` 和两类桌面构建。canary 只要求 macOS 与 Windows 构建成功；正式 tag 还必须 `verify` 与 `unit-tests` 全部 `success`。任一门禁/分片/构建失败、跳过或取消时，即使已上传 Actions artifact，也不得创建 Desktop Release。
+3. **发布条件**：Canary 必须完成 macOS、Windows 和 Android 构建；正式版还必须通过静态检查、Vitest 和 Android 测试。测试失败保留红色状态，Canary 发布仍可完成。
 4. **重复执行幂等**：同一 tag 或同一提交重跑时，先 `gh release edit` 再回退 `create`，资源用 `--clobber` 覆盖。
 5. **dev 通道只产出指针发布**：dev 集成不建 dev-<sha8> 发布，固定 tag `canary-build` 每次更新到当前提交，重新公开并只上传本次集成的一套资产。这样既不会累积旧版本包，也会让当前 canary 出现在 GitHub Releases 列表前部。
 
@@ -69,7 +61,7 @@
 
 ## 2026-10-24 同步验证
 
-2026-11-03 用户调整通道策略：canary 集成只要求构建成功，允许跳过 verify 与 unit-tests；正式 tag 仍必须执行完整静态门禁和两种测试入口，跳过不能作为正式发布验证。此前“canary 也必须执行完整门禁”的规则已被本节取代。
+2026-11-10 通道策略：Canary 执行静态检查和全部测试并展示结果，发布只等待构建；正式版要求完整门禁通过。
 
 ## 2026-11-03 发布关键路径优化（二开基础设施）
 
@@ -78,7 +70,7 @@
 
 - **版本唯一所有者仍是 resolve**。所有作业使用同一 workflow SHA 的独立 checkout，消费同一版本/提交输出。
 - **Desktop 发布唯一写入者仍是 publish**。构建允许推测执行，仅上传 Actions artifact，不创建 Release。
-  正式 tag 汇合完整门禁和两类桌面构建；canary 只汇合 macOS 与 Windows 构建。
+  正式 tag 汇合完整门禁和三类构建；Canary 只汇合 macOS、Windows 与 Android 构建。
 - `unit-tests` 使用 Vitest 官方 `--shard=<index>/4`，四个独立 Ubuntu runner 完整覆盖根配置的所有项目，
   不另维护测试文件列表，不改变 include/exclude、worker 数、超时或测试断言。
   `engineering` / `fork-contracts` 在每个分片内仍是单 worker 串行；跨 runner 没有共享进程树/cwd/文件状态。
@@ -92,17 +84,16 @@
 
 ```mermaid
 flowchart LR
-    R[resolve: version + SHA] --> V[verify: static + fork contracts]
-    R --> T[unit-tests: 1/4 .. 4/4]
-    R --> M[macOS build]
-    R --> W[Windows build]
-    V & T & M & W --> P[publish: all success only]
-    P --> D[Desktop Release]
+    R[版本与提交] --> V[静态检查与契约]
+    R --> T[Vitest 四个分片]
+    R --> A[Android 测试]
+    R --> B[macOS / Windows / Android 构建]
+    B --> C[Canary 发布]
+    V & T & A & B --> S[正式版发布]
+    V & T & A --> Q[测试结果汇总]
 ```
 
-上图为正式 tag 路径；canary 路径跳过 `V` 与 `T`，只要求 `M/W` 成功。
-
-验收：依赖图契约遍历每个直接门禁的 failure/skipped/cancelled，均阻止 publish；所有成功才允许发布；
+验收：Canary 发布的依赖链只包含构建与版本；测试失败或仍在运行时允许发布，构建失败则阻止发布；正式版所有门禁成功才发布；
 四个 Vitest 分片发现集合不重不漏且与未分片集合相等；隔离项目原并发限制不变；
 bundle 默认/两个 skip 标志的四种组合均无重复 prepare；实际 manifest 保证 no-runtime-assets 只构建 metadata 与 app。
 预计端到端目标 12–16 分钟（无排队、runner 资源充足），不是本地验证结论；需推送后采集至少 2–3 轮实测。

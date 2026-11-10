@@ -7,7 +7,7 @@ name: Release Desktop
 #   （app.getVersion()、About、遥测）、产物文件名与 Release tag 三者一致。
 # - 推送到 canary 分支：只做 Desktop 集成构建，版本 `<根 package.json 版本>-dev.<sha8>`，只更新固定 tag 的指针发布
 #   （`Dev channel (latest canary)`）——不建 dev-<sha> 发布，避免 Releases 堆成一串历史构建。
-#   canary 不运行 verify/unit-tests；macOS 与 Windows 构建全部成功即可更新 dev 指针。
+#   canary 并行执行全部测试；macOS、Windows 与 Android 构建成功即可更新 dev 指针。
 # - 推送 `v*.*.*` tag：正式发布必须同时通过 verify 与 unit-tests。
 # - workflow_dispatch：手动按 dev 通道跑一次；stable 通道必须在 vX.Y.Z tag 上触发。
 #
@@ -107,8 +107,6 @@ jobs:
   verify:
     name: Verify workspace gates
     needs: [resolve]
-    # 完整静态门禁和测试只属于正式发布；canary 集成只要求产物构建成功。
-    if: ${{ needs.resolve.outputs.prerelease != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -196,8 +194,6 @@ jobs:
   unit-tests:
     name: Unit tests (${{ matrix.shard }}/4)
     needs: [resolve]
-    # 只有正式发布需要完整测试；canary 的集成发布由构建结果决定。
-    if: ${{ needs.resolve.outputs.prerelease != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -498,6 +494,52 @@ jobs:
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/latest.yml
             packages/desktop/${{ env.ZCODE_DESKTOP_DIST_DIR }}/dev.yml
 
+  android-tests:
+    name: Android tests
+    needs: [resolve]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36.1 build-tools;36.1.0'
+      - name: Test Android
+        working-directory: packages/android
+        run: ./gradlew :app:testDebugUnitTest
+      - name: Upload Android test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-test-results
+          path: packages/android/app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
+
+  test-summary:
+    name: Test results
+    needs: [verify, unit-tests, android-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Summarize checks
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const results = JSON.parse(process.env.CHECK_RESULTS);
+          const lines = ['## Test results', '', '| Check | Result |', '| --- | --- |'];
+          for (const [name, check] of Object.entries(results)) {
+            lines.push(`| ${name} | ${check.result} |`);
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          if (Object.values(results).some(check => check.result !== 'success')) process.exitCode = 1;
+          NODE
+
   build-android:
     name: Build Android APK
     needs: [resolve]
@@ -513,10 +555,6 @@ jobs:
         with:
           # SDK 仓库已移除 tools；覆盖 action 默认包清单，统一安装当前构建依赖。
           packages: 'platform-tools platforms;android-36.1 build-tools;36.1.0'
-      - name: Test Android
-        if: ${{ needs.resolve.outputs.prerelease != 'true' }}
-        working-directory: packages/android
-        run: ./gradlew :app:testDebugUnitTest
       - name: Prepare Android signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -542,128 +580,28 @@ jobs:
           if-no-files-found: error
           path: packages/android/app/build/outputs/apk/release/app-release.apk
 
-  publish:
-    name: Publish GitHub Release
-    needs: [resolve, verify, unit-tests, build-macos, build-windows, build-android]
-    # canary 要求桌面与 Android 构建成功；stable tag 还必须通过 verify 与 unit-tests。
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-android.result == 'success' && (needs.resolve.outputs.prerelease == 'true' || (needs.verify.result == 'success' && needs.unit-tests.result == 'success')) }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+  publish-canary:
+    name: Publish canary release
+    needs: [resolve, build-macos, build-windows, build-android]
+    if: ${{ !cancelled() && needs.resolve.outputs.prerelease == 'true' && needs.resolve.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-android.result == 'success' }}
     permissions:
       contents: write
-    steps:
-      - name: Checkout publication scripts
-        uses: actions/checkout@v7
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      version: ${{ needs.resolve.outputs.version }}
+      release_tag: ${{ needs.resolve.outputs.release_tag }}
+      prerelease: ${{ needs.resolve.outputs.prerelease }}
+      commit: ${{ needs.resolve.outputs.commit }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: release-assets
-          pattern: "{mac-*,win-*,android-*}"
-          merge-multiple: true
-
-      - name: Generate checksums
-        working-directory: release-assets
-        run: |
-          set -euo pipefail
-          ls -lh
-          find . -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.exe' -o -name '*.apk' \) -print0 \
-            | sort -z | xargs -0 shasum -a 256 > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Publish release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 显式固定发布仓库，避免 gh 的仓库推断改变发布目的地。
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
-          VERSION: ${{ needs.resolve.outputs.version }}
-          PRERELEASE: ${{ needs.resolve.outputs.prerelease }}
-          COMMIT: ${{ needs.resolve.outputs.commit }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          retry() {
-            for attempt in 1 2 3 4 5; do
-              "$@" && return 0
-              echo "attempt ${attempt} failed: $*" >&2
-              sleep $((attempt * 5))
-            done
-            return 1
-          }
-
-          # 只有 stable 通道建 tag 发布。dev 通道不建 dev-<sha> 发布：客户端只认固定 tag 的
-          # 指针发布（见下方 FORK-BEGIN(github-update) 段），一提交一个 Release 只会把 Releases
-          # 页面堆成一串历史构建。
-          if [[ "${PRERELEASE}" != "true" ]]; then
-            title="ZCode ${VERSION}"
-            summary="稳定发布。"
-            notes=$(printf '%s\n' \
-              "${summary}" \
-              "" \
-              "版本：${VERSION}" \
-              "提交：${COMMIT}" \
-              "构建流水线：${RUN_URL}" \
-              "" \
-              "macOS 安装包未签名、未公证，首次使用可能需要手动放行（按遇到的情况执行）：" \
-              '- 打不开（提示“已损坏”或无法验证开发者）：执行 `xattr -cr /Applications/ZCode.app` 后重新启动。' \
-              '- 能打开但连不上同一局域网内的主机（SSH 报 EHOSTUNREACH / No route to host）：执行 `codesign --force --deep --sign - /Applications/ZCode.app` 后重启应用。原因是 macOS 把“本地网络”权限记在应用的代码签名身份上，未签名的应用该授权不会生效。' \
-              "产物校验见 SHA256SUMS.txt。")
-
-            create_args=(--title "${title}" --notes "${notes}" --verify-tag)
-            edit_args=(--title "${title}" --notes "${notes}")
-
-            # 先 edit 再回退 create：避免一次存在性探测失败（503）把已有 Release 误路由成 create(422)。
-            if ! retry gh release edit "${RELEASE_TAG}" "${edit_args[@]}"; then
-              retry gh release create "${RELEASE_TAG}" "${create_args[@]}"
-            fi
-            retry gh release upload "${RELEASE_TAG}" release-assets/* --clobber
-          else
-            echo "dev 通道：跳过 dev-<sha> 发布，只更新指针发布"
-          fi
-
-          # FORK-BEGIN(github-update)
-          # dev 通道使用固定地址，客户端读 .../releases/download/canary-build/dev.yml。
-          # GitHub 不支持置顶 prerelease，且列表按 tag 的创建时间排序。删除旧 Release，
-          # 把固定 tag 强制指向当前提交，再以 draft 重建并公开，才能让 canary 回到列表前部。
-          if [[ "${PRERELEASE}" == "true" ]]; then
-            pointer_tag="canary-build"
-            pointer_title="Dev channel (latest canary)"
-            pointer_notes=$(printf '%s\n' \
-              "dev 通道指针发布：始终指向最新的 canary 集成构建。" \
-              "" \
-              "当前版本：${VERSION}" \
-              "提交：${COMMIT}" \
-              "构建流水线：${RUN_URL}" \
-              "" \
-              "macOS 安装包未签名、未公证，首次使用可能需要手动放行（按遇到的情况执行）：" \
-              '- 打不开（提示“已损坏”或无法验证开发者）：执行 `xattr -cr /Applications/ZCode.app` 后重新启动。' \
-              '- 能打开但连不上同一局域网内的主机（SSH 报 EHOSTUNREACH / No route to host）：执行 `codesign --force --deep --sign - /Applications/ZCode.app` 后重启应用。原因是 macOS 把“本地网络”权限记在应用的代码签名身份上，未签名的应用该授权不会生效。')
-            pointer_args=(--title "${pointer_title}" --notes "${pointer_notes}" --prerelease --latest=false)
-
-            if gh release view "${pointer_tag}" >/dev/null 2>&1; then
-              retry gh release delete "${pointer_tag}" --yes
-            fi
-            retry gh api --method PATCH "repos/${GH_REPO}/git/refs/tags/${pointer_tag}" \
-              -f "sha=${COMMIT}" -F force=true >/dev/null
-            retry gh release create "${pointer_tag}" "${pointer_args[@]}" --verify-tag --draft
-            retry gh release upload "${pointer_tag}" release-assets/* --clobber
-            retry gh release edit "${pointer_tag}" "${pointer_args[@]}" --draft=false
-
-            # 本流水线不再创建 dev-<sha> 发布；这里作为安全网清掉一切遗留或手工创建的 dev-*
-            # 发布（含 tag）——dev 通道的包只应存在于指针发布上。
-            # 只匹配 ^dev-：canary-build 是 preview 更新通道的固定 tag 入口（客户端读它资产里的
-            # dev.yml / dev-mac.yml），stable 是正式发布——两者都不在「旧 prerelease」范围内，
-            # 把这里放宽成「所有 prerelease」会直接断掉预览通道的更新检查。
-            old_dev_tags=$(gh release list --limit 100 --json tagName --jq '.[].tagName' \
-              | grep -E '^dev-' || true)
-            for old_dev_tag in ${old_dev_tags}; do
-              retry gh release delete "${old_dev_tag}" --yes --cleanup-tag
-            done
-          fi
-          # FORK-END(github-update)
+  publish:
+    name: Publish stable release
+    needs: [resolve, verify, unit-tests, android-tests, build-macos, build-windows, build-android]
+    if: ${{ !cancelled() && needs.resolve.outputs.prerelease != 'true' && needs.resolve.result == 'success' && needs.verify.result == 'success' && needs.unit-tests.result == 'success' && needs.android-tests.result == 'success' && needs.build-macos.result == 'success' && needs.build-windows.result == 'success' && needs.build-android.result == 'success' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-release.yml
+    with:
+      version: ${{ needs.resolve.outputs.version }}
+      release_tag: ${{ needs.resolve.outputs.release_tag }}
+      prerelease: ${{ needs.resolve.outputs.prerelease }}
+      commit: ${{ needs.resolve.outputs.commit }}

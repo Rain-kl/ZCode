@@ -330,7 +330,8 @@ test("Source Server has an independent workflow and cleanup preserves only curre
   assert.match(serverWorkflow, /source-server-release\.mjs publish/);
   assert.match(serverWorkflow, /group: source-server-release-/);
   assert.match(desktopWorkflow, /group: desktop-release-/);
-  assert.match(desktopWorkflow, /git\/refs\/tags\/\$\{pointer_tag\}/);
+  const publisher = await readFile(new URL("../../.github/workflows/publish-release.yml", import.meta.url), "utf8");
+  assert.match(publisher, /git\/refs\/tags\/\$\{pointer_tag\}/);
   assert.match(cleanup, /server-canary-build/);
   const guard = cleanup.match(/is_dev_channel_tag\(\) \{[^}]+\}/u);
   assert.ok(guard, "cleanup retention guard is required");
