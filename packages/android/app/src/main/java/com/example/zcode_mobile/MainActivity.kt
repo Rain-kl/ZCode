@@ -16,9 +16,11 @@ import com.example.zcode_mobile.remote.RemoteControlKeepAliveService
 import com.example.zcode_mobile.remote.RemoteControlRecentLink
 import com.example.zcode_mobile.remote.RemoteControlRecentLinksStore
 import com.example.zcode_mobile.remote.RemoteControlUrlPolicy
+import com.example.zcode_mobile.remote.ServerAddress
 import com.example.zcode_mobile.ui.RemoteControlApp
 import com.example.zcode_mobile.ui.theme.ZcodemobileTheme
 
+// FORK(android-remote): 保存自建后端并在启动时恢复。
 class MainActivity : ComponentActivity() {
     private var remoteUrl by mutableStateOf<String?>(null)
     private var recentLinks by mutableStateOf<List<RemoteControlRecentLink>>(emptyList())
@@ -29,10 +31,13 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG) {
             android.webkit.WebView.setWebContentsDebuggingEnabled(true)
         }
+        val prefs = getSharedPreferences("zcode_remote_server", MODE_PRIVATE)
+        RemoteControlUrlPolicy.serverOrigin = prefs.getString("origin", null)?.let(ServerAddress::origin)
         recentLinks = RemoteControlRecentLinksStore.read(this)
 
         val restoredRemoteUrl = savedInstanceState?.getString(KEY_REMOTE_URL)
         val launchRemoteUrl = restoredRemoteUrl ?: resolveRemoteUrlFromIntent(intent)
+            ?: RemoteControlUrlPolicy.serverOrigin?.let { "$it/remote/v4" }
         launchRemoteUrl?.let { openRemoteUrl(it) }
 
         setContent {
@@ -60,7 +65,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openRemoteUrl(rawUrl: String): Boolean {
-        val resolvedUrl = RemoteControlUrlPolicy.resolve(rawUrl) ?: return false
+        val enteredOrigin = ServerAddress.origin(rawUrl)
+        if (enteredOrigin != null) {
+            getSharedPreferences("zcode_remote_server", MODE_PRIVATE).edit().putString("origin", enteredOrigin).apply()
+            RemoteControlUrlPolicy.serverOrigin = enteredOrigin
+        }
+        val resolvedUrl = RemoteControlUrlPolicy.resolve(if (enteredOrigin != null) "$enteredOrigin/remote/v4" else rawUrl) ?: return false
         recentLinks = RemoteControlRecentLinksStore.record(this, resolvedUrl)
         remoteUrl = resolvedUrl
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

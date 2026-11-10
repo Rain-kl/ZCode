@@ -14,6 +14,15 @@
 
 标记自查：`rg -n "FORK\(|FORK-BEGIN\(" --glob '!AGENTS.md' --glob '!FEATURES.md'`
 
+## Android 远程控制 (android-remote)
+
+- **需求背景**：通过 Android 应用访问用户配置的远程控制服务。
+- **修改内容**：首次输入后端地址，后续启动自动连接，支持切换后端与扫码连接。
+- **修改文件**：`packages/android/**`。
+- **上游改动标记**：Android 入口与地址校验使用 `FORK(android-remote)`。
+- **设计文档**：[design.md](docs/features/android-remote/design.md)。
+- **实现文档**：[implementation.md](docs/features/android-remote/implementation.md)。
+
 ## 自建云端网页远控 (cloud-web-access)
 
 - **状态**：2026-11-04，Relay、Server 主动连接、Desktop 入口与网页项目会话闭环已实现；验收证据见功能文档。

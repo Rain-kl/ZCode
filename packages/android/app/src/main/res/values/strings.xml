@@ -1,10 +1,10 @@
 <resources>
     <string name="app_name">ZCode</string>
     <string name="remote_launcher_title">ZCode Remote</string>
-    <string name="remote_launcher_description">Open the remote control link from your desktop QR code.</string>
-    <string name="remote_url_label">Remote URL</string>
-    <string name="remote_url_placeholder">https://zcode.z.ai/remote?sid=...</string>
-    <string name="remote_url_invalid">Use a ZCode remote link.</string>
+    <string name="remote_launcher_description">Enter your backend address to open remote control.</string>
+    <string name="remote_url_label">Backend address</string>
+    <string name="remote_url_placeholder">https://relay.example.com</string>
+    <string name="remote_url_invalid">Enter a valid HTTPS backend address.</string>
     <string name="remote_open_button">Open remote control</string>
     <string name="remote_scan_button">Scan QR code</string>
     <string name="remote_scan_title">Scan desktop QR code</string>

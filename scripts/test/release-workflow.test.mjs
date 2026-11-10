@@ -17,7 +17,7 @@ const sourceServerWorkflow = parse(
   ),
 );
 const sourceServerJobs = sourceServerWorkflow.jobs;
-const gates = ["resolve", "verify", "unit-tests", "build-macos", "build-windows"];
+const gates = ["resolve", "verify", "unit-tests", "build-macos", "build-windows", "build-android"];
 
 test("builds and complete test gates start after resolve without waiting for each other", () => {
   for (const name of gates.slice(1)) {
@@ -61,12 +61,12 @@ test("publication requires builds and stable-only test gates", () => {
     }),
     true,
   );
-  for (const gate of ["verify", "unit-tests", "build-macos", "build-windows"]) {
+  for (const gate of ["verify", "unit-tests", "build-macos", "build-windows", "build-android"]) {
     for (const result of ["failure", "skipped", "cancelled"]) {
       assert.equal(permits({ ...success, [gate]: result }), false, `${gate}: ${result}`);
     }
   }
-  for (const gate of ["build-macos", "build-windows"]) {
+  for (const gate of ["build-macos", "build-windows", "build-android"]) {
     assert.equal(
       permits({
         ...success,

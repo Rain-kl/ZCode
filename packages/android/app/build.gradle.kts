@@ -16,20 +16,30 @@ android {
         applicationId = "com.example.zcode_mobile"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = System.getenv("ZCODE_ANDROID_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("ZCODE_ANDROID_VERSION_NAME") ?: "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        buildConfigField("String", "REMOTE_CONTROL_DEFAULT_URL", "\"https://zcode.z.ai/remote\"")
     }
 
+    signingConfigs {
+        create("releaseCi") {
+            val keyPath = System.getenv("ZCODE_ANDROID_KEYSTORE")
+            if (keyPath != null) {
+                storeFile = file(keyPath)
+                storePassword = System.getenv("ZCODE_ANDROID_STORE_PASSWORD")
+                keyAlias = System.getenv("ZCODE_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ZCODE_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
-            buildConfigField("String", "REMOTE_CONTROL_DEFAULT_URL", "\"https://zcode.z.ai/remote\"")
         }
         release {
+            signingConfig = signingConfigs.getByName("releaseCi")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
