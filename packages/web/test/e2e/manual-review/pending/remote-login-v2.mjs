@@ -164,11 +164,9 @@ try {
     const h = await setup(browser, { signedIn: true, relayError: null, lastSid });
     try {
       await h.page.goto(`${origin}/remote/v4?app_version=3.13.0`);
-      if (lastSid === "e2e-device") await assertEventually(() => h.traffic.bootstraps === 1);
-      else {
-        await h.page.getByRole("button", { name: /Alice’s MacBook/ }).waitFor();
-        assert.equal(h.traffic.tokens, 0);
-      }
+      await h.page.getByRole("button", { name: /Alice’s MacBook/ }).waitFor();
+      assert.equal(h.traffic.tokens, 0);
+      assert.equal(h.traffic.bootstraps, 0);
       assert.equal(h.traffic.lists, 1);
       assert.deepEqual(h.errors, []);
       results.push({ case: `MD03 最近设备 ${lastSid}`, result: "passed" });

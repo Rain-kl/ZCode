@@ -181,3 +181,5 @@ connect 仅配置连接；up 明确启动；up -d 复用现有后台启动 owner
 Cloudflare 官方资料：[DO WebSocket/休眠](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)、[DO state](https://developers.cloudflare.com/durable-objects/api/state/)、[静态资源与 API 路由](https://developers.cloudflare.com/workers/static-assets/)。
 
 当前分支已有 Relay、connector、Server 命令和 Web 登录入口；验收按 [acceptance.md](acceptance.md) 区分本地自动化、本地运行时和未执行。没有可供审计的官方线上 Relay 后端，本稿只承诺自建方案不持久化业务正文，不替官方生产服务作数据保留声明。部署步骤见 [deployment.md](deployment.md)。
+
+网页打开无设备参数的远控入口时展示设备列表，用户选择设备后连接；包含设备参数的链接继续连接指定设备。

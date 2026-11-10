@@ -357,11 +357,8 @@ helper 只拥有一次 HTTP 请求的取消资源；导航由 Entry 持有，soc
 `WebRemoteControlEntry` 是入口视图、设备列表请求和自动连接 admission 的唯一 owner；页面只渲染其投影并发送选择、刷新和切换账号命令。凭据继续由 `WebAuthService` 持有，设备在线事实来自当前账号的 `GET /api/v1/remote/device`，localStorage 最近 SID/MID 仅是偏好，不能证明归属或在线；同源 localStorage 记住的设备名和平台同样只是展示偏好，不参与身份、归属或在线判断。
 
 1. 回调模式和登录门禁保持优先；有 SID 沿用 05 直接连接，不查询设备列表。直连确认目标失效后按下文[旧 SID 自动接续](#旧-sid-自动接续)查询一次。
-2. 已登录且无 SID 时，读取同源 localStorage 的 `zcode-web-remote-last-device-sid` 与 `zcode-web-remote-last-device-mid`，拉取当前账号的设备列表，按以下顺序决定落点：
-   - 返回列表包含最近 SID 且 `online=true`：自动连接该 SID。
-   - 最近 SID 不在线（离线或已被桌面重新注册删除），但最近 MID 在当前列表中恰好只有 1 个在线 SID：自动连接这个 SID。同一台电脑重新注册后 SID 会变化，MID 代表同一台机器，列表已限定为当前账号，因此可以直接接上。最近 MID 缺失（只记录过 SID 的旧偏好）时，取列表中最近 SID 记录的 MID。
-   - 同 MID 有多个在线 SID、无记录、或上述都不满足：展示列表，不任选其他电脑或连接。
-3. 最近设备自动连接只在本次无码入口首次成功获取列表时尝试一次。进入列表后，手动刷新和回前台刷新只更新列表，不突然跳入连接。失败页主动“选择其他设备”始终跳过最近设备自动连接，避免回到刚失败的设备。
+2. 已登录且无 SID 时，拉取当前账号的设备列表并展示。
+3. 无码入口展示设备列表，由用户选择在线设备；手动刷新和回前台刷新更新列表。
 4. 列表进入时请求一次，点击刷新请求一次，`visibilitychange` 变为 `visible` 时请求一次；隐藏时不请求，不轮询。请求中的刷新按钮禁用，重叠触发合并到当前请求；离开列表、切换账号或开始连接时取消请求并使旧结果失效。
 5. 首次加载展示加载文案；刷新期间保留当前列表但暂时禁用选择。请求失败时显示列表内错误与刷新入口，不伪装成空列表，旧数据若存在则保留且不可连接，直到刷新成功。HTTP 401 清会话回登录，保留当前返回 URL；网络、5xx、非成功业务码或非法响应均显示加载失败，不启动轮询。
 6. localStorage 读取失败按无最近记录处理，写入失败不阻断连接。换账号后必须重新拉当前账号列表验证最近 SID/MID，不复用旧列表或旧请求的结果。
@@ -372,25 +369,12 @@ sequenceDiagram
     participant S as 同源 localStorage（最近 SID/MID 偏好）
     participant R as Relay V2（设备与在线事实）
     participant T as 既有 terminal transport
-    P->>S: 无 SID 入口读取最近 SID/MID
     P->>R: 当前 JWT + GET device
     R-->>P: 当前账号设备列表
-    alt 最近 SID 在线
-        P->>P: replaceState 写 sid/mid/name，保留 app_version
-        P->>S: 写最近 SID/MID
-        P->>T: 复用 05 建连路径
-    else 最近 SID 不在线，但最近 MID 恰好 1 个在线 SID
-        P->>P: 以该在线 SID replaceState
-        P->>S: 写最近 SID/MID
-        P->>T: 复用 05 建连路径
-    else 无记录、MID 多个在线 SID 或全离线
-        P-->>P: 展示排序后的列表
-        P->>R: 手动刷新 / 回前台 → GET device（不轮询）
-        R-->>P: 仅在本次入口仍有效时更新列表
-        P->>P: 选择在线设备 → replaceState
-        P->>S: 写最近 SID/MID
-        P->>T: 复用 05 建连路径
-    end
+    P-->>P: 展示设备列表
+    P->>P: 用户选择在线设备，写入 sid/mid/name
+    P->>S: 写最近 SID/MID
+    P->>T: 建立连接
 ```
 
 进入连接时撤销列表刷新监听。配对后仍由既有 bootstrap/bridge 接管；桌面 `desktop-continuous`、手机 `web-remote-replayable` 的 owner、workspaceIdentity、ACK、snapshot/gap 顺序不变。
@@ -476,7 +460,7 @@ GET 设备记录成功 → 账号校验通过 → 读取本地设备名/平台�
                      → Entry 再校验当前列表/账号 → 原 SID 建连路径
 ```
 
-最近设备自动连接按“落点”一节的顺序：最近 SID 在线优先；否则仅当最近 MID 恰好 1 个在线 SID 时替换为该 SID，多个在线 SID 时仍由用户选择。有 SID 的扫码入口不受聚合影响。刷新中、刷新失败或账号变化后，所有连接按钮遵循原有 admission，迟到结果不能提供新连接依据。桌面 continuous、手机 replayable、workspaceIdentity 与按 SID 保存的业务状态不变。
+无码入口由用户选择在线设备，有 SID 的扫码入口直接连接。刷新中、刷新失败或账号变化后，所有连接按钮遵循原有 admission，迟到结果不能提供新连接依据。桌面 continuous、手机 replayable、workspaceIdentity 与按 SID 保存的业务状态不变。
 
 ### 连接过程页
 
@@ -509,7 +493,7 @@ GET 设备记录成功 → 账号校验通过 → 读取本地设备名/平台�
 
 ### URL、最近设备与失败页动作
 
-手动选择与最近设备自动连接共用一次 admission：从当前设备项的在线连接中取所选 SID 对应的 `device_sid`、`device_mid`、`meta.name`，用 `history.replaceState` 覆盖 `sid`、`mid`、`name` 并保留原 `app_version`；没有名字时移除旧 `name`，不把“未命名设备”写入 URL。随后写入最近 SID 与 MID，再调用既有连接路径。存储失败不阻断连接；不能重复接纳同一次点击。页面刷新按 05 的有 SID 路径恢复。
+手动选择设备时：从当前设备项的在线连接中取所选 SID 对应的 `device_sid`、`device_mid`、`meta.name`，用 `history.replaceState` 覆盖 `sid`、`mid`、`name` 并保留原 `app_version`；没有名字时移除旧 `name`，不把“未命名设备”写入 URL。随后写入最近 SID 与 MID，再调用既有连接路径。存储失败不阻断连接；不能重复接纳同一次点击。页面刷新按 05 的有 SID 路径恢复。
 
 有 SID 的扫码/历史链接在 relay 配对成功后也更新最近 SID（URL 带 `mid` 时同时更新最近 MID），使“最近用过”包含扫码进入；归属失败的直连不覆盖最近记录。已有按 SID 保存的 client ID、工作区选择与 mobile-view-state 均保留原键和隔离方式。
 
@@ -519,7 +503,7 @@ GET 设备记录成功 → 账号校验通过 → 读取本地设备名/平台�
 
 桌面在 auth_init 收到 AUTH_FAILED 后会重新注册，换账号后再开启远控也会得到新 SID；同一台电脑的 MID 不变。旧扫码链接、历史标签页或已配对页面仍带旧 SID，此前只会停在失败页，用户要手动“选择其他设备”或重新扫码。2026-10-27 用户确认改为自动接续，规则复用本节无 SID 的最近设备落点，不新增设备发现或轮询：
 
-1. 触发：任一连接（有 SID 直连、列表选择、最近设备自动连接）以 `device-not-owned`（auth_init AUTH_FAILED）或 `desktop-disconnected`（首次 waiting 超时、DEVICE_OFFLINE 宽限超时、回前台恢复超时）失败。`session-conflict`、`relay-unavailable`、`invalid-mobile-connection`、`auth-required` 等其他失败保持原行为。
+1. 触发：任一连接（有 SID 直连、列表选择）以 `device-not-owned`（auth_init AUTH_FAILED）或 `desktop-disconnected`（首次 waiting 超时、DEVICE_OFFLINE 宽限超时、回前台恢复超时）失败。`session-conflict`、`relay-unavailable`、`invalid-mobile-connection`、`auth-required` 等其他失败保持原行为。
 2. 查询：bootstrap 已释放当前连接后，Entry 用当前 JWT 请求一次 `GET device`；查询期间保留当前画面，不闪出列表页。
 3. 落点：以失败连接的 SID 为最近 SID、其 MID（URL `mid`，缺失时取列表中该 SID 记录的 MID）为最近 MID，按“落点”规则求值。只有结果是另一个在线 SID 时才接续：与手动选择共用同一次 admission（replaceState 写 `sid`/`mid`/`name`、写最近 SID/MID、走 05 建连）。原 SID 仍在线、同 MID 有 0 个或多个在线 SID、无 MID 时，显示原失败页及其既有动作，不任选电脑。
 4. 有界：接续出的新连接在配对成功前失败，不再接续，直接显示失败页；配对成功后若再次失效，可按同一规则再接续一次。没有定时器和重试循环。

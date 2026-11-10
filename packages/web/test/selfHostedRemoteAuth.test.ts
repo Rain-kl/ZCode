@@ -164,6 +164,36 @@ describe("self-hosted Web remote authentication", () => {
     expect(views).toEqual(["login", "devices", "devices"]);
   });
 
+  it("shows the device list on a plain entry even when the last device is online", async () => {
+    const storage = new MemoryStorage();
+    storage.setItem("zcode-web-remote-last-device-sid", "device-1");
+    const auth = createSelfHostedRemoteAuth({
+      origin: "https://relay.example",
+      storage,
+      fetcher: async () => Response.json(session),
+    });
+    await auth.startLogin({ username: "owner", password: "secret" });
+    const connect = vi.fn();
+    const views: string[] = [];
+    const entry = new WebRemoteControlEntry({
+      auth,
+      getHref: () => "https://relay.example/remote/v4",
+      replaceHref: vi.fn(),
+      storage,
+      locale: "en-US",
+      devices: async () => [{ device_sid: "device-1", device_mid: "machine-1", online: true, created_at: 1, meta: {} }],
+      subscribeVisible: () => () => {},
+      token: async () => "unused",
+      connect,
+      onView: (view) => views.push(view.kind),
+    });
+    await entry.start();
+    expect(views.at(-1)).toBe("devices");
+    expect(connect).not.toHaveBeenCalled();
+    entry.selectDevice("device-1");
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
   it("does not treat OAuth-shaped remote URLs as an official login callback", async () => {
     const storage = new MemoryStorage();
     const auth = createSelfHostedRemoteAuth({

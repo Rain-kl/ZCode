@@ -24,6 +24,11 @@
 - **设计文档**：[design.md](docs/features/cloud-web-access/design.md)、[CLI 规格](docs/features/cloud-web-access/cli.md)、[协议](docs/features/cloud-web-access/protocol.md)、[验收矩阵](docs/features/cloud-web-access/acceptance.md)、[部署](docs/features/cloud-web-access/deployment.md)。
 - **实现文档**：[implementation.md](docs/features/cloud-web-access/implementation.md)。
 
+### 网页远控设备选择（2026-11-10）
+
+- 无码入口展示设备列表，由用户选择在线设备；设备链接直接连接指定设备。
+- **文件与标记**：`packages/web/src/web-remote-control/app/webRemoteControlEntry.ts`，`FORK(cloud-web-access)`。
+
 ### Server 项目、任务与网页接入对齐（2026-11-04）
 
 - **背景与行为**：网页的“此电脑”指当前 Server；项目创建、项目内新任务和历史任务分别沿用宿主现有服务。导航携带完整项目、任务和主机身份，历史会话保持原目录；刷新、重连恢复同一任务，过期导航不能覆盖当前连接。

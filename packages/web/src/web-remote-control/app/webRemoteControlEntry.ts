@@ -49,8 +49,6 @@ export class WebRemoteControlEntry {
         view: WebRemoteControlDeviceListView;
         unsubscribe: () => void;
         request?: Promise<void>;
-        lastSid: string | null;
-        lastMid: string | null;
         acceptedJwt?: string;
       }
     | undefined;
@@ -82,24 +80,15 @@ export class WebRemoteControlEntry {
       return;
     }
     if (!params.deviceSid) {
-      await this.openDevices(true);
+      await this.openDevices();
       return;
     }
     this.connect({ ...params, deviceSid: params.deviceSid });
   }
 
-  private async openDevices(autoConnect: boolean): Promise<void> {
+  private async openDevices(): Promise<void> {
     this.reset();
-    let lastSid: string | null = null;
-    let lastMid: string | null = null;
-    try {
-      if (autoConnect) {
-        lastSid = this.options.storage.getItem(LAST_DEVICE_KEY);
-        lastMid = this.options.storage.getItem(LAST_DEVICE_MID_KEY);
-      }
-    } catch {
-      // iOS 私密模式等环境可能禁用存储；最近设备只是偏好，不阻断入口。
-    }
+    // FORK(cloud-web-access): 无码入口展示设备列表，由用户选择设备后连接。
     const account = this.options.auth.getActiveAccount() ?? undefined;
     this.list = {
       view: {
@@ -112,8 +101,6 @@ export class WebRemoteControlEntry {
       unsubscribe: this.options.subscribeVisible(() => {
         void this.refreshDevices();
       }),
-      lastSid,
-      lastMid,
     };
     await this.refreshDevices();
   }
@@ -140,12 +127,7 @@ export class WebRemoteControlEntry {
         const groups = groupWebRemoteControlDevices(devices, this.options.locale, knownDevices);
         rememberKnownDevices(this.options.storage, knownDevices, groups);
         list.view = { ...list.view, devices: groups, loading: false, error: false };
-        const autoSid = resolveAutoConnectSid(devices, groups, list.lastSid, list.lastMid);
-        // 自动落点只消费首次成功的列表；后续刷新不能打断用户选择。
-        list.lastSid = null;
-        list.lastMid = null;
-        if (autoSid) this.selectDevice(autoSid);
-        else this.options.onView(list.view);
+        this.options.onView(list.view);
       } catch (error) {
         if (signal.aborted) return;
         if (this.options.auth.getZCodeJwtToken() !== jwt) return this.start();
@@ -177,7 +159,7 @@ export class WebRemoteControlEntry {
     if (device) this.admit(device, true);
   }
 
-  /** 手动选择、最近设备与旧 SID 接续共用的 admission：回写 URL 与最近设备后走既有建连路径。 */
+  /** 手动选择与旧 SID 接续共用的 admission：回写 URL 与最近设备后走既有建连路径。 */
   private admit(device: WebRemoteControlRelayV2Device, canResolveLostTarget: boolean): void {
     const url = new URL(this.options.getHref());
     url.searchParams.set("sid", device.device_sid);
@@ -248,7 +230,7 @@ export class WebRemoteControlEntry {
     const url = new URL(this.options.getHref());
     for (const key of ["sid", "mid", "name", "hash", "t"]) url.searchParams.delete(key);
     this.options.replaceHref(url.href);
-    await this.openDevices(false);
+    await this.openDevices();
   }
 
   private rememberDevice(sid: string, mid: string | undefined): void {
