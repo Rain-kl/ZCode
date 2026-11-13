@@ -731,8 +731,16 @@ export class ZCodeProtocolAgentServer {
         return await resumeSession(this.context, request.params);
       case zcodeProtocolMethods.sessionList:
         return await listSessions(this.context, request.params);
-      case zcodeProtocolMethods.sessionSubagents:
-        return await listSessionSubagents(this.context, request.params);
+      // FORK-BEGIN(codex-collaboration)
+      case zcodeProtocolMethods.sessionSubagents: {
+        // 内部 lifecycle 供 V4 冷投影使用；泄漏到公开响应会被 strict schema 拒绝，目录因此始终加载失败。
+        const { lifecycle: _lifecycle, ...result } = await listSessionSubagents(
+          this.context,
+          request.params,
+        );
+        return result;
+      }
+      // FORK-END(codex-collaboration)
       case zcodeProtocolMethods.sessionRead:
         return await readSession(this.context, request.params);
       case zcodeProtocolMethods.sessionMessages:

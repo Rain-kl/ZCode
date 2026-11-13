@@ -57,3 +57,7 @@ ToolEntry factory 仅负责 schema 校验；可用 profile 与模型目录的语
 - 当前提示词、技能和示例只指导六工具；fork 移除守卫在重新注册旧入口时必须失败。
 - 输出只包含约定字段；fork 模型规则、可用 profile 校验、根状态来源及条件角色有契约测试。
 - Task3a 不声称已完成 child runtime、邮箱 ACK、冷恢复、权限等待或 UI 下钻；这些由 Task3b/4 实证。
+
+## 2026-11-13：事件驱动等待
+
+`wait_agent` 立即让出当前轮次，完成工具结算后停止模型请求。`timeout_ms` 保留输入兼容。子代理状态增加 waiting，表示正在等待消息；send 可唤醒 waiting，普通已完成代理仍由 followup 启动后续任务。子代理完成与失败自动唤醒父会话，运行中的父轮在安全边界读取结果。

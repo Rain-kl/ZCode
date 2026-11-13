@@ -69,7 +69,14 @@ it.each(["wrapped", "model"] as const)(
       });
       const saved = await store.sessionEntries!({ sessionID: rootId, type: "codex_collaboration" });
       expect(JSON.stringify(saved)).toContain(`"lastError":"${detail}"`);
-      expect(JSON.stringify(saved)).toContain(`"text":"${detail}","kind":"STATUS"`);
+      const receipts = await store.messages({ sessionID: rootId });
+      expect(
+        receipts.some(
+          (message) =>
+            JSON.stringify(message.info.metadata).includes('"kind":"STATUS"') &&
+            message.parts.some((part) => part.type === "text" && part.text === detail),
+        ),
+      ).toBe(true);
       expect(rejected).toBeInstanceOf(Error);
       if (!(rejected instanceof Error)) throw new Error("Expected original rejected Error");
       if (kind === "model") expect(rejected).toBe(original);

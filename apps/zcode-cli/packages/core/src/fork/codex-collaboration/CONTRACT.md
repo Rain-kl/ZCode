@@ -58,3 +58,8 @@ and aborts every child before attempting snapshot or runtime IO, attempts all
 resources independently, and aggregates failures. Failed snapshot/cleanup remains
 retryable through maintenance flush/dispose after ordinary commands are closed.
 The host must await cleanup before closing its parent/root storage dependencies.
+
+Completion transfers the parent's result through the installed durable sink immediately.
+A yielded child retains waiting status and its original session; waiting is not a final answer.
+Messages resume waiting children, and nested completion resumes the exact parent with a new generation.
+The runtime owns nonblocking wait settlement and scheduling through receipt references.

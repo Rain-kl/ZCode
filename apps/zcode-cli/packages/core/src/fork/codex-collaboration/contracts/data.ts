@@ -1,4 +1,4 @@
-export type AgentStatus = "idle" | "running" | "completed" | "errored" | "interrupted";
+export type AgentStatus = "idle" | "waiting" | "running" | "completed" | "errored" | "interrupted";
 export type MessageKind = "NEW_TASK" | "MESSAGE" | "FINAL_ANSWER" | "STATUS";
 export interface CollaborationMessage {
   id: string;
@@ -48,7 +48,7 @@ export interface CollaborationSnapshot {
   accepted: AcceptedSpawn[];
 }
 export interface RunResult {
-  status: "completed" | "errored";
+  status: "completed" | "errored" | "waiting";
   text: string;
 }
 export type CollaborationErrorCode =

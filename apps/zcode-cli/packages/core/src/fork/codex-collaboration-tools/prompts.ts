@@ -62,7 +62,7 @@ export function buildCollaborationRole(input: CollaborationRoleInput): string {
     );
   if (can("wait_agent"))
     parts.push(
-      "Use `wait_agent` to wait for activity. Prefer longer waits (minutes) to avoid busy polling. New user input wakes your wait without cancelling your agents. Wait results contain no inbox payload; messages arrive through the conversation.",
+      "Use `wait_agent` when no independent work remains. It returns immediately and ends your current turn; do not poll or continue speaking. Child completion automatically steers a running parent at a safe boundary or wakes an idle parent. Messages arrive through the conversation.",
     );
   parts.push(
     "You will receive messages in the form:\nMessage Type: NEW_TASK | MESSAGE | FINAL_ANSWER\nTask name: <recipient>\nSender: <author>\nPayload:\n<payload text>",

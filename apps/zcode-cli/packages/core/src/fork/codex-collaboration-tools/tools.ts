@@ -11,7 +11,6 @@ import type { ToolEntry, ToolExecutionContext } from "../../tool/types.js";
 
 const MAX_RESULT_BYTES = 100_000;
 const STANDARD_TIMEOUT_MS = 30_000;
-const WAIT_TIMEOUT_MS = 3_610_000;
 const DESCRIPTIONS: Record<CollaborationToolName, string> = {
   spawn_agent:
     'Spawn a child task and return its canonical task_name after durable acceptance. task_name uses lowercase letters, digits and underscores. Full-history forks inherit model and reasoning effort; use fork_turns="none" for explicitly authorized overrides. agent_type must name an available profile. Available agent types are listed in <system-reminder>. Child execution continues after this tool returns.',
@@ -24,7 +23,7 @@ const DESCRIPTIONS: Record<CollaborationToolName, string> = {
   list_agents:
     "List loaded agents in the same root tree, including root, sorted by canonical task name. Optionally filter by path_prefix.",
   wait_agent:
-    "Wait for collaboration activity or new user input. Default 30 seconds, minimum 10 seconds, maximum 3600 seconds. Short requests are clamped to 10 seconds and reported. Does not cancel agents or return inbox bodies.",
+    "Yield the current turn immediately and wait for automatic wakeup when a child finishes. This tool ends the current turn after its result is settled. timeout_ms is accepted for compatibility; it does not block or poll.",
 };
 
 function requirePort(context: ToolExecutionContext): CollaborationToolPort {
@@ -41,7 +40,7 @@ function requirePort(context: ToolExecutionContext): CollaborationToolPort {
 export function createCollaborationToolEntries(): ToolEntry[] {
   return COLLABORATION_TOOL_NAMES.map((name): ToolEntry => {
     const readOnly = name === "list_agents" || name === "wait_agent";
-    const timeout = name === "wait_agent" ? WAIT_TIMEOUT_MS : STANDARD_TIMEOUT_MS;
+    const timeout = STANDARD_TIMEOUT_MS;
     const spec = CollaborationToolSchemas[name];
     return {
       capability: DESCRIPTIONS[name],
@@ -53,7 +52,8 @@ export function createCollaborationToolEntries(): ToolEntry[] {
         alwaysLoad: true,
         readOnly,
         destructive: false,
-        concurrentSafe: true,
+        concurrentSafe: name !== "wait_agent",
+        stopTurnOnSuccess: name === "wait_agent",
         timeoutMs: timeout,
         maxOutputBytes: MAX_RESULT_BYTES,
         sideEffectScope: readOnly ? "none" : "session",

@@ -1,4 +1,5 @@
-import type { TraceContext, TurnState } from "./deps.js";
+// FORK(codex-collaboration): 协作唤醒项引用原始 MessageId；见 FEATURES.md。
+import type { MessageId, TraceContext, TurnState } from "./deps.js";
 import type { BackgroundResultOriginMeta, WorkflowLaunchMeta } from "@zcode/contracts";
 import type {
   ActiveTurnStartReservation,
@@ -63,6 +64,10 @@ export interface TargetContinuationLoopRuntimeCommand extends RuntimeCommandBase
 }
 
 export interface TaskNotificationRuntimeCommand extends RuntimeCommandBase {
+  // FORK-BEGIN(codex-collaboration)
+  // 唤醒只引用原邮箱的 durable receipt，不再复制和注入消息正文。
+  readonly collaborationMessageId?: MessageId;
+  // FORK-END(codex-collaboration)
   readonly branchGeneration: number;
   readonly mode: "task-notification";
   readonly source: "background_task";

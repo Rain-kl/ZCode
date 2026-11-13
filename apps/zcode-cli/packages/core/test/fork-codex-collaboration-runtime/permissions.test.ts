@@ -61,7 +61,9 @@ it.each(["all", "none"] as const)(
         eventStore: createTestSessionEventStore(),
         sessionStore: createRecordingSubagentSessionStore(),
         modelFactory: createTestModelFactory({
-          generateText: async (request) => {
+          generateText: async (request, observation) => {
+            if (observation.invocationContext?.traceContext?.sessionId === runtime.sessionId)
+              return done;
             requests.push(request);
             return done;
           },
@@ -136,7 +138,9 @@ it.each(["mcp", "mcp__safe__*"])(
         eventStore: createTestSessionEventStore(),
         sessionStore: createRecordingSubagentSessionStore(),
         modelFactory: createTestModelFactory({
-          generateText: async (request) => {
+          generateText: async (request, observation) => {
+            if (observation.invocationContext?.traceContext?.sessionId === runtime.sessionId)
+              return done;
             requests.push(request);
             return done;
           },

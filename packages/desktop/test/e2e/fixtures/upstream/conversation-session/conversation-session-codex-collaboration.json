@@ -16,9 +16,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_START"
-        ],
+        "bodyIncludes": ["E2E_CSC_START"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -54,10 +52,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_START",
-          "csc-spawn"
-        ],
+        "bodyIncludes": ["E2E_CSC_START", "csc-spawn"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -97,10 +92,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_START",
-          "csc-send"
-        ],
+        "bodyIncludes": ["E2E_CSC_START", "csc-send"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -130,10 +122,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_CHILD_BOOT",
-          "Your canonical task name is /root/worker."
-        ],
+        "bodyIncludes": ["E2E_CSC_CHILD_BOOT", "Your canonical task name is /root/worker."],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -260,6 +249,37 @@
       }
     },
     {
+      "id": "csc-root-woken",
+      "description": "idle parent resumes automatically on child completion",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_CSC_CHILD_FINAL", "FINAL_ANSWER"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "You are now acting as the memory extraction subagent",
+          "Your canonical task name is /root/worker.",
+          "E2E_CSC_RESUME"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "text": "E2E_CSC_ROOT_WOKEN",
+          "inputTokens": 128,
+          "outputTokens": 16
+        }
+      }
+    },
+    {
       "id": "csc-root-completed-query",
       "description": "csc-root-completed-query",
       "metadata": {
@@ -272,9 +292,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_RESUME"
-        ],
+        "bodyIncludes": ["E2E_CSC_RESUME"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -306,10 +324,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_RESUME",
-          "csc-list-completed"
-        ],
+        "bodyIncludes": ["E2E_CSC_RESUME", "csc-list-completed"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -344,11 +359,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_RESUME",
-          "E2E_CSC_REPORT",
-          "csc-followup"
-        ],
+        "bodyIncludes": ["E2E_CSC_RESUME", "E2E_CSC_REPORT", "csc-followup"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -378,10 +389,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_CHILD_SECOND",
-          "Your canonical task name is /root/worker."
-        ],
+        "bodyIncludes": ["E2E_CSC_CHILD_SECOND", "Your canonical task name is /root/worker."],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -439,9 +447,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_INSPECT"
-        ],
+        "bodyIncludes": ["E2E_CSC_INSPECT"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -472,39 +478,6 @@
             }
           }
         ]
-      }
-    },
-    {
-      "id": "csc-root-inspected",
-      "description": "csc-root-inspected",
-      "metadata": {
-        "kind": "main",
-        "source": "synthetic",
-        "timingPolicy": "fast-text",
-        "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
-      },
-      "maxMatches": 1,
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CSC_INSPECT",
-          "csc-wait"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY",
-          "You are now acting as the memory extraction subagent",
-          "Your canonical task name is /root/worker."
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "text": {
-          "text": "E2E_CSC_ROOT_INSPECTED",
-          "inputTokens": 128,
-          "outputTokens": 16
-        }
       }
     }
   ]

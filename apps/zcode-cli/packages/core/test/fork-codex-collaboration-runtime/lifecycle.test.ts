@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getConversationMessageProjectionPolicy } from "@zcode/shared";
 import { SessionEventType, modelMessageContentToText, type ModelRequest } from "@zcode/contracts";
 import { AgentRuntime } from "../../src/runtime/agent-runtime.js";
 import { done, gate, setup, tool, texts } from "./fixture.js";
@@ -37,6 +38,79 @@ describe("actual collaboration lifecycle", () => {
     release.resolve();
     await vi.waitFor(() => expect(calls).toBe(2), { timeout: 1000 });
     await consumed.promise;
+  });
+  it("ends wait without another model request, then wakes the idle parent once with the final answer", async () => {
+    const release = gate();
+    const parentRequests: ModelRequest[] = [];
+    let rootCalls = 0;
+    const { runtime, rootId, store } = setup(async (request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId !== rootId) {
+        await release.promise;
+        return { ...done, text: "child completion payload" };
+      }
+      parentRequests.push(request);
+      if (rootCalls++ === 0)
+        return {
+          ...done,
+          text: "",
+          finishReason: "tool_calls",
+          toolCalls: [
+            {
+              id: "wake-spawn",
+              name: "spawn_agent",
+              input: { task_name: "worker", message: "visible assigned task", fork_turns: "none" },
+            },
+          ],
+        };
+      if (rootCalls === 2)
+        return {
+          ...done,
+          text: "",
+          finishReason: "tool_calls",
+          toolCalls: [{ id: "wake-wait", name: "wait_agent", input: {} }],
+        };
+      expect(texts(request)).toContain("Message Type: FINAL_ANSWER");
+      expect(texts(request).split("child completion payload")).toHaveLength(2);
+      expect(
+        request.messages
+          .filter((message) => message.role === "user")
+          .map((message) => modelMessageContentToText(message.content))
+          .join("\n"),
+      ).not.toContain("child completion payload");
+      return done;
+    });
+    try {
+      await runtime.executeTurn("delegate and yield");
+      expect(rootCalls).toBe(2);
+      const child = (await store.listSessions()).find(
+        (session) => session.taskType === "subagent_child",
+      )!;
+      const receipt = (await store.messages({ sessionID: child.id })).find(
+        (message) => message.info.source === "subagent_message",
+      )!;
+      expect(receipt.info.visibility).toBe("user-visible");
+      expect(getConversationMessageProjectionPolicy(receipt)).toBe("realUserInput");
+      expect(
+        getConversationMessageProjectionPolicy({
+          ...receipt,
+          info: {
+            ...receipt.info,
+            metadata: { ...receipt.info.metadata, collaborationInherited: true },
+          },
+        }),
+      ).not.toBe("realUserInput");
+      expect(
+        (await runtime.getSessionEventStore().getEvents(child.id)).find(
+          (event) => event.type === SessionEventType.TurnStarted,
+        )?.payload,
+      ).toMatchObject({ input: "visible assigned task", inputVisibility: "user-visible" });
+      release.resolve();
+      await vi.waitFor(() => expect(parentRequests).toHaveLength(3));
+      await vi.waitFor(() => expect(runtime.hasResidencyBlockingWork()).toBe(false));
+      expect(parentRequests).toHaveLength(3);
+    } finally {
+      release.resolve();
+    }
   });
   it("natural retirement wakes after the final collaboration projection is fully drained", async () => {
     const started = gate();
@@ -223,7 +297,7 @@ describe("actual collaboration lifecycle", () => {
     expect((await runtime.cancelBackgroundTask(tasks[0]!.agentId)).cancelled).toBe(true);
     await vi.waitFor(() => expect(childAborted).toBe(true));
   });
-  it("keeps the child waiting for a legal message tool during parent steer", async () => {
+  it("yields child and parent turns immediately and wakes the same child on a message", async () => {
     let calls = 0;
     let parentCalls = 0;
     const waiting = gate();
@@ -273,10 +347,10 @@ describe("actual collaboration lifecycle", () => {
         ),
       ).toBe(true),
     );
-    // 显式工具等待由调用自身管理；parent steer 不能终止 child 的合法等待。
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    expect((await tool(runtime, "list_agents", {}, "waiting-status")).modelContent).toContain(
-      '"/root/worker","agent_status":"running"',
+    await vi.waitFor(async () =>
+      expect((await tool(runtime, "list_agents", {}, "waiting-status")).modelContent).toContain(
+        '"/root/worker","agent_status":"waiting"',
+      ),
     );
     const parentTurn = runtime.executeTurn("Wait for child message boundary");
     await vi.waitFor(async () =>
@@ -288,15 +362,11 @@ describe("actual collaboration lifecycle", () => {
         ),
       ).toBe(true),
     );
-    await runtime.steerTurn({
-      input: "Continue waiting safely",
-      delivery: "guide",
-      inputPresentation: "user_steer",
-    });
     await parentTurn;
     expect(calls).toBe(1);
+    expect(parentCalls).toBe(1);
     expect((await tool(runtime, "list_agents", {}, "after-message-steer")).modelContent).toContain(
-      '"/root/worker","agent_status":"running"',
+      '"/root/worker","agent_status":"waiting"',
     );
     await tool(runtime, "send_message", { target: "worker", message: "wake at safe boundary" });
     await vi.waitFor(() => expect(calls).toBe(2));

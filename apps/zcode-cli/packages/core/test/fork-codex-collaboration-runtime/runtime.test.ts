@@ -114,7 +114,8 @@ describe("actual collaboration runtime", () => {
   });
   it("sends without triggering idle child and followup reuses its session", async () => {
     const requests: ModelRequest[] = [];
-    const { runtime, store } = setup(async (request) => {
+    const { runtime, store, rootId } = setup(async (request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
       requests.push(request);
       return done;
     });

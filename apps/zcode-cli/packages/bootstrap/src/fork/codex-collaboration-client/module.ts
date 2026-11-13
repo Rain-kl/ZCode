@@ -97,7 +97,7 @@ export async function readCollaborationChildren(
       ...relation,
       parentToolCallId: relation.toolCallId,
       status:
-        status === "running"
+        status === "running" || status === "waiting"
           ? "running"
           : status === "errored"
             ? "failed"

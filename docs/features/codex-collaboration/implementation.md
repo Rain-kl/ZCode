@@ -561,8 +561,25 @@ Task4与整合规范审查APPROVE，随后最终质量审查APPROVE，没有剩�
 
 ## 2026-11-03 供应商等待政策对齐
 
-保持 `MODEL_RECOVERY_MAX_DELAY_MS=30000` 和21次物理预算，新增独立 Retry-After 接受边界300000ms。adapter 合法 hint 不按普通 maxDelayMs 裁切，并保留上游只向后 jitter（最高5秒）；>300000ms 即使低于未封顶指数退避也拒绝。workflow governor 仅向并发控制器传合法正数 hint，最多300秒且不额外抖动；无效 hint 不增加冷却，避免二重准入冻结。`wait_agent` 的30秒默认与此无关，不改。
+保持 `MODEL_RECOVERY_MAX_DELAY_MS=30000` 和21次物理预算，新增独立 Retry-After 接受边界300000ms。adapter 合法 hint 不按普通 maxDelayMs 裁切，并保留上游只向后 jitter（最高5秒）；>300000ms 即使低于未封顶指数退避也拒绝。workflow governor 仅向并发控制器传合法正数 hint，最多300秒且不额外抖动；无效 hint 不增加冷却，避免二重准入冻结。`wait_agent` 的事件驱动等待合同见下方 2026-11-13 记录。
 
 验证（本轮同步工作树）：先修改场景/政策文档，再新增/更新回归；RED 为 runner-retry 4失败、governor 3失败，分别观察到300秒提示被裁为30秒与60秒冷却被裁为30秒。GREEN：adapter 5文件235/235、governor 48/48，通过边界300000/300001ms、超长hint低于未封顶指数值、无效值、305秒正向 jitter、普通2/4/8/16/30秒与21请求、header优先级/独立普通配置、offpeak冷却。contracts构建、adapter/bootstrap定向 TypeScript 均通过；定向lint 0错误，6条原有测试警告。`MODEL_RECOVERY_MAX_DELAY_MS` 剩余消费者仅普通退避默认/配置夹紧/计算；governor 改用共享合法hint判据，没有修改 wait_agent。
 
 扩展回归：10个adapter文件413/413通过。HTTP业务错误与SSE业务错误的原有41秒/37秒 Retry-After 回归原先仍断言裁为30秒，按本轮授权政策同步期望与fake clock推进量，确认两种真实runner入口沿用供应商提示。此次只调整合同期望，不放宽错误分类、次数预算或其他断言。
+
+## 2026-11-13：子会话输入、完成唤醒与终态目录
+
+子会话保留初始任务和后续输入正文，运行中输入按 guide 顺序显示，冷恢复按原协作来源恢复，继承的父会话消息继续遵循原可见性规则。
+
+完成与失败结果持久交付父邮箱后，复用 runtime 命令队列调度；活动轮消费后撤去对应唤醒引用，空闲时自动续轮。wait_agent 立即结算并让出轮次；waiting 保留未完成任务，早到输入直接续轮，消息与嵌套完成均可继续同一 childSessionId。waiting 可被显式中断。
+
+状态面板的整体闸门与 mini 胶囊补齐已结束代理，手机沿用同一目录入口。真实目录查询曾因内部 lifecycle 字段泄漏到公开响应而被 strict schema 拒绝；协议出口保留公开字段后，已结束分页能够正常读取。
+
+涉及 Core 协作 controller/runtime/tools 与命令队列、contracts 工具状态、Bootstrap 协议出口与 canonical reader、shared 消息可见性及 UI SessionPane/状态面板。上游接线使用 FORK(codex-collaboration)，技术决策记录在 .agents/notes/2026-11-13-collaboration-wakeup.md。
+
+验证记录：
+
+- Controller/快照/清理回归 55 项通过；runtime/工具/目录查询回归 64 项通过。分别执行，覆盖完成与失败回传、wait 让出、早到消息、原会话续跑、嵌套父唤醒及输入可见性。
+- CSC01 真实 Electron/Agent/SQLite/HTTP 回放 1/1 通过：初始与后续输入可读、idle 父自动续轮、协作信封保持 assistant 身份、零活动目录可打开、原会话 followup 与单目标 Stop、wait 后无额外模型请求。artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20261113024110039-p97681-7f0784483b83edc7`。
+- 根 pnpm typecheck、Core/Bootstrap 类型检查、pnpm lint、架构检查与 fork 移除守卫通过；Lint 保留 85 项既有警告。
+- CSC01 维持 pending；手机 GUI 验收待执行，当前桌面结果记录在本次 artifact。

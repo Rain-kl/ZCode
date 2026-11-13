@@ -169,6 +169,23 @@ export async function persistBackgroundTaskNotificationBatch(
   commands: readonly [TaskNotificationRuntimeCommand, ...TaskNotificationRuntimeCommand[]],
   midTurn = false,
 ): Promise<PersistedBackgroundTaskNotificationBatch> {
+  // FORK-BEGIN(codex-collaboration)
+  // 邮箱已经持久化并加入 canonical history；通知只负责调度，不能再次写成普通 user 输入。
+  const ordinary = commands.filter((command) => !command.collaborationMessageId);
+  if (ordinary.length !== commands.length) {
+    if (ordinary.length)
+      return persistBackgroundTaskNotificationBatch.call(
+        this,
+        ordinary as [TaskNotificationRuntimeCommand, ...TaskNotificationRuntimeCommand[]],
+        midTurn,
+      );
+    return {
+      messageId: commands[0].collaborationMessageId!,
+      text: "",
+      backgroundSource: "subagent",
+    };
+  }
+  // FORK-END(codex-collaboration)
   const firstCommand = commands[0];
   const backgroundSource = resolveBackgroundTaskNotificationSource(commands);
   const originMeta = resolveBackgroundTaskNotificationOriginMeta(commands);

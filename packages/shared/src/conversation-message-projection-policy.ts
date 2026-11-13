@@ -82,6 +82,22 @@ export function getConversationMessageProjectionPolicy(
 ): ConversationMessageProjectionPolicy {
   const info = message.info;
   const parts = message.parts ?? [];
+  // FORK-BEGIN(codex-collaboration)
+  // 子会话任务输入是可读的协作记录，不能被 synthetic 兜底隐藏。
+  const collaborationMetadata = info.metadata as Record<string, unknown> | undefined;
+  const collaboration = collaborationMetadata?.collaboration as Record<string, unknown> | undefined;
+  if (
+    info.role === "user" &&
+    info.source === "subagent_message" &&
+    collaborationMetadata?.collaborationInherited !== true &&
+    collaboration &&
+    typeof collaboration.recipientPath === "string" &&
+    collaboration.recipientPath.startsWith("/root/") &&
+    (collaboration.kind === "NEW_TASK" || collaboration.kind === "MESSAGE")
+  )
+    return "realUserInput";
+  // FORK-END(codex-collaboration)
+
   const semantics = info.semantics;
 
   if (semantics?.kind === "compact_summary" || info.summary !== undefined) {

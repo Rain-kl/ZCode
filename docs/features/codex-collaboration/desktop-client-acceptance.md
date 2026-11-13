@@ -11,10 +11,10 @@ CSC01 通过真实 Electron、Agent bundle、SQLite、回放 HTTP provider 检�
    父轮正常完成后工作历史可默认折叠；先用真实 UI 展开原 spawn 所在历史，再读取摘要，
    不能把未挂载的折叠内容当作 child 丢失，也不能改产品默认展开状态让测试通过。
 3. 释放 child 的响应（带成功 TodoRead 结果边界）后，下一真实 provider 请求包含完整响应尾部及
-   assistant MESSAGE。child 回复父代理并结束；idle 父代理不隐式另起 turn。
+   assistant MESSAGE。child 回复父代理并结束；idle 父代理自动续轮读取完整 FINAL_ANSWER，回传保持 assistant 协作身份。
 4. 新的用户输入由父模型调用 followup_task，原 childSessionId、原 spawn anchor 重新 running。
-   新轮保持受控流；原生 Stop 只中断这个 child，父会话仍可接收输入。
-5. 后续父模型调用 interrupt_agent、list_agents、wait_agent 并完成。六工具有正常展示，
+   新轮保持受控流；原生 Stop 只中断这个 child，父会话仍可接收输入。活动数归零后可从状态面板的已结束目录重新打开原 child。
+5. 后续父模型调用 interrupt_agent、list_agents、wait_agent，让出当前轮次。六工具有正常展示，
    空消息成功结果不显示失败；list/wait 不能被渲染成 Stop 操作或创建额外 child。
 
 受控 gate 为事件顺序屏障，不修改产品超时或注入假终态。每轮使用唯一 tool call ID，保证实际执行，

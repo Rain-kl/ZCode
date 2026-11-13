@@ -100,6 +100,7 @@ it.each(["eviction", "unload"] as const)(
         },
         modelFactory: createTestModelFactory({
           generateText: async (_request, observation) => {
+            if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
             modelSessions.push(String(observation.invocationContext?.traceContext?.sessionId));
             if (calls++ === 0) {
               modelStarted.resolve();

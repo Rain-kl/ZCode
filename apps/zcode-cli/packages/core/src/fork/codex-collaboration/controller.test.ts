@@ -72,9 +72,36 @@ describe("root-owned collaboration controller", () => {
     expect(f.events).toContain("ack:guide");
     f.turns[0].result.resolve({ status: "completed", text: "final text" });
     await f.controller.flush();
-    expect(f.controller.get("root-id", "/root").mailbox).toMatchObject([
-      { kind: "FINAL_ANSWER", senderId: child.agentId, text: "final text", callId: "call-1" },
-    ]);
+    expect(f.controller.get("root-id", "/root").mailbox).toEqual([]);
+    expect(f.events).toContain("ack:final text");
+  });
+  it("wakes a yielded parent in the same session when its nested child completes", async () => {
+    const f = await setup({ maxDepth: 2 });
+    const parent = await f.controller.spawn(f.spawn);
+    const child = await f.controller.spawn({
+      ...f.spawn,
+      callerId: parent.agentId,
+      taskName: "nested",
+      callId: "nested-spawn",
+    });
+    f.turns[0].result.resolve({ status: "waiting", text: "" });
+    await f.controller.flush();
+    expect(f.controller.get("root-id", parent.agentId).status).toBe("waiting");
+    expect(f.events).not.toContain("ack:waiting");
+    f.turns[1].result.resolve({ status: "completed", text: "nested result" });
+    await f.controller.flush();
+    expect(f.turns).toHaveLength(3);
+    expect(f.turns[2].identity.childSessionId).toBe(parent.childSessionId);
+    expect(f.turns[2].task).toMatchObject({
+      senderId: child.agentId,
+      kind: "FINAL_ANSWER",
+      text: "nested result",
+    });
+    expect(f.controller.get("root-id", parent.agentId)).toMatchObject({
+      status: "running",
+      generation: 2,
+    });
+    await f.controller.dispose();
   });
   it("resumes errors and interruptions using same session/history and fresh run signal", async () => {
     const f = await setup();
@@ -353,9 +380,8 @@ describe("root-owned collaboration controller", () => {
     f.failWrite(false);
     await f.controller.flush();
     expect(f.controller.get("root-id", child.agentId).status).toBe("completed");
-    expect(f.controller.get("root-id", "/root").mailbox).toMatchObject([
-      { text: "durable result" },
-    ]);
+    expect(f.controller.get("root-id", "/root").mailbox).toEqual([]);
+    expect(f.events.filter((event) => event === "ack:durable result")).toHaveLength(1);
     await expect(
       f.controller.spawn({ ...f.spawn, taskName: "next", callId: "next" }),
     ).resolves.toMatchObject({ path: "/root/next" });

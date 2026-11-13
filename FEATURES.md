@@ -104,6 +104,12 @@
 - **Task3b（2026-11-03，独立双审通过）**：真实 runtime 采用同根 controller、prepared admission、durable mailbox、保存的 child model/profile 和派生身份事件；删除旧 runner/执行端口/消息 registry owner。新工具默认接线，内部 workflow 通过有限 binding 注入隔离。补齐原 command 排空、父权限交集、整树驻留、prepare 失败资源归属、取消边界和具体错误保留；每个修正均有先红后绿及增量双审。分批测试与旧产品断言边界分别记录，不相加冒充同一次全量通过。设计见 [runtime-integration](docs/features/codex-collaboration/runtime-integration.md)，验证见 [implementation](docs/features/codex-collaboration/implementation.md)。
 - **Task3b 配置收口**：删除无行为的 `features.subagent` 公开键/类型/默认值/存储映射；直接 set/get/merge 和配置文件明确拒绝旧键，removal guard 与依赖契约测试防止同步后静默恢复。统一保留 `subagents` 参数，内部 workflow 的能力隔离不使用旧开关。
 
+### 完成唤醒与可读子会话（2026-11-13）
+
+- **背景与行为**：子会话输入被隐藏、完成结果只留邮箱、仅剩终态时状态面板消失。现在子会话展示初始任务与后续输入；完成和失败结果在父轮安全边界消费或唤醒空闲父；wait_agent 立即让出轮次，waiting 保留任务身份并可由消息继续；已结束目录在桌面与手机保持可达。
+- **修改文件与标记**：Core 协作 controller/runtime/tools、contracts 工具合同、runtime 命令队列接线；shared 会话可见性策略、UI 状态面板与 SessionPane、Bootstrap canonical reader；上游接线标记 `FORK(codex-collaboration)`。
+- **设计与验证**：[design](docs/features/codex-collaboration/design.md)、[tools-contract](docs/features/codex-collaboration/tools-contract.md)、[implementation](docs/features/codex-collaboration/implementation.md)；CSC01 本地回放 1/1 通过，沿用现有协作回归；执行证据见实现文档。
+
 ### 持久协作控制器（2026-11-02）
 
 - **背景与修改**：旧子任务的取消与父轮耦合，失败后缺少稳定身份和原会话续跑边界。新增根所有的身份树、调用去重、durable ACK 邮箱、独立 signal/generation、容量与驻留控制，以及原会话恢复的有限 driver 合同。
@@ -113,7 +119,7 @@
 
 ### 六工具桌面会话验收（2026-11-03）
 
-- **行为与证据**：真实 Electron/Agent/SQLite/HTTP provider 驱动六工具，父轮结束后 child 继续，原始响应尾部完整进入邮箱消费边界，双方消息只进入 assistant 信封；idle 父不被消息隐式启动。读取真实 childSessionId 下钻，再以原 session/原 spawn anchor 续跑，原生 Stop 只中断目标 child，父可继续输入。list/wait 不呈现为 Stop 或额外 child。
+- **行为与证据**：真实 Electron/Agent/SQLite/HTTP provider 驱动六工具，父轮结束后 child 继续，原始响应尾部完整进入邮箱消费边界，双方消息以 assistant 信封进入模型；2026-11-13 调整为完成结果自动唤醒 idle 父。读取真实 childSessionId 下钻，再以原 session/原 spawn anchor 续跑，原生 Stop 只中断目标 child，父可继续输入。list/wait 不呈现为 Stop 或额外 child。
 - **修改文件与标记**：新增 pending CSC01 用例、case-local fixtures、cleanup helper/失败路径测试与 catalog/matrix；新增测试无上游产品接线标记。
 - **文档与验证**：[desktop-client-acceptance](docs/features/codex-collaboration/desktop-client-acceptance.md)。最终客户端 bundle 正式steer5/5、48.2秒；CSC01按真实交互展开历史后1/1、19秒。不同构建的结果分别保留，不合并计数。独立规格与质量审查通过；用例未人工转正，手机 GUI 与 cold seed 由各自证据边界约束。
 - **客户端接线**：[client-implementation](docs/features/codex-collaboration/client-implementation.md)。shared六工具身份、UI/TUI详情、canonical冷身份查询、同会话续跑、代际防回退与双交付重放已验证；删除旧专属renderer及ACK/output_file解析。配对卡片派生child具体失败原因，保持原成功spawn结果不变，先红后绿56项回归及最终双审通过。

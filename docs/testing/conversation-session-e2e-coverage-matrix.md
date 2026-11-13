@@ -6048,3 +6048,7 @@ FRR01 修复后真实 macOS Electron + Host/CLI 显式 replay 在 `packages/desk
 CWA33–34（2026-11-04，covered / pending-review）：真实 Core、CLI、SQLite 与 Chrome 在每方向 150 ms、64 KiB/s 的 Server–Relay 链路下完成同项目草稿、正文回复、刷新、断线续发与文件浏览；额外 bridge 从 1 次变为 0 次。候选 `packages/web/test/e2e/manual-review/pending/self-hosted-server.mjs --slow --reuse-draft`，运行证据见 [慢链路 Agent Note](../../.agents/notes/cloud-web-access/2026-11-04-slow-network.md)。
 
 CWA36（2026-11-04，covered / pending-review）：同一真实浏览器候选增加 `--catalogs`，断言草稿场景投影、子智能体目录零预加载、搜索候选可用及重复打开缓存复用；服务回归验证完整读取和错误保真。证据 `zcode-cwa29-7Zd232/artifacts`。
+
+2026-11-13 CSC01 合同更新：子会话展示任务输入；子代理完成自动唤醒 idle 父，运行中按安全边界消费；wait_agent 立即让出轮次；活动数归零后仍可从已结束目录查看原历史。旧“idle 不唤醒”断言由新规格取代，本轮执行证据随实现记录维护。
+
+CSC01 2026-11-13 本地 Electron 回放 1/1 通过，artifact `packages/desktop/.e2e-artifacts/desktop-e2e-20261113024110039-p97681-7f0784483b83edc7`。覆盖初始/后续输入、完成自动唤醒、assistant 信封、零活动目录、原身份续跑、Stop 与非阻塞 wait；保持 manual-review/pending。

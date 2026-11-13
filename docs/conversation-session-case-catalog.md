@@ -5548,3 +5548,5 @@ SSV01/02/04 使用真实 Electron、Host 与 CLI；SSV03 同时保留 Electron �
 - 普通任务已完成一轮：`/refresh` 只热刷新覆盖设置，追加完成 marker，不新增用户消息、模型请求或运行实例代次；taskId 与历史不变。
 - 同一任务随后 `/reload`：重建执行实例，taskId 与历史不变，代次递增并回到 ready，可以继续对话。
 - 候选：runtime-restart pending spec 中独立 `FRR01`，复用本例显式 provider fixture；本轮 FRR01 单独 1/1 通过（covered / pending-review），artifact `packages/desktop/.e2e-artifacts/desktop-e2e-20261103034836677-p75939-160e432e8a8fcc16`。只覆盖桌面 idle；忙碌队列、手机与 MCP 真实注册不在本场景内。
+
+2026-11-13 CSC01 合同更新：子会话展示任务输入；子代理完成自动唤醒 idle 父，运行中按安全边界消费；wait_agent 立即让出轮次；活动数归零后仍可从已结束目录查看原历史。旧“idle 不唤醒”断言由新规格取代，本轮执行证据随实现记录维护。

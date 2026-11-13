@@ -60,7 +60,7 @@ export async function prepareCollaborationTurn(
               recordedInputMessageId: task.id as import("@zcode/contracts").MessageId,
               skipInputRecord: true,
               inputSource: "subagent",
-              inputVisibility: "model-only",
+              inputVisibility: task.kind === "NEW_TASK" ? "user-visible" : "model-only",
               skipUserPromptSubmitHooks: true,
             },
           }),

@@ -37,3 +37,9 @@ projection alone creates assistant envelopes. Tool metadata is written by standa
 settlement; cold relation recovery uses the canonical root graph in a crash gap.
 
 See docs/features/codex-collaboration/runtime-integration.md for ordering and acceptance.
+
+The mailbox owns durable collaboration receipts. Parent completion wakeups reference those IDs in the
+existing runtime command queue; active model consumption removes pending wakeups. Visible child
+inputs preserve collaboration provenance and use existing guide projection for in-flight delivery.
+wait_agent settles immediately and stops the current turn; early unread inputs continue in the same
+runtime, otherwise a waiting child remains resumable. Directory RPC responses expose public fields.

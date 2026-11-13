@@ -69,7 +69,7 @@ export const WaitAgentInputSchema = z
   .strict();
 
 export const CollaborationAgentStatusSchema = z.union([
-  z.enum(["pending_init", "running", "interrupted", "shutdown", "not_found"]),
+  z.enum(["pending_init", "running", "waiting", "interrupted", "shutdown", "not_found"]),
   z.object({ completed: z.string().nullable() }).strict(),
   z.object({ errored: z.string() }).strict(),
 ]);

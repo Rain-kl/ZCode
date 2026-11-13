@@ -62,7 +62,7 @@ it("cleans a constructed cold child after hydration fails while retaining accept
     message: "accepted task",
     fork_turns: "none",
   });
-  await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(generate).toHaveBeenCalledTimes(2));
   await runtime.shutdownCollaboration();
   const child = (await store.listSessions()).find(
     (session) => session.taskType === "subagent_child",
@@ -89,7 +89,7 @@ it("cleans a constructed cold child after hydration fails while retaining accept
   expect(result.success).toBe(false);
   expect(result.error?.message).toContain("cold hydration read failed");
   expect(closeChild).toHaveBeenCalledTimes(2);
-  expect(generate).toHaveBeenCalledTimes(1);
+  expect(generate).toHaveBeenCalledTimes(2);
   expect(await store.messages({ sessionID: child.id })).toEqual(history);
 });
 it("preserves prepare and cleanup causes and retries the same retained resource handle on shutdown", async () => {

@@ -11,6 +11,7 @@ describe("actual collaboration recovery", () => {
     const selection = { providerId: "test", modelId: "execution-child" };
     const seen: unknown[] = [];
     const { runtime, store, rootId } = setup(async (_request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
       seen.push(observation.factoryInput.requestDependencies);
       return done;
     });
@@ -58,6 +59,7 @@ describe("actual collaboration recovery", () => {
     const generate: NonNullable<
       Parameters<typeof createTestModelFactory>[0]["generateText"]
     > = async (request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
       requests.push({ request, model: observation.factoryInput.selection.modelId });
       return done;
     };
@@ -121,7 +123,8 @@ describe("actual collaboration recovery", () => {
   it("retains accepted child after a model error and followup uses the same transcript", async () => {
     let calls = 0;
     const requests: ModelRequest[] = [];
-    const { runtime, store } = setup(async (request) => {
+    const { runtime, store, rootId } = setup(async (request, observation) => {
+      if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
       requests.push(request);
       if (calls++ === 0) throw new Error("child-provider-failed");
       return done;
@@ -243,6 +246,7 @@ describe("actual collaboration recovery", () => {
     const read = store.messages.bind(store);
     store.messages = async (input) =>
       (await read(input)).map((message) =>
+        input.sessionID !== rootId &&
         message.info.role === "user" &&
         message.info.metadata &&
         "collaboration" in message.info.metadata
@@ -270,7 +274,8 @@ describe("actual collaboration recovery", () => {
     const rootId = createSessionId("saved-profile-parent");
     const requests: ModelRequest[] = [];
     const modelFactory = createTestModelFactory({
-      generateText: async (request) => {
+      generateText: async (request, observation) => {
+        if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
         requests.push(request);
         return done;
       },

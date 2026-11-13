@@ -1,7 +1,13 @@
-import { CollaborationError, type AgentRecord, type CollaborationSnapshot } from "../contract.js";
+import {
+  CollaborationError,
+  type AgentIdentity,
+  type CollaborationStorage,
+  type AgentRecord,
+  type CollaborationSnapshot,
+} from "../contract.js";
 
 const NAME = /^[a-z0-9_]+$/;
-const STATUSES = new Set(["idle", "running", "completed", "errored", "interrupted"]);
+const STATUSES = new Set(["idle", "waiting", "running", "completed", "errored", "interrupted"]);
 const KINDS = new Set(["NEW_TASK", "MESSAGE", "FINAL_ANSWER", "STATUS"]);
 export function validTaskName(value: string): boolean {
   return NAME.test(value) && value !== "root";
@@ -177,4 +183,21 @@ export function resolveAgent(
       target,
     });
   return found;
+}
+
+export function identity(record: AgentRecord): AgentIdentity {
+  const { agentId, childSessionId, path, parentId, traceId, settings } = record;
+  return structuredClone({ agentId, childSessionId, path, parentId, traceId, settings });
+}
+export function memoryStorage(): CollaborationStorage {
+  let value: CollaborationSnapshot | undefined;
+  return {
+    mode: "memory",
+    async read() {
+      return structuredClone(value);
+    },
+    async write(next) {
+      value = structuredClone(next);
+    },
+  };
 }

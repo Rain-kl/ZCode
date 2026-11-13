@@ -1,14 +1,12 @@
 import {
   TID_V4_SUBAGENT_OPEN_SIDE_PANE,
+  TID_CHAT_SUMMARY_PANEL,
   TID_V4_SESSION_PANE,
   TID_V4_BACKGROUND_WORK_CANCEL,
   TID_TOOL_SUMMARY_TRIGGER,
   testId,
 } from "@zcode/shared/test-ids";
-import {
-  clearAppData,
-  clickTestIdByDom,
-} from "../../../helpers/desktop-app.js";
+import { clearAppData, clickTestIdByDom } from "../../../helpers/desktop-app.js";
 import { attemptAllCleanup } from "../../../helpers/attempt-all-cleanup.js";
 import { releaseControlledReplay } from "../../../helpers/controlled-replay.js";
 import { resolveSeededReplayBaseUrl } from "../../../helpers/custom-openai-provider-store.js";
@@ -55,24 +53,18 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
         const response = await fetch(`${base}/__e2e__/gates`, {
           signal: AbortSignal.timeout(5000),
         });
-        if (!response.ok)
-          throw new Error(`CSC01 cleanup gates: HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`CSC01 cleanup gates: HTTP ${response.status}`);
         const gates = (await response.json()) as string[];
         await attemptAllCleanup(
           gates
             .filter((id) => id.startsWith("csc-child-"))
             .map((id) => async () => {
-              const released = await fetch(
-                `${base}/__e2e__/release/${encodeURIComponent(id)}`,
-                {
-                  method: "POST",
-                  signal: AbortSignal.timeout(5000),
-                },
-              );
+              const released = await fetch(`${base}/__e2e__/release/${encodeURIComponent(id)}`, {
+                method: "POST",
+                signal: AbortSignal.timeout(5000),
+              });
               if (released.status !== 204)
-                throw new Error(
-                  `CSC01 cleanup release ${id}: ${released.status}`,
-                );
+                throw new Error(`CSC01 cleanup release ${id}: ${released.status}`);
             }),
         );
       },
@@ -102,16 +94,10 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
       ["csc-list-first", "list_agents"],
       ["csc-send", "send_message"],
     ] as const) {
-      await assertRenderedTool(
-        id,
-        name,
-        name === "spawn_agent" ? "in_progress" : "completed",
-      );
+      await assertRenderedTool(id, name, name === "spawn_agent" ? "in_progress" : "completed");
     }
     expect(await childAnchor(childSessionId)).toBe("csc-spawn");
-    expect(
-      (await getLatestUpstreamToolResultByToolCallId("csc-send"))?.content,
-    ).toBe("");
+    expect((await getLatestUpstreamToolResultByToolCallId("csc-send"))?.content).toBe("");
 
     // 配对后的摘要主动作负责下钻；独立 disclosure 必须仍能在父会话查看实际任务正文。
     await clickTestIdByDom(testId(TID_TOOL_SUMMARY_TRIGGER, "csc-spawn"));
@@ -124,14 +110,13 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
         browser.execute(
           (panePrefix, id) => {
             const panes = [
-              ...document.querySelectorAll<HTMLElement>(
-                `[data-testid^="${panePrefix}-"]`,
-              ),
+              ...document.querySelectorAll<HTMLElement>(`[data-testid^="${panePrefix}-"]`),
             ];
             return panes.some(
               (pane) =>
                 pane.dataset.sessionId === id &&
-                pane.textContent?.includes("E2E_CSC_CHILD_STREAM"),
+                pane.textContent?.includes("E2E_CSC_CHILD_STREAM") &&
+                pane.textContent?.includes("E2E_CSC_CHILD_BOOT: bounded child task"),
             );
           },
           TID_V4_SESSION_PANE,
@@ -155,15 +140,8 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
       },
       "CSC01 child did not consume assistant mailbox at complete response boundary",
     );
-    await assertMailboxEnvelope(
-      "E2E_CSC_MAIL",
-      "/root/worker",
-      "/root",
-      "csc-child-todo",
-    );
-    expect(
-      await getLatestUpstreamToolResultByToolCallId("csc-child-todo"),
-    ).toMatchObject({
+    await assertMailboxEnvelope("E2E_CSC_MAIL", "/root/worker", "/root", "csc-child-todo");
+    expect(await getLatestUpstreamToolResultByToolCallId("csc-child-todo")).toMatchObject({
       isError: false,
     });
     await waitForUpstreamRequest(
@@ -171,80 +149,94 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
       "CSC01 child report tool result missing",
     );
     await browser.waitUntil(
-      async () =>
-        ((await getV4ComposerBackgroundWorkCounts())?.subagentCount ?? 0) === 0,
+      async () => ((await getV4ComposerBackgroundWorkCounts())?.subagentCount ?? 0) === 0,
       { timeout: 30_000, timeoutMsg: "CSC01 child terminal missing" },
     );
-    expect((await getV4PaneSnapshot()).canStop).toBe(false);
     await browser.waitUntil(
       async () =>
         browser.execute(
           (prefix, id) =>
-            [
-              ...document.querySelectorAll<HTMLElement>(
-                `[data-testid^="${prefix}-"]`,
-              ),
-            ].some(
+            [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}-"]`)].some(
               (pane) =>
-                pane.dataset.sessionId === id &&
-                pane.textContent?.includes("E2E_CSC_CHILD_FINAL"),
+                pane.dataset.sessionId === id && pane.textContent?.includes("E2E_CSC_CHILD_FINAL"),
             ),
           TID_V4_SESSION_PANE,
           childSessionId,
         ),
       { timeout: 30_000, timeoutMsg: "CSC01 child final transcript missing" },
     );
-    // 用真实请求数观察负向边界；此窗口不驱动产品状态或替代任何完成屏障。
-    const idleUntil = Date.now() + 1000;
+    await waitForV4TimelineContaining("E2E_CSC_ROOT_WOKEN");
+    await assertMailboxEnvelope(
+      "E2E_CSC_CHILD_FINAL",
+      "/root",
+      "/root/worker",
+      "csc-spawn",
+      "FINAL_ANSWER",
+    );
+    await waitForV4Pane((pane) => !pane.canStop, "CSC01 automatic wake must finish");
+    // 活动数归零后仍可通过面板打开目录与原子会话。
     await browser.waitUntil(
-      async () => {
-        const rootRequests = await getUpstreamRequestEvidence({
-          includes: ["E2E_CSC_START"],
-          excludes: [
-            "Your canonical task name is /root/worker.",
-            "Generate a concise title",
-            "CRITICAL: Respond with TEXT ONLY",
-            "You are now acting as the memory extraction subagent",
-          ],
-        });
-        expect(rootRequests).toHaveLength(3);
-        return Date.now() >= idleUntil;
-      },
-      {
-        timeout: 3000,
-        interval: 100,
-        timeoutMsg: "CSC01 idle observation did not finish",
-      },
+      async () =>
+        browser.execute((panelId) => {
+          const panel = document.querySelector<HTMLElement>(`[data-testid="${panelId}"]`);
+          if (!panel) return false;
+          if (panel.dataset.state === "collapsed") {
+            panel.querySelector<HTMLButtonElement>("button")?.click();
+            return false;
+          }
+          const trigger = panel.querySelector<HTMLButtonElement>(
+            '[data-status-section-trigger="agent"]',
+          );
+          if (!trigger) return false;
+          if (trigger.getAttribute("aria-expanded") !== "true") {
+            trigger.click();
+            return false;
+          }
+          return true;
+        }, TID_CHAT_SUMMARY_PANEL),
+      { timeout: 30_000, timeoutMsg: "CSC01 history-only status panel missing" },
+    );
+    await clickTestIdByDom("subagent-directory-trigger");
+    await browser.waitUntil(
+      async () =>
+        browser.execute(() =>
+          [...document.querySelectorAll("button")].some((button) =>
+            button.textContent?.includes("/root/worker"),
+          ),
+        ),
+      { timeout: 30_000, timeoutMsg: "CSC01 ended child directory missing" },
     );
 
-    await sendV4Prompt(
-      "E2E_CSC_RESUME: follow up the same worker with the second task.",
-    );
+    await sendV4Prompt("E2E_CSC_RESUME: follow up the same worker with the second task.");
     await waitForV4TimelineContaining("E2E_CSC_ROOT_RESUMED");
-    await waitForV4Pane(
-      (pane) => !pane.canStop,
-      "CSC01 followup parent must finish",
-    );
+    await waitForV4Pane((pane) => !pane.canStop, "CSC01 followup parent must finish");
     await assertRenderedTool("csc-followup", "followup_task");
-    const completed = await waitForSuccessfulToolCallByToolCallId(
-      "csc-list-completed",
-      ["/root/worker"],
-    );
+    const completed = await waitForSuccessfulToolCallByToolCallId("csc-list-completed", [
+      "/root/worker",
+    ]);
     expect(JSON.parse(completed.output).agents).toContainEqual({
       agent_name: "/root/worker",
       agent_status: { completed: null },
     });
-    expect(
-      (await getLatestUpstreamToolResultByToolCallId("csc-followup"))?.content,
-    ).toBe("");
+    expect((await getLatestUpstreamToolResultByToolCallId("csc-followup"))?.content).toBe("");
     await waitForUpstreamRequest(
       {
-        includes: [
-          "Your canonical task name is /root/worker.",
-          "E2E_CSC_CHILD_SECOND",
-        ],
+        includes: ["Your canonical task name is /root/worker.", "E2E_CSC_CHILD_SECOND"],
       },
       "CSC01 followup never reached actual child provider request",
+    );
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (id, prefix) =>
+            [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}-"]`)].some(
+              (pane) =>
+                pane.dataset.sessionId === id && pane.textContent?.includes("E2E_CSC_CHILD_SECOND"),
+            ),
+          childSessionId,
+          TID_V4_SESSION_PANE,
+        ),
+      { timeout: 30_000, timeoutMsg: "CSC01 followup input not visible in child transcript" },
     );
     expect(await uniqueChildSession()).toBe(childSessionId);
     expect(await childAnchor(childSessionId)).toBe("csc-spawn");
@@ -263,19 +255,19 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
       },
     );
     expect(await clickV4BackgroundWorkCancel(workId)).toBe(true);
-    expect(
-      (await waitForLatestV4CommandAck("cancelBackgroundWork")).status,
-    ).toBe("accepted");
+    expect((await waitForLatestV4CommandAck("cancelBackgroundWork")).status).toBe("accepted");
     await browser.waitUntil(
-      async () =>
-        ((await getV4ComposerBackgroundWorkCounts())?.subagentCount ?? 0) === 0,
+      async () => ((await getV4ComposerBackgroundWorkCounts())?.subagentCount ?? 0) === 0,
       { timeout: 30_000, timeoutMsg: "CSC01 native child Stop did not settle" },
     );
 
     await sendV4Prompt(
       "E2E_CSC_INSPECT: inspect the interrupted worker, list and wait, then finish.",
     );
-    await waitForV4TimelineContaining("E2E_CSC_ROOT_INSPECTED");
+    await waitForV4Pane(
+      (pane) => !pane.canStop,
+      "CSC01 wait must yield without another provider request",
+    );
     for (const [id, name] of [
       ["csc-interrupt", "interrupt_agent"],
       ["csc-list-final", "list_agents"],
@@ -283,25 +275,22 @@ describe("CSC01 Codex 六工具真实子会话 pending", () => {
     ] as const) {
       await assertRenderedTool(id, name);
     }
-    await waitForSuccessfulToolCallByToolCallId("csc-interrupt", [
-      "interrupted",
-    ]);
-    await waitForSuccessfulToolCallByToolCallId("csc-list-final", [
-      "/root/worker",
-      "interrupted",
-    ]);
+    const yieldedRequests = await getUpstreamRequestEvidence({
+      includes: ["E2E_CSC_INSPECT"],
+      excludes: [
+        "Your canonical task name is /root/worker.",
+        "Generate a concise title",
+        "CRITICAL: Respond with TEXT ONLY",
+      ],
+    });
+    expect(yieldedRequests).toHaveLength(1);
     expect(await uniqueChildSession()).toBe(childSessionId);
     expect((await getV4PaneSnapshot()).sessionId).toBe(parent.sessionId);
     await waitForUpstreamRequest(
       { includes: ["E2E_CSC_REPORT", "Message Type: MESSAGE", "csc-followup"] },
       "CSC01 idle root mailbox or followup result missing",
     );
-    await assertMailboxEnvelope(
-      "E2E_CSC_REPORT",
-      "/root",
-      "/root/worker",
-      "csc-followup",
-    );
+    await assertMailboxEnvelope("E2E_CSC_REPORT", "/root", "/root/worker", "csc-followup");
   });
 });
 
@@ -310,8 +299,7 @@ async function childAnchor(childSessionId: string): Promise<string | null> {
     (prefix, id) =>
       document
         .querySelector(`[data-testid="${prefix}-${id}"]`)
-        ?.closest<HTMLElement>("[data-tool-call-id]")?.dataset.toolCallId ??
-      null,
+        ?.closest<HTMLElement>("[data-tool-call-id]")?.dataset.toolCallId ?? null,
     CHILD_PREFIX,
     childSessionId,
   );
@@ -326,22 +314,16 @@ async function assertRenderedTool(
   await waitForToolCallBlockByToolCallId(id);
   const view = await browser.execute(
     (callId, cancelPrefix, childPrefix) => {
-      const row = document.querySelector<HTMLElement>(
-        `[data-tool-call-id="${callId}"]`,
-      );
+      const row = document.querySelector<HTMLElement>(`[data-tool-call-id="${callId}"]`);
       return row
         ? {
             visible: row.checkVisibility(),
             name: row.dataset.toolName,
             status: row.dataset.status,
             stop: Boolean(
-              row.querySelector(
-                `.lucide-circle-stop,[data-testid^="${cancelPrefix}-"]`,
-              ),
+              row.querySelector(`.lucide-circle-stop,[data-testid^="${cancelPrefix}-"]`),
             ),
-            child: Boolean(
-              row.querySelector(`[data-testid^="${childPrefix}-"]`),
-            ),
+            child: Boolean(row.querySelector(`[data-testid^="${childPrefix}-"]`)),
           }
         : null;
     },
@@ -359,27 +341,18 @@ async function assertMailboxEnvelope(
   recipient: string,
   sender: string,
   callId: string,
+  kind = "MESSAGE",
 ): Promise<void> {
   const records = await getUpstreamRequestEvidence({
-    includes: [payload, callId, "Message Type: MESSAGE"],
+    includes: [payload, callId, `Message Type: ${kind}`],
   });
   const body = records[0]?.requestJson;
-  if (
-    !body ||
-    typeof body !== "object" ||
-    !("messages" in body) ||
-    !Array.isArray(body.messages)
-  )
+  if (!body || typeof body !== "object" || !("messages" in body) || !Array.isArray(body.messages))
     throw new Error(`CSC01 invalid provider request for ${payload}`);
   const assistant: string[] = [];
   const user: string[] = [];
   for (const message of body.messages) {
-    if (
-      !message ||
-      typeof message !== "object" ||
-      !("role" in message) ||
-      !("content" in message)
-    )
+    if (!message || typeof message !== "object" || !("role" in message) || !("content" in message))
       throw new Error("CSC01 invalid provider message");
     const content =
       typeof message.content === "string"
@@ -399,7 +372,7 @@ async function assertMailboxEnvelope(
     if (message.role === "assistant") assistant.push(content);
     if (message.role === "user") user.push(content);
   }
-  const envelope = `Message Type: MESSAGE\nTask name: ${recipient}\nSender: ${sender}\nPayload:\n${payload}`;
+  const envelope = `Message Type: ${kind}\nTask name: ${recipient}\nSender: ${sender}\nPayload:\n${payload}`;
   expect(assistant.join("\n").split(envelope)).toHaveLength(2);
   expect(user.join("\n")).not.toContain(payload);
 }
@@ -413,12 +386,8 @@ async function uniqueChildSession(): Promise<string> {
       ids = await browser.execute(
         (prefix) => [
           ...new Set(
-            [
-              ...document.querySelectorAll<HTMLElement>(
-                `[data-testid^="${prefix}-"]`,
-              ),
-            ].map((element) =>
-              (element.dataset.testid ?? "").slice(prefix.length + 1),
+            [...document.querySelectorAll<HTMLElement>(`[data-testid^="${prefix}-"]`)].map(
+              (element) => (element.dataset.testid ?? "").slice(prefix.length + 1),
             ),
           ),
         ],

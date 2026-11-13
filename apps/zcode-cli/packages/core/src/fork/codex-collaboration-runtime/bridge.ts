@@ -74,6 +74,7 @@ export function createRuntimeCollaborationBinding(
   const handles = new Map<string, AgentRuntimeInternal>();
   const preparingBrowsers = new Map<string, BrowserControlPort>();
   const bindings = new Map<string, RuntimeCollaborationBinding>();
+  const yielded = new Set<string>();
   const mailboxes = new Map<string, ReturnType<typeof createRuntimeMailbox>>();
   const runningCommands = new Map<
     string,
@@ -183,11 +184,26 @@ export function createRuntimeCollaborationBinding(
         return {
           cancel: () => admission.cancel(),
           async run() {
-            const command = admission.run();
-            const handle = { completion: command, signal };
-            runningCommands.set(identity.agentId, handle);
+            yielded.delete(identity.agentId);
+            let currentAdmission = admission;
             try {
-              return await command;
+              for (;;) {
+                const command = currentAdmission.run();
+                const handle = { completion: command, signal };
+                runningCommands.set(identity.agentId, handle);
+                const result = await command;
+                if (!yielded.delete(identity.agentId)) return result;
+                // wait 的结算与早到消息必须衔接；已有未读输入时直接续轮，不停在无法被唤醒的空闲态。
+                const next = mailbox.latestMessage();
+                if (!mailbox.hasUnreadMessages() || !next)
+                  return { ...result, status: "waiting" as const };
+                currentAdmission = await prepareCollaborationTurn(
+                  runtime,
+                  next,
+                  signal,
+                  async () => {},
+                );
+              }
             } catch (error) {
               // 普通 turn 的 wrapper 摘要不含真正原因；在 runtime 边界复用既有正文选择，保留整条原 cause。
               // 纯 controller 只读 Error.message，不能让其依赖 runtime error payload 或丢掉 ModelError 身份。
@@ -211,8 +227,7 @@ export function createRuntimeCollaborationBinding(
               }
               throw error;
             } finally {
-              if (runningCommands.get(identity.agentId) === handle)
-                runningCommands.delete(identity.agentId);
+              runningCommands.delete(identity.agentId);
             }
           },
         };
@@ -398,9 +413,11 @@ export function createRuntimeCollaborationBinding(
           ? "cancelled"
           : record.status === "errored"
             ? "failed"
-            : record.status === "idle"
-              ? "completed"
-              : record.status;
+            : record.status === "waiting"
+              ? "running"
+              : record.status === "idle"
+                ? "completed"
+                : record.status;
       const previous = published.get(record.agentId);
       const key = `${record.generation}:${record.status}`;
       parent?.runtimeTaskRegistry.register({
@@ -430,7 +447,7 @@ export function createRuntimeCollaborationBinding(
         ...(record.lastError ? { error: record.lastError } : {}),
       };
       const type =
-        record.status === "running"
+        record.status === "running" || record.status === "waiting"
           ? SessionEventType.SubagentSpawned
           : SessionEventType.SubagentStopped;
       // 卸载 parent 后仍向其精确 session 发布；root 只提供共享持久化端口，不冒充接收者。
@@ -552,11 +569,14 @@ export function createRuntimeCollaborationBinding(
           })),
         };
       },
-      async wait(input, call) {
-        const result = await (
-          await ready()
-        ).wait(identity.agentId, { timeoutMs: input.timeout_ms, signal: call.signal });
-        return { message: result.message, timed_out: result.timedOut };
+      async wait(_input, call) {
+        call.signal.throwIfAborted();
+        await ready();
+        yielded.add(identity.agentId);
+        return {
+          message: "Turn yielded. Collaboration results will wake this session automatically.",
+          timed_out: false,
+        };
       },
     };
     const binding: RuntimeCollaborationBinding = {
@@ -570,7 +590,7 @@ export function createRuntimeCollaborationBinding(
         // 原准入 signal 是执行资源句柄；检查与 deliver 同步 enqueue 之间不能插入 await。
         runningCommands.get(identity.agentId)?.signal.throwIfAborted();
         await tree.deliver(identity.agentId, identity.agentId);
-        const entries = mailboxes.get(identity.agentId)?.consume() ?? [];
+        const entries = (await mailboxes.get(identity.agentId)?.consume()) ?? [];
         return { entries, role: role(runtime, identity.path, tools, config) };
       },
       userInputAccepted() {

@@ -10,6 +10,35 @@
 原队列项成功重新转为 guide 时，live 与 replay 投影都必须清除上次降级原因；仅编辑正文时仍保留原投递事实。
 完整时序、跨端合同及不适用项见 [turn-steering.md](../../../apps/zcode-cli/docs/design/v2/loop/turn-steering.md)。
 
+## 2026-11-13：完成唤醒与执行记录
+
+- 初始任务、后续任务与父代理发来的消息在子会话中可读，保留发送顺序、来源和完整正文；模型仍通过协作信封识别内部输入。
+- 子代理完成或失败后，结果由原邮箱持久接纳并进入父 runtime 命令队列。父轮运行中在完整请求及工具批次后的安全边界读取；父轮已结束时自动启动续轮。同一消息 ID 只消费一次。
+- `wait_agent` 立即返回并结束当前轮次，释放阻塞工具调用；已到达的消息继续触发续轮。等待期间用户可继续输入，子代理继续执行。
+- 子代理目录查询遵守公开协议，仅返回身份集合、运行列表与已结束分页；内部生命周期投影保留在宿主查询层。
+- 子代理终态保留原身份与执行历史，状态面板在只有已结束代理时仍显示目录入口；桌面和手机均可打开原子会话。
+- 协作控制器拥有身份、generation 与 durable mailbox；runtime 命令队列拥有调度。唤醒项只引用已持久化消息，不复制正文或建立第二个邮箱。当前运行消费该消息后撤去对应待唤醒项。
+
+```mermaid
+sequenceDiagram
+    participant C as 协作控制器
+    participant M as 父会话邮箱
+    participant Q as 父 runtime 命令队列
+    participant R as 父代理
+    C->>C: 保存 child 终态与结果（generation 校验）
+    C->>M: 交付结果（message ID 去重）
+    M->>Q: 接纳唤醒引用
+    M-->>C: durable ACK
+    alt 父轮运行中
+        R->>M: 安全边界读取
+        M->>Q: 撤去已消费唤醒项
+    else 父轮空闲
+        Q->>R: 使用原消息启动续轮
+    end
+```
+
+验收：子会话首任务与后续输入可读；运行中回传不打断工具批次；空闲父收到完成/失败后实际发起模型请求；wait 返回后父轮结束并被结果唤醒；完成目录在活动数归零及重新打开后可用。live 与 cold 投影共享持久来源，手机重放保持相同记录。
+
 ## 目标与来源
 
 按用户要求先同步当前仓库，再解决长任务遇到 API 错误退出、子代理不能续跑、
@@ -122,11 +151,11 @@ CLI 的未处理异常边界会关闭协议进程；尚未证明现场 API 错�
 | 工具            | 输入                                                                    | 行为                                                                       |
 | --------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | spawn_agent     | task_name, message, fork_turns?, agent_type?, model?, reasoning_effort? | 接受任务后返回 `{task_name}`，不等待最终答案；身份和有效设置保留在内部事件 |
-| send_message    | target, message                                                         | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次                         |
+| send_message    | target, message                                                         | 进入邮箱；运行中在安全边界递送，空闲时不启动新轮次，waiting 时继续原任务                         |
 | followup_task   | target, message                                                         | 运行中递送任务；空闲、报错或被中断的子代理恢复同一会话并启动新轮次         |
 | interrupt_agent | target                                                                  | 只中断目标当前轮次，返回此前状态；身份、历史和邮箱继续存在                 |
 | list_agents     | path_prefix?                                                            | 返回 `{agents:[{agent_name,agent_status}]}`，仅列当前树中已加载代理        |
-| wait_agent      | timeout_ms?                                                             | 等待邮箱活动、终态通知、用户 steer 或超时，返回 `{message,timed_out}`      |
+| wait_agent      | timeout_ms?                                                             | 立即让出当前轮次，返回 `{message,timed_out:false}`，等待后续消息自动唤醒      |
 
 具体 JSON schema、工具描述及状态输出对照 Codex 的
 `codex-rs/core/src/tools/handlers/multi_agents_spec.rs` 和 `multi_agents_v2/`。
@@ -139,9 +168,7 @@ send_message / followup_task 成功时返回空文本；interrupt_agent 返回 `
 工具面只接受文档公开的 fork_turns all/none，不接入源实现兼容的旧数字字符串。
 拒绝 root 作为任务名，路径不能含空段、`.`、`..` 或末尾斜杠。
 
-`wait_agent` 默认 30 秒，最短 10 秒，最长 3,600 秒；小于最短值时夹紧并在结果说明，
-超过最长值拒绝。超时不会停止任何代理；邮箱正文另由唯一收件路径注入上下文。
-先建立订阅，再检查未读活动，避免注册等待时漏掉并发完成或 steer。
+`wait_agent` 不再阻塞或轮询。`timeout_ms` 保留输入兼容，等待由消息驱动；成功返回后当前工具批次结算并结束轮次。
 
 ### 2.1 身份与消息
 
@@ -153,7 +180,7 @@ send_message / followup_task 成功时返回空文本；interrupt_agent 返回 `
 - 邮箱由一个协作控制器所有，按接收顺序 admission；消息 ID 保证恢复与事件重放不重复消费。
   send_message 不等于“对方已读”，返回的是接受结果。
 - 子代理完成时自动向直接父代理投递最终答案和状态通知，保留任务发起者关联。
-  父代理忙时在安全边界消费；父代理已结束时通知留待下次轮次消费，不自行生成无限空轮次。
+  父代理忙时在安全边界消费；父代理已结束时由消息唤醒同一会话的新轮次。
   中断只产生状态变化，不伪造 FINAL_ANSWER。
 - 协作信封在 canonical 历史和 provider 投影中继续使用 assistant 身份，避免伪装成真实用户。
   但 ZCode 的跨提供商合同只有 system/user/assistant/tool，没有 Codex Responses 的 analysis
@@ -200,10 +227,8 @@ sequenceDiagram
     C->>C: 校验、占名、保存身份与会话、接受初始任务
     C->>A: 独立取消控制器启动轮次
     C-->>R: 返回 agentId / path（接受边界）
-    R->>C: wait_agent（仅订阅活动）
-    U->>R: steer
-    R->>C: 唤醒本次等待
-    C-->>R: steered 摘要
+    R->>C: wait_agent（结束当前轮，等待消息唤醒）
+    U->>R: 新输入可启动下一轮
     Note over C,A: 子代理继续；父等待取消不传给子代理
     A-->>C: 完成或预算耗尽，保留可恢复会话
     C-->>R: 邮箱消息与终态通知
@@ -269,7 +294,7 @@ deliver 必须确认消息所有权转移后才出箱；旧 runner 终态清理�
 4. 用户在等待退避时停止能及时返回；取消、权限拒绝和上游网络禁止不产生 API 重试。
 5. 主线程 spawn 后 wait，期间 steer：主线程处理新输入，所有已接受子代理继续并返回结果。
 6. 子代理报错或中断后 followup：同一身份、历史和文件状态延续，无永久死亡句柄。
-7. send_message 对空闲代理只入箱；followup 才唤醒；并发消息与完成不丢、不重复消费。
+7. send_message 对空闲代理只入箱、对 waiting 代理唤醒；followup 启动后续任务；并发消息与完成不丢、不重复消费。
 8. 父子/兄弟寻址、根树隔离、fork all/none、模型限制、角色提示和真实工具曝光一致。
 9. 并发上限、嵌套深度、名额释放、旧 generation 回报和接受前后取消边界均符合合同。
 10. 冷恢复、旧会话、桌面 steer、手机重放、TUI 以及显式停止整棵树保持一致。

@@ -66,7 +66,7 @@ send/list/wait 不启动执行。允许的执行期选模/请求依赖只通过�
 后台命令仍会结算并更新自己的查询结果，但不能绕过控制器在 idle child 上另起模型轮。
 
 mailbox 的 ACK 只在 raw message 与私有来源持久化成功后返回，重复 messageId 不重复写入。
-send 对 idle/root 只排邮箱；followup 才启动 idle child。消息在下一模型/工具边界进入当前请求，
+send 对 idle child 只排邮箱，对 waiting child 恢复原会话；followup 启动后续任务。完成结果主动交付父代理，父空闲时自动续轮；运行中的消息在下一模型/工具边界进入当前请求，
 不取消模型或工具。canonical transcript 保存 raw 文本和私有 kind/sender/recipient/path；
 provider 唯一出口才把它投影成 assistant 信封。冷 hydration 保留同一来源，不能变成用户授权。
 没有旧 inactivity watchdog；权限等待与显式 wait 超过旧期限仍有效。

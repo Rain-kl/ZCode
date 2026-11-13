@@ -86,7 +86,7 @@
       "syntheticReason": "固定六工具与真实父子会话事件顺序；只控制 provider 响应，不构造生命周期或身份。"
     },
     {
-      "id": "csc-root-inspected",
+      "id": "csc-root-woken",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",

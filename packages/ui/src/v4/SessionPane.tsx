@@ -5969,9 +5969,8 @@ export function SessionPane({
               onCancelBackgroundWork={readOnly ? undefined : handleCancelBackgroundWork}
               onOpenSubagentSession={onOpenSubagentSession ? handleOpenSubagentSession : undefined}
               onOpenSubagentDirectory={
-                onOpenSubagentDirectory && !compactForRemoteControl
-                  ? handleOpenSubagentDirectory
-                  : undefined
+                /* FORK(codex-collaboration): 手机也可访问已结束子代理历史。 */
+                onOpenSubagentDirectory ? handleOpenSubagentDirectory : undefined
               }
               onOpenWorkflowRun={
                 onOpenWorkflowRun && sessionId ? handleOpenWorkflowRunFromPanel : undefined

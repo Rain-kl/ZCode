@@ -13,7 +13,8 @@ it("reads exact live child state without lazy initialization, saved-graph infere
   const started = gate();
   const released = gate();
   let calls = 0;
-  const { runtime, store, rootId } = setup(async () => {
+  const { runtime, store, rootId } = setup(async (_request, observation) => {
+    if (observation.invocationContext?.traceContext?.sessionId === rootId) return done;
     calls += 1;
     started.resolve();
     await released.promise;

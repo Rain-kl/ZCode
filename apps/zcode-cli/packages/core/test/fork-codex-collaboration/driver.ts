@@ -28,13 +28,14 @@ export function fixture(config: Partial<ControllerOptions> = {}) {
     task: CollaborationMessage;
   }[] = [];
   const histories = new Map<string, string[]>();
+  const unread = new Set<string>();
   const timers = new Set<() => void>();
   let deliveryFailure = false;
   let admissionFailure = false;
   let writeFailure = false;
   let prepareGate: Promise<void> | undefined;
   const runtime = (identity: AgentIdentity): CollaborationRuntime => ({
-    hasUnreadMessages: () => false,
+    hasUnreadMessages: () => unread.has(identity.agentId),
     async installMailbox() {
       events.push(`sink:${identity.path}`);
     },
@@ -43,6 +44,7 @@ export function fixture(config: Partial<ControllerOptions> = {}) {
       const history = histories.get(identity.childSessionId)!;
       if (!history.includes(message.id)) history.push(message.id);
       events.push(`ack:${message.text}`);
+      unread.add(identity.agentId);
       return { messageId: message.id };
     },
     async admit({ task, generation, signal }): Promise<TurnAdmission> {

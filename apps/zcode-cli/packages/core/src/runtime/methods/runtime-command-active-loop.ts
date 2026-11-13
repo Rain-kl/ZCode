@@ -66,6 +66,10 @@ export async function drainPendingRuntimeCommandsForActiveLoop(
       workflowResultConsumed = true;
     }
     messageIds.push(messageId);
+    // FORK-BEGIN(codex-collaboration)
+    // mailbox 的原始 entry 在 beforeModel 消费，此处只撤去调度引用。
+    if (removed.collaborationMessageId) continue;
+    // FORK-END(codex-collaboration)
     runtimeEntries.push(
       createRuntimeUserEntry(removed.text, runtimeInputMetadata("task_notification_steer")),
     );

@@ -15,6 +15,8 @@ import {
   type WaitResult,
 } from "../contract.js";
 import {
+  identity,
+  memoryStorage,
   parseCollaborationSnapshot,
   resolveAgent,
   validAgentPath,
@@ -42,22 +44,6 @@ function clone<T>(value: T): T {
 }
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-function identity(record: AgentRecord): AgentIdentity {
-  const { agentId, childSessionId, path, parentId, traceId, settings } = record;
-  return clone({ agentId, childSessionId, path, parentId, traceId, settings });
-}
-function memoryStorage(): CollaborationStorage {
-  let value: CollaborationSnapshot | undefined;
-  return {
-    mode: "memory",
-    async read() {
-      return clone(value);
-    },
-    async write(next) {
-      value = clone(next);
-    },
-  };
 }
 
 export async function createCollaborationController(
@@ -501,12 +487,12 @@ class Controller implements CollaborationController {
     if (this.closed) return;
     if (
       !result ||
-      !["completed", "errored"].includes(result.status) ||
+      !["completed", "errored", "waiting"].includes(result.status) ||
       typeof result.text !== "string"
     ) {
       result = {
         status: "errored",
-        text: "Invalid runtime completion: expected completed/errored status and string text",
+        text: "Invalid runtime completion: expected completed/errored/waiting status and string text",
       };
     }
     this.pendingCompletions.set(`${agentId}:${generation}`, { agentId, generation, result });
@@ -524,6 +510,13 @@ class Controller implements CollaborationController {
       const next = clone(this.state);
       const record = next.agents.find((candidate) => candidate.agentId === agentId)!;
       record.status = result.status;
+      if (result.status === "waiting") {
+        await this.save(next);
+        this.pendingCompletions.delete(`${agentId}:${generation}`);
+        const loaded = this.loaded.get(agentId);
+        if (loaded) delete loaded.abort;
+        return;
+      }
       if (result.status === "errored") record.lastError = result.text;
       const callId = next.accepted.find((entry) => entry.agentId === agentId)?.callId;
       const parent = next.agents.find((candidate) => candidate.agentId === record.parentId)!;
@@ -542,13 +535,21 @@ class Controller implements CollaborationController {
       if (loaded) delete loaded.abort;
       this.notify(parent.agentId);
       this.notify(agentId);
+      // 完成必须主动交付，不能依赖父代理再发一次模型请求才取邮箱。
+      const completion = parent.mailbox.at(-1)!;
+      if (parent.path !== "/root" && parent.status !== "running")
+        await this.start(parent, completion, true);
+      else await this.drain(parent.agentId);
     });
   }
   send(callerId: string, target: string, text: string): Promise<void> {
     return this.enqueue(async () => {
       const agent = this.record(callerId, target);
-      await this.queue(this.message(callerId, agent.agentId, text, "MESSAGE"));
-      if (agent.status === "running") await this.drain(agent.agentId);
+      const message = this.message(callerId, agent.agentId, text, "MESSAGE");
+      await this.queue(message);
+      if (agent.status === "waiting") await this.start(agent, message, true);
+      else if (agent.status === "running" || agent.path === "/root")
+        await this.drain(agent.agentId);
     });
   }
   followup(callerId: string, target: string, text: string): Promise<void> {
@@ -574,7 +575,7 @@ class Controller implements CollaborationController {
       const loaded = this.loaded.get(agent.agentId);
       if (!loaded) return { previousStatus: "not_found" };
       const previousStatus = agent.status;
-      if (agent.status === "running") {
+      if (agent.status === "running" || agent.status === "waiting") {
         const next = clone(this.state);
         next.agents.find((candidate) => candidate.agentId === agent.agentId)!.status =
           "interrupted";

@@ -1634,6 +1634,8 @@ function EndedSubagentDirectoryRow({
       count={count}
       icon={<CheckCircle2Icon className="size-4 shrink-0 text-[var(--color-foreground-subtle)]" />}
       label={intl.formatMessage({ id: "chat.statusPanel.endedAgents" })}
+      // FORK(codex-collaboration): 目录入口用于可重复的历史查看验收。
+      testId="subagent-directory-trigger"
       separated={separated}
       onOpen={
         parentSessionId && onOpen
@@ -1720,12 +1722,16 @@ function getCompletedPlanItem(plan: ConversationStatusPanelModel["plan"]) {
 }
 
 function StatusSummaryRow({
+  // FORK(codex-collaboration): 历史代理在 mini 状态下仍需可见入口。
+  endedSubagentCount,
   endedWorkflowRunCount,
   gitWorktreeChangeSummary,
   model,
   onOpenWorkflowSection,
   onVariantChange,
 }: {
+  // FORK(codex-collaboration): 与面板共用已结束代理计数。
+  endedSubagentCount: number;
   /** 已结束 run 的目录计数；宿主给 0 表示目录入口不可渲染（缺会话或缺回调）。 */
   endedWorkflowRunCount: number;
   gitWorktreeChangeSummary?: { added: number; removed: number } | null;
@@ -1844,6 +1850,14 @@ function StatusSummaryRow({
       <span className="shrink-0 text-[var(--color-foreground-subtle)]">
         {endedWorkflowRunCount}
       </span>
+    </StatusSummaryMetric>
+  ) : endedSubagentCount > 0 ? (
+    // FORK(codex-collaboration): mini 面板不能因只剩历史而退化为空壳。
+    <StatusSummaryMetric icon={<CheckCircle2Icon className="size-4 text-foreground-subtle" />}>
+      <span className="min-w-0 truncate">
+        {intl.formatMessage({ id: "chat.statusPanel.endedAgents" })}
+      </span>
+      <span className="shrink-0 text-foreground-subtle">{endedSubagentCount}</span>
     </StatusSummaryMetric>
   ) : null;
 
@@ -1991,11 +2005,8 @@ function ConversationStatusPanelImpl({
     onVariantChange?.("mini");
   }, [onVariantChange]);
 
-  // `model.hasContent` 只认**活的**内容（模型手上的投影都是活状态），所以「只剩历史」的
-  // 会话会连整个胶囊一起消失——而那正是重启后打开一条旧对话的样子，run 目录的入口于是又没了。
-  // 已结束的 run 因此单独开这道门。（Agents 的已结束行有同一个洞：`endedSubagentCount` 也
-  // 没进 `hasContent`。那是既有行为，不在本轮一起翻。）
-  if (!model.hasContent && !canRenderEndedWorkflows) {
+  // FORK(codex-collaboration): 活动数归零后保留已结束代理目录，否则历史入口随面板消失。
+  if (!model.hasContent && !canRenderEndedWorkflows && !canRenderEndedAgents) {
     return null;
   }
 
@@ -2211,6 +2222,8 @@ function ConversationStatusPanelImpl({
           )}
         >
           <StatusSummaryRow
+            // FORK(codex-collaboration): 保持终态历史入口的紧凑投影。
+            endedSubagentCount={canRenderEndedAgents ? endedSubagentCount : 0}
             model={model}
             // 与页脚同一道门（canRenderEndedWorkflows）：缺会话或缺回调时目录打不开，
             // 胶囊也就不该报一个点了没反应的数。
